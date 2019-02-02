@@ -12,9 +12,14 @@ interface tag TCPConnectionActor
     // should set readable state
     PonyASIO.set_writeable(self().event)
     on_connected()   
+
+  fun ref send(data: ByteSeq) =>
+    // check connection is open
+    PonyTCP.send(self().event, data, data.size())
  
   be _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
     None
+
 
 class TCPConnection
   let fd: U32

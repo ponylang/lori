@@ -29,4 +29,4 @@ actor Server is TCPConnectionActor
     state 
 
   fun ref on_connected() =>
-    @printf[I32]("Connected!".cstring()) 
+    send("Hi There! You are now connected!\n")
