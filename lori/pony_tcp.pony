@@ -5,5 +5,8 @@ primitive PonyTCP
   fun accept(event: AsioEventID): U32 =>
     @pony_os_accept[U32](event)
 
+  fun receive(event: AsioEventID, buffer: Pointer[U8] tag, offset: USize): USize ? =>
+    @pony_os_recv[USize](event, buffer, offset)?
+
   fun send(event: AsioEventID, buffer: ByteSeq, buffer_len: USize): USize =>
     @pony_os_send[USize](event, buffer.cpointer(), buffer_len)
