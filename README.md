@@ -4,7 +4,7 @@ Pony TCP classes reimagined.
 
 ## Status
 
-[![CircleCI](https://circleci.com/gh/seantallen/lori.svg?style=svg)](https://circleci.com/gh/seantallen/lori)
+[![CircleCI](https://circleci.com/gh/SeanTAllen/lori.svg?style=svg)](https://circleci.com/gh/seantallen/lori)
 
 This is an experimental project and shouldn't be used in a production environment.
 
