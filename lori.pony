@@ -30,3 +30,7 @@ actor Server is TCPConnectionActor
 
   fun ref on_connected() =>
     send("Hi There! You are now connected!\n")
+
+  fun ref on_received(data: Array[U8] iso) =>
+    send("You sent: ")
+    send(consume data)
