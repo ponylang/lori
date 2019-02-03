@@ -5,7 +5,6 @@ use "lori"
 actor Main
   new create(env: Env) =>
     Listener(env.out) 
-    Client("127.0.0.1", "7669", "", env.out)
 
 actor Listener is TCPListenerActor
   let state: TCPListener
@@ -19,8 +18,14 @@ actor Listener is TCPListenerActor
   fun ref self(): TCPListener =>
     state
 
-  fun on_accept(state': TCPConnection iso): Server =>
+  fun ref on_accept(state': TCPConnection iso): Server =>
     Server(consume state', _out)
+
+  fun ref on_closed() =>
+    None
+
+  fun ref on_listening() =>
+    Client("127.0.0.1", "7669", "", _out)
   
 actor Server is TCPConnectionActor
   let state: TCPConnection
@@ -33,11 +38,13 @@ actor Server is TCPConnectionActor
   fun ref self(): TCPConnection =>
     state 
 
+  fun ref on_closed() =>
+    None
+
   fun ref on_connected() =>
-    @printf[I32]("Server connected\n".cstring())
+    None
 
   fun ref on_received(data: Array[U8] iso) =>
-    @printf[I32]("server recv\n".cstring())
     _out.print(consume data)
     send("Pong")
 
@@ -53,10 +60,12 @@ actor Client is TCPConnectionActor
   fun ref self(): TCPConnection =>
     state
 
+  fun on_closed() =>
+    None
+
   fun ref on_connected() =>
     send("Ping")
 
   fun ref on_received(data: Array[U8] iso) =>
-   @printf[I32]("client recv\n".cstring())
    _out.print(consume data)
    send("Ping")

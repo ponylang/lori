@@ -6,10 +6,26 @@ primitive Closed is TCPListenerConnectionState
 interface tag TCPListenerActor
   fun ref self(): TCPListener
 
-  fun on_accept(state: TCPConnection iso): TCPConnectionActor
+  fun ref on_accept(state: TCPConnection iso): TCPConnectionActor
     """
     Called when a connection is accepted
     """
+
+  fun ref on_closed()
+    """
+    Called after the listener is closed
+    """
+
+  fun ref on_listening()
+    """
+    Called once the listener is ready to accept connections
+    """
+
+  be dispose() =>
+    """
+    Stop listening
+    """
+    close()
 
   be _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
     if event isnt self().event then
@@ -22,14 +38,29 @@ interface tag TCPListenerActor
 
     if AsioEvent.disposable(flags) then
       self().dispose_event()
+      self().event = AsioEvent.none()
     end 
+
+  fun ref close() =>
+    if self().state is Open then
+      self().state = Closed
+
+      if not self().event.is_null() then
+        PonyASIO.unsubscribe(self().event)
+        PonyTCP.close(self().fd)
+        self().fd = -1
+        on_closed()
+      end
+    end
 
   fun ref open() =>
     // should check to make sure listener is closed
     let event = PonyTCP.listen(this, self().host, self().port)
     if not event.is_null() then
+      self().fd = PonyASIO.event_fd(event)
       self().event = event
       self().state = Open
+      on_listening()
     end
 
   fun ref _accept(arg: U32) =>
@@ -62,6 +93,7 @@ class TCPListener
   let host: String
   let port: String
   var event: AsioEventID = AsioEvent.none()
+  var fd: U32 = -1
   var state: TCPListenerConnectionState = Closed
 
   new create(host': String, port': String) =>
