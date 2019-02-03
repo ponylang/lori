@@ -54,7 +54,7 @@ interface tag TCPListenerActor
     """
     Start a new connection to handle this incoming connection.
     """
-    let state: TCPConnection iso = recover iso TCPConnection(fd) end
+    let state: TCPConnection iso = recover iso TCPConnection.server(fd) end
     let connection = on_accept(consume state)
     connection.open()
 
