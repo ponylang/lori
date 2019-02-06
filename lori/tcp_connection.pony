@@ -2,8 +2,19 @@ interface tag TCPConnectionActor
   fun ref self(): TCPConnection
   
   fun ref on_closed()
+    """
+    Called when the connection is closed
+    """
+
   fun ref on_connected()
+    """
+    Called when a connection is opened"
+    """
+
   fun ref on_received(data: Array[U8] iso)
+    """
+    Called each time data is received on this connection
+    """
 
   be dispose() =>
     """
