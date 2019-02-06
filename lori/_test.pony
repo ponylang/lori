@@ -113,3 +113,6 @@ actor _TestPongerListener is TCPListenerActor
  
   fun ref on_listening() =>
     _pinger = _TestPinger(_pings_to_receive, _h)
+
+  fun ref on_failure() =>
+    _h.fail("Unable to open _TestPongerListener")
