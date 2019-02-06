@@ -54,14 +54,14 @@ interface tag TCPListenerActor
       if not event.is_null() then
         self().fd = PonyASIO.event_fd(event)
         self().event = event
-       self().state = Open
-       on_listening()
-     end
-   else
-     ifdef debug then
-       FatalUserError("open() called on already open TCPListener.")
-     end
-   end
+        self().state = Open
+        on_listening()
+      end
+    else
+      ifdef debug then
+        FatalUserError("open() called on already open TCPListener.")
+      end
+    end
 
   fun ref _accept(arg: U32) =>
     match self().state
@@ -71,17 +71,20 @@ interface tag TCPListenerActor
       // return and do not start a new connection
       return
     | Open => 
-      var fd = PonyTCP.accept(self().event)
+      while true do
+        var fd = PonyTCP.accept(self().event)
       
-      match fd
-      | -1 =>
-        // TODO: handle 
-        return
-      | 0 =>
-        // TODO: handle
-        return
-      else
-        _start_connection(fd)
+        match fd
+        | -1 =>
+          // Wouldn't block but we got an error. Keep trying.
+          None
+        | 0 =>
+          // Would block. Bail out.
+          return
+        else
+          _start_connection(fd)
+          return
+        end
       end
     end 
 
