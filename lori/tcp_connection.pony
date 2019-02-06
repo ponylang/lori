@@ -42,6 +42,9 @@ interface tag TCPConnectionActor
     end
 
   fun ref connect(host: String, port: String, from: String) =>
+    """
+    Called to open a new outgoing connection
+    """
     let connect_count = PonyTCP.connect(this, host, port, from)
 /*    if connect_count > 0 then
       // TODO: call out for connecting?
@@ -57,7 +60,8 @@ interface tag TCPConnectionActor
       try
         PonyTCP.send(self().event, data, data.size())?
       else
-        @printf[I32]("unable to send\n".cstring())
+        // TODO: is there any way to get here if the connection is open?
+        return
       end
     end
 
