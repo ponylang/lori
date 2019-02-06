@@ -107,7 +107,7 @@ interface tag TCPConnectionActor
 class TCPConnection
   var fd: U32
   var event: AsioEventID = AsioEvent.none()
-  var state: TCPListenerConnectionState = Closed
+  var state: TCPConnectionState = Closed
 
   new client() =>
     fd = -1

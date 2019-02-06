@@ -1,8 +1,3 @@
-trait val TCPListenerConnectionState
-
-primitive Open is TCPListenerConnectionState
-primitive Closed is TCPListenerConnectionState
-
 interface tag TCPListenerActor
   fun ref self(): TCPListener
 
@@ -94,7 +89,7 @@ class TCPListener
   let port: String
   var event: AsioEventID = AsioEvent.none()
   var fd: U32 = -1
-  var state: TCPListenerConnectionState = Closed
+  var state: TCPConnectionState = Closed
 
   new create(host': String, port': String) =>
     host = host'
