@@ -11,6 +11,11 @@ interface tag TCPListenerActor
     Called after the listener is closed
     """
 
+  fun ref on_failure()
+    """
+    Called if we are unable to open the listener
+    """
+
   fun ref on_listening()
     """
     Called once the listener is ready to accept connections
@@ -56,6 +61,8 @@ interface tag TCPListenerActor
         self().event = event
         self().state = Open
         on_listening()
+      else
+        on_failure()
       end
     else
       ifdef debug then

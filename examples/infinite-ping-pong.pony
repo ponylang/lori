@@ -1,4 +1,4 @@
-use "lori"
+use "../lori"
 
 // test app to drive the library
 
@@ -26,7 +26,10 @@ actor Listener is TCPListenerActor
 
   fun ref on_listening() =>
     Client("127.0.0.1", "7669", "", _out)
-  
+ 
+  fun ref on_failure() =>
+    _out.print("Unable to open listener")
+
 actor Server is TCPConnectionActor
   let state: TCPConnection
   let _out: OutStream
