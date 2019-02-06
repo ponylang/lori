@@ -49,18 +49,27 @@ interface tag TCPListenerActor
     end
 
   fun ref open() =>
-    // should check to make sure listener is closed
-    let event = PonyTCP.listen(this, self().host, self().port)
-    if not event.is_null() then
-      self().fd = PonyASIO.event_fd(event)
-      self().event = event
-      self().state = Open
-      on_listening()
-    end
+    if self().state is Closed then
+      let event = PonyTCP.listen(this, self().host, self().port)
+      if not event.is_null() then
+        self().fd = PonyASIO.event_fd(event)
+        self().event = event
+       self().state = Open
+       on_listening()
+     end
+   else
+     ifdef debug then
+       FatalUserError("open() called on already open TCPListener.")
+     end
+   end
 
   fun ref _accept(arg: U32) =>
     match self().state
-    | Closed => return
+    | Closed => 
+      // It's possible that after closing, we got an event for a connection
+      // attempt. If that is the case or the listener is otherwise not open,
+      // return and do not start a new connection
+      return
     | Open => 
       var fd = PonyTCP.accept(self().event)
       
