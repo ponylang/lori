@@ -1,4 +1,4 @@
-use "../lori"
+use "../../lori"
 
 // test app to drive the library
 
