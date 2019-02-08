@@ -8,7 +8,7 @@ interface tag TCPConnectionActor
 
   fun ref on_connected()
     """
-    Called when a connection is opened"
+    Called when a connection is opened
     """
 
   fun ref on_received(data: Array[U8] iso)
