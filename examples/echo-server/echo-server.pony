@@ -2,7 +2,8 @@ use "../../lori"
 
 actor Main
   new create(env: Env) =>
-    EchoServer("", "7669", env.out)
+    let echo = EchoServer("", "7669", env.out)
+    echo.start()
 
 actor EchoServer is TCPListenerActor 
   let _state: TCPListener
@@ -11,6 +12,8 @@ actor EchoServer is TCPListenerActor
   new create(host: String, port: String, out: OutStream) =>
     _state = TCPListener(host, port) 
     _out = out
+
+  be start() =>
     open()
 
   fun ref self(): TCPListener =>
@@ -31,7 +34,7 @@ actor EchoServer is TCPListenerActor
 actor Echoer is TCPConnectionActor
   let _state: TCPConnection
   let _out: OutStream
-  
+
   new create(state: TCPConnection iso, out: OutStream) =>
     _state = consume state
     _out = out
