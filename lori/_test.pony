@@ -8,7 +8,7 @@ actor Main is TestList
     None
 
   fun tag tests(test: PonyTest) =>
-    test(_PingPong)    
+    test(_PingPong)
 
 class iso _PingPong is UnitTest
   """
@@ -54,7 +54,7 @@ actor _TestPinger is TCPConnectionActor
     elseif _pings_to_send == 0 then
       _pings_to_send = _pings_to_send - 1
       _h.complete(true)
-    else 
+    else
       // If we end up here, we got too many Pongs.
       _h.fail("Too many pongs received")
     end
@@ -107,10 +107,10 @@ actor _TestPongerListener is TCPListenerActor
     _TestPonger(consume state', _pings_to_receive, _h)
 
   fun ref on_closed() =>
-    try 
+    try
       (_pinger as _TestPinger).dispose()
     end
- 
+
   fun ref on_listening() =>
     _pinger = _TestPinger(_pings_to_receive, _h)
 

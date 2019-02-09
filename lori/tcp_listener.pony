@@ -39,7 +39,7 @@ interface tag TCPListenerActor
     if AsioEvent.disposable(flags) then
       self().dispose_event()
       self().event = AsioEvent.none()
-    end 
+    end
 
   fun ref close() =>
     if self().state is Open then
@@ -72,15 +72,15 @@ interface tag TCPListenerActor
 
   fun ref _accept(arg: U32) =>
     match self().state
-    | Closed => 
+    | Closed =>
       // It's possible that after closing, we got an event for a connection
       // attempt. If that is the case or the listener is otherwise not open,
       // return and do not start a new connection
       return
-    | Open => 
+    | Open =>
       while true do
         var fd = PonyTCP.accept(self().event)
-      
+
         match fd
         | -1 =>
           // Wouldn't block but we got an error. Keep trying.
@@ -93,7 +93,7 @@ interface tag TCPListenerActor
           return
         end
       end
-    end 
+    end
 
   fun ref _start_connection(fd: U32) =>
     """
@@ -118,4 +118,3 @@ class TCPListener
     PonyASIO.destroy(event)
     event = AsioEvent.none()
     state = Closed
-

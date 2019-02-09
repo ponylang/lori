@@ -1,6 +1,6 @@
 interface tag TCPConnectionActor
   fun ref self(): TCPConnection
-  
+
   fun ref on_closed()
     """
     Called when the connection is closed
@@ -31,7 +31,7 @@ interface tag TCPConnectionActor
     // should set writable state
     // should set readable state
     PonyASIO.set_writeable(self().event)
-    on_connected()   
+    on_connected()
 
   fun ref close() =>
     if self().state is Open then
@@ -97,11 +97,11 @@ interface tag TCPConnectionActor
         if (bytes_read == 0) then
           PonyASIO.set_unreadable(self().event)
           // would block. try again later
-	  // TCPConnection handles with:
+    // TCPConnection handles with:
           //@pony_asio_event_set_readable[None](self().event, false)
           // _readable = false
           // @pony_asio_event_resubscribe_read(_event)
-	  return
+    return
         end
 
         buffer.truncate(bytes_read)
@@ -112,7 +112,7 @@ interface tag TCPConnectionActor
       // Socket shutdown from other side
       close()
     end
-  
+
   be _read_again() =>
     """
     Resume reading

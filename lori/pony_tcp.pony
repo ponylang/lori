@@ -19,4 +19,4 @@ primitive PonyTCP
     sent
 
   fun shutdown(fd: U32) =>
-    @pony_os_socket_shutdown[None](fd) 
+    @pony_os_socket_shutdown[None](fd)
