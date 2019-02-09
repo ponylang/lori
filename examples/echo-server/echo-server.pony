@@ -5,12 +5,12 @@ actor Main
     let echo = EchoServer("", "7669", env.out)
     echo.start()
 
-actor EchoServer is TCPListenerActor 
+actor EchoServer is TCPListenerActor
   let _state: TCPListener
   let _out: OutStream
 
   new create(host: String, port: String, out: OutStream) =>
-    _state = TCPListener(host, port) 
+    _state = TCPListener(host, port)
     _out = out
 
   be start() =>

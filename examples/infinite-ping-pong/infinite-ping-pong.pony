@@ -4,7 +4,7 @@ use "../../lori"
 
 actor Main
   new create(env: Env) =>
-    Listener(env.out) 
+    Listener(env.out)
 
 actor Listener is TCPListenerActor
   let state: TCPListener
@@ -26,7 +26,7 @@ actor Listener is TCPListenerActor
 
   fun ref on_listening() =>
     Client("127.0.0.1", "7669", "", _out)
- 
+
   fun ref on_failure() =>
     _out.print("Unable to open listener")
 
@@ -39,7 +39,7 @@ actor Server is TCPConnectionActor
     _out = out
 
   fun ref self(): TCPConnection =>
-    state 
+    state
 
   fun ref on_closed() =>
     None
