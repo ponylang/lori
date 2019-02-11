@@ -19,10 +19,13 @@ primitive PonyASIO
     @pony_asio_event_set_readable(event, true)
 
   fun set_unreadable(event: AsioEventID) =>
-    @pony_asio_event_set_readable(event, false) 
+    @pony_asio_event_set_readable(event, false)
 
   fun set_writeable(event: AsioEventID) =>
     @pony_asio_event_set_writeable(event, true)
+
+  fun set_unwriteable(event: AsioEventID) =>
+    @pony_asio_event_set_writeable(event, false)
 
   fun unsubscribe(event: AsioEventID) =>
     @pony_asio_event_unsubscribe(event)

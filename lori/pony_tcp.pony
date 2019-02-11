@@ -14,8 +14,8 @@ primitive PonyTCP
   fun receive(event: AsioEventID, buffer: Pointer[U8] tag, offset: USize): USize ? =>
     @pony_os_recv[USize](event, buffer, offset)?
 
-  fun send(event: AsioEventID, buffer: ByteSeq, buffer_len: USize): USize ? =>
-    let sent = @pony_os_send[USize](event, buffer.cpointer(), buffer_len)?
+  fun send(event: AsioEventID, buffer: ByteSeq, from_offset: USize = 0): USize ? =>
+    let sent = @pony_os_send[USize](event, buffer.cpointer(from_offset), buffer.size() - from_offset)?
     sent
 
   fun shutdown(fd: U32) =>
