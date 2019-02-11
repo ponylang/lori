@@ -66,7 +66,7 @@ interface tag TCPListenerActor
       end
     else
       ifdef debug then
-        FatalUserError("open() called on already open TCPListener.")
+        FatalUserError("Open called on already open TCPListener.")
       end
     end
 

@@ -8,7 +8,58 @@ actor Main is TestList
     None
 
   fun tag tests(test: PonyTest) =>
+    test(_BitSet)
+    test(_TCPConnectionState)
     test(_PingPong)
+
+class iso _BitSet is UnitTest
+  fun name(): String => "BitSet"
+
+  fun apply(h: TestHelper) =>
+    var x: U32 = 0
+
+    h.assert_false(BitSet.is_set(x, 0))
+    x = BitSet.set(x, 0)
+    h.assert_true(BitSet.is_set(x, 0))
+    x = BitSet.set(x, 0)
+    h.assert_true(BitSet.is_set(x, 0))
+
+    h.assert_false(BitSet.is_set(x, 1))
+    x = BitSet.set(x, 1)
+    h.assert_true(BitSet.is_set(x, 0))
+    h.assert_true(BitSet.is_set(x, 1))
+
+    x = BitSet.unset(x, 0)
+    h.assert_false(BitSet.is_set(x, 0))
+    h.assert_true(BitSet.is_set(x, 1))
+
+class iso _TCPConnectionState is UnitTest
+  """
+  Test that connection state works correctly
+  """
+  fun name(): String => "ConnectionState"
+
+  fun apply(h: TestHelper) =>
+    // TODO: turn this into several different tests
+    let a = TCPConnection.client()
+
+    h.assert_false(a.is_open())
+    a.open()
+    h.assert_true(a.is_open())
+    a.close()
+    h.assert_true(a.is_closed())
+    a.open()
+    h.assert_true(a.is_open())
+    h.assert_true(a.is_writeable())
+    h.assert_true(a.is_open())
+    a.throttled()
+    h.assert_true(a.is_throttled())
+    h.assert_false(a.is_writeable())
+    h.assert_true(a.is_open())
+    a.writeable()
+    h.assert_true(a.is_writeable())
+    a.writeable()
+    h.assert_true(a.is_writeable())
 
 class iso _PingPong is UnitTest
   """
