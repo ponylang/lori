@@ -12,6 +12,13 @@ class TCPConnection
   new server(fd': U32) =>
     fd = fd'
 
+  fun ref open() =>
+    _state = BitSet.set(_state, 0)
+    writeable()
+
+  fun is_open(): Bool =>
+    BitSet.is_set(_state, 0)
+
   fun ref close() =>
     if is_open() then
       _state = BitSet.unset(_state, 0)
@@ -23,13 +30,6 @@ class TCPConnection
 
   fun is_closed(): Bool =>
     not is_open()
-
-  fun is_open(): Bool =>
-    BitSet.is_set(_state, 0)
-
-  fun ref open() =>
-    _state = BitSet.set(_state, 0)
-    writeable()
 
   fun is_writeable(): Bool =>
     BitSet.is_set(_state, 1)
