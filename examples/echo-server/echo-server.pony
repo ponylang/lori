@@ -50,4 +50,4 @@ actor Echoer is TCPConnectionActor
 
   fun ref on_received(data: Array[U8] iso) =>
     _out.print("Data received. Echoing it back.")
-    send(consume data)
+    _state.send(this, consume data)

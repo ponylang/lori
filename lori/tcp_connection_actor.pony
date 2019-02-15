@@ -61,30 +61,6 @@ interface tag TCPConnectionActor
     end
 */
 
-  fun ref send(data: ByteSeq) =>
-    if self().is_open() then
-      if self().is_writeable() then
-        if not self().has_pending_writes() then
-          try
-            let len = PonyTCP.send(self().event, data)?
-            if (len < data.size()) then
-              // unable to write all data
-              self().add_pending_data(data, len)
-              _apply_backpressure()
-            end
-          else
-            // TODO: is there any way to get here if the connection is open?
-            return
-          end
-        else
-          self().add_pending_data(data, 0)
-          _send_pending_writes()
-        end
-      else
-        self().add_pending_data(data, 0)
-      end
-    end
-
   be _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
     if event isnt self().event then
       if AsioEvent.writeable(flags) then
@@ -107,7 +83,8 @@ interface tag TCPConnectionActor
 
       if AsioEvent.writeable(flags) then
         self().writeable()
-        _send_pending_writes()
+        // TODO: need this
+        //self()._send_pending_writes()
       end
 
       if AsioEvent.disposable(flags) then
@@ -145,42 +122,3 @@ interface tag TCPConnectionActor
     Resume reading
     """
     _read()
-
-  fun ref _send_pending_writes() =>
-    while self().is_writeable() and (self().has_pending_writes()) do
-      try
-        let node = self().pending_head()?
-        (let data, let offset) = node()?
-
-        let len = PonyTCP.send(self().event, data, offset)?
-
-        if (len + offset) < data.size() then
-          // not all data was sent
-          node()? = (data, offset + len)
-          _apply_backpressure()
-        else
-          self().pending_shift()?
-        end
-      else
-        // error sending. appears our connection has been shutdown.
-        // TODO: handle close here
-        None
-      end
-    end
-
-    if self().has_pending_writes() then
-      // all pending data was sent
-      _release_backpressure()
-    end
-
-  fun ref _apply_backpressure() =>
-    if not self().is_throttled() then
-      self().throttled()
-      on_throttled()
-    end
-
-  fun ref _release_backpressure() =>
-    if self().is_throttled() then
-      self().unthrottled()
-      on_unthrottled()
-    end
