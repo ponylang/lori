@@ -12,6 +12,15 @@ class TCPConnection
   new server(fd': U32) =>
     fd = fd'
 
+  fun ref close() =>
+    if is_open() then
+      _state = BitSet.unset(_state, 0)
+      unwriteable()
+      PonyTCP.shutdown(fd)
+      PonyASIO.unsubscribe(event)
+      fd = -1
+    end
+
   fun is_closed(): Bool =>
     not is_open()
 
@@ -21,10 +30,6 @@ class TCPConnection
   fun ref open() =>
     _state = BitSet.set(_state, 0)
     writeable()
-
-  fun ref close() =>
-    _state = BitSet.unset(_state, 0)
-    unwriteable()
 
   fun is_writeable(): Bool =>
     BitSet.is_set(_state, 1)
