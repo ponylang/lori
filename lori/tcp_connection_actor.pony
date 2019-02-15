@@ -35,7 +35,7 @@ interface tag TCPConnectionActor
     """
     Close connection
     """
-    close()
+    self().close()
 
   be open() =>
     // TODO: this is kind of misnamed. coming from accept in listener.
@@ -46,14 +46,6 @@ interface tag TCPConnectionActor
     // should set readable state
     PonyASIO.set_writeable(self().event)
     on_connected()
-
-  fun ref close() =>
-    if self().is_open() then
-      self().close()
-      PonyTCP.shutdown(self().fd)
-      PonyASIO.unsubscribe(self().event)
-      self().fd = -1
-    end
 
   fun ref connect(host: String, port: String, from: String) =>
     """
@@ -145,7 +137,7 @@ interface tag TCPConnectionActor
       end
     else
       // Socket shutdown from other side
-      close()
+      self().close()
     end
 
   be _read_again() =>
