@@ -15,7 +15,7 @@ class TCPConnection
   fun ref accepted(sender: TCPConnectionActor ref) =>
     // TODO: sort out client and server side setup. it's a mess
     _event = PonyASIO.create_event(sender, fd)
-    open()
+    _state = BitSet.set(_state, 0)
     // should set readable state
     writeable()
     sender.on_connected()
