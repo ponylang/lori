@@ -31,6 +31,57 @@ class TCPConnection
   fun is_closed(): Bool =>
     not is_open()
 
+  fun ref send(sender: TCPConnectionActor ref, data: ByteSeq) =>
+    if is_open() then
+      if is_writeable() then
+        if has_pending_writes() then
+          try
+            let len = PonyTCP.send(event, data)?
+            if (len < data.size()) then
+              // unable to write all data
+              _pending.push((data, len))
+              _apply_backpressure(sender)
+            end
+          else
+            // TODO: is there any way to get here if connnection is open?
+            return
+          end
+        else
+          _pending.push((data, 0))
+          _send_pending_writes(sender)
+        end
+      else
+        _pending.push((data, 0))
+      end
+    end
+
+  fun ref _send_pending_writes(sender: TCPConnectionActor ref) =>
+    while is_writeable() and has_pending_writes() do
+      try
+        let node = _pending.head()?
+        (let data, let offset) = node()?
+
+        let len = PonyTCP.send(event, data, offset)?
+
+        if (len + offset) < data.size() then
+          // not all data was sent
+          node()? = (data, offset + len)
+          _apply_backpressure(sender)
+        else
+          _pending.shift()?
+        end
+      else
+        // error sending. appears our connection has been shutdown.
+        // TODO: handle close here
+        None
+      end
+    end
+
+    if has_pending_writes() then
+      // all pending data was sent
+      _release_backpressure(sender)
+    end
+
   fun is_writeable(): Bool =>
     BitSet.is_set(_state, 1)
 
@@ -39,6 +90,18 @@ class TCPConnection
 
   fun ref unwriteable() =>
     _state = BitSet.unset(_state, 1)
+
+  fun ref _apply_backpressure(sender: TCPConnectionActor ref) =>
+    if not is_throttled() then
+      throttled()
+      sender.on_throttled()
+    end
+
+  fun ref _release_backpressure(sender: TCPConnectionActor ref) =>
+    if is_throttled() then
+      unthrottled()
+      sender.on_unthrottled()
+    end
 
   fun is_throttled(): Bool =>
     BitSet.is_set(_state, 2)
@@ -55,59 +118,3 @@ class TCPConnection
 
   fun has_pending_writes(): Bool =>
     _pending.size() != 0
-
-  fun ref add_pending_data(data: ByteSeq, offset: USize) =>
-    _pending.push((data, offset))
-
-  fun ref pending_head(): ListNode[(ByteSeq, USize)] ? =>
-    _pending.head()?
-
-  fun ref pending_shift(): (ByteSeq, USize) ? =>
-    _pending.shift()?
-
-/* maybe move _send_pending_writes here
-
-  pros:
-    - encapsulate pending data usage
-    - would move most backpressure logic into here where it
-      probably belongs
-
-  cons:
-    - TPCConnection needs to know about enclosing actor or it
-      needs to have return type for change in backpressure
-    - With PonyTCP called from in here, we'd need to make both this class
-      and the actor interface generic and over the same thing that
-      implements PonyTCP once we start allowing that to be specialized.
-
-      However, we are already doing that by using PonyASIO in here, although,
-      I have no plans at this time to allow that to be specialized, except,
-      it could be useful for testing to make it so.
-
-
-  fun ref send_pending_writes() =>
-    while is_writeable() and has_pending_writes() do
-      try
-        let node = _pending.head()?
-        (let data, let offset) = node()?
-
-        let len = PonyTCP.send(self().event, data, offset)?
-
-        if (len + offset) < data.size() then
-          // not all data was sent
-          node()? = (data, offset + len)
-          _apply_backpressure()
-        else
-          _pending.shift()?
-        end
-      else
-        // error sending. appears our connection has been shutdown.
-        // TODO: handle close here
-        None
-      end
-    end
-
-    if pending_writes() then
-      // all pending data was sent
-      _release_backpressure()
-    end
-*/
