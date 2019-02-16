@@ -1,7 +1,6 @@
 interface tag TCPConnectionActor
   fun ref self(): TCPConnection
 
-
   fun ref on_closed()
     """
     Called when the connection is closed
@@ -36,9 +35,6 @@ interface tag TCPConnectionActor
     Close connection
     """
     self().close()
-
-  be open() =>
-    self().accepted(this)
 
   fun ref connect(host: String, port: String, from: String) =>
     """

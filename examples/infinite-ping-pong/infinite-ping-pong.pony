@@ -18,8 +18,8 @@ actor Listener is TCPListenerActor
   fun ref self(): TCPListener =>
     state
 
-  fun ref on_accept(state': TCPConnection iso): Server =>
-    Server(consume state', _out)
+  fun ref on_accept(fd: U32): Server =>
+    Server(fd, _out)
 
   fun ref on_closed() =>
     None
@@ -31,15 +31,15 @@ actor Listener is TCPListenerActor
     _out.print("Unable to open listener")
 
 actor Server is TCPConnectionActor
-  let state: TCPConnection
+  var _state: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
-  new create(state': TCPConnection iso, out: OutStream) =>
-    state = consume state'
+  new create(fd: U32, out: OutStream) =>
     _out = out
+    _state =  TCPConnection.server(fd, this)
 
   fun ref self(): TCPConnection =>
-    state
+    _state
 
   fun ref on_closed() =>
     None
@@ -49,7 +49,7 @@ actor Server is TCPConnectionActor
 
   fun ref on_received(data: Array[U8] iso) =>
     _out.print(consume data)
-    state.send(this, "Pong")
+    _state.send(this, "Pong")
 
 actor Client is TCPConnectionActor
   let state: TCPConnection

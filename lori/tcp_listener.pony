@@ -1,7 +1,7 @@
 interface tag TCPListenerActor
   fun ref self(): TCPListener
 
-  fun ref on_accept(state: TCPConnection iso): TCPConnectionActor
+  fun ref on_accept(fd: U32): TCPConnectionActor
     """
     Called when a connection is accepted
     """
@@ -89,19 +89,11 @@ interface tag TCPListenerActor
           // Would block. Bail out.
           return
         else
-          _start_connection(fd)
+          on_accept(fd)
           return
         end
       end
     end
-
-  fun ref _start_connection(fd: U32) =>
-    """
-    Start a new connection to handle this incoming connection.
-    """
-    let state: TCPConnection iso = recover iso TCPConnection.server(fd) end
-    let connection = on_accept(consume state)
-    connection.open()
 
 class TCPListener
   let host: String

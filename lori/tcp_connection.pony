@@ -1,25 +1,27 @@
 use "collections"
 
 class TCPConnection
-  var fd: U32
+  var fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
   var _state: U32 = 0
   let _pending: List[(ByteSeq, USize)] = _pending.create()
 
   new client() =>
-    fd = -1
+    None
 
-  new server(fd': U32) =>
+  new server(fd': U32, sender: TCPConnectionActor ref) =>
     fd = fd'
-
-  fun ref accepted(sender: TCPConnectionActor ref) =>
     // TODO: sort out client and server side setup. it's a mess
     _event = PonyASIO.create_event(sender, fd)
-    _state = BitSet.set(_state, 0)
+    open()
     // should set readable state
-    writeable()
     sender.on_connected()
 
+  new none() =>
+    """
+    For initializing an empty variable
+    """
+    None
 
   fun ref open() =>
     _state = BitSet.set(_state, 0)
