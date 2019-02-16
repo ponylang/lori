@@ -41,7 +41,7 @@ class iso _TCPConnectionState is UnitTest
 
   fun apply(h: TestHelper) =>
     // TODO: turn this into several different tests
-    let a = TCPConnection.client()
+    let a = TCPConnection.none()
 
     h.assert_false(a.is_open())
     a.open()
@@ -76,31 +76,31 @@ class iso _PingPong is UnitTest
     h.dispose_when_done(listener)
 
 actor _TestPinger is TCPConnectionActor
-  let state: TCPConnection
+  var _state: TCPConnection = TCPConnection.none()
   var _pings_to_send: I32
   let _h: TestHelper
 
   new create(pings_to_send: I32, h: TestHelper) =>
     _pings_to_send = pings_to_send
     _h = h
-    state = TCPConnection.client()
-    connect("127.0.0.1", "7669", "")
+    _state = TCPConnection.client("127.0.0.1", "7669", "", this)
+
 
   fun ref self(): TCPConnection =>
-    state
+    _state
 
   fun ref on_closed() =>
     None
 
   fun ref on_connected() =>
     if _pings_to_send > 0 then
-      state.send(this, "Ping")
+      _state.send(this, "Ping")
       _pings_to_send = _pings_to_send - 1
     end
 
   fun ref on_received(data: Array[U8] iso) =>
     if _pings_to_send > 0 then
-      state.send(this, "Ping")
+      _state.send(this, "Ping")
       _pings_to_send = _pings_to_send - 1
     elseif _pings_to_send == 0 then
       _pings_to_send = _pings_to_send - 1

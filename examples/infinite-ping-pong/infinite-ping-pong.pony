@@ -52,23 +52,22 @@ actor Server is TCPConnectionActor
     _state.send(this, "Pong")
 
 actor Client is TCPConnectionActor
-  let state: TCPConnection
+  var _state: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
   new create(host: String, port: String, from: String, out: OutStream) =>
     _out = out
-    state = TCPConnection.client()
-    connect(host, port, from)
+    _state = TCPConnection.client(host, port, from, this)
 
   fun ref self(): TCPConnection =>
-    state
+    _state
 
   fun on_closed() =>
     None
 
   fun ref on_connected() =>
-   state.send(this, "Ping")
+   _state.send(this, "Ping")
 
   fun ref on_received(data: Array[U8] iso) =>
    _out.print(consume data)
-   state.send(this, "Ping")
+   _state.send(this, "Ping")
