@@ -2,15 +2,18 @@ use "../../lori"
 
 actor Main
   new create(env: Env) =>
-    let echo = EchoServer("", "7669", env.out)
+    try
+      let auth = TCPListenAuth(env.root as AmbientAuth)
+      let echo = EchoServer(auth, "", "7669", env.out)
+    end
 
 actor EchoServer is TCPListenerActor
   var _listener: TCPListener = TCPListener.none()
   let _out: OutStream
 
-  new create(host: String, port: String, out: OutStream) =>
+  new create(listen_auth: TCPListenAuth, host: String, port: String, out: OutStream) =>
     _out = out
-    _listener = TCPListener(host, port, this)
+    _listener = TCPListener(listen_auth, host, port, this)
 
   fun ref listener(): TCPListener =>
     _listener
