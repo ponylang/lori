@@ -1,6 +1,14 @@
 use "collections"
 
-type TCPConnectionAuth is (AmbientAuth | NetAuth | TCPAuth | TCPConnectAuth)
+type TCPConnectionClientAuth is (AmbientAuth |
+  NetAuth |
+  TCPAuth |
+  TCPConnectAuth)
+
+type TCPConnectionServerAuth is (AmbientAuth |
+  NetAuth |
+  TCPAuth |
+  TCPServerAuth)
 
 class TCPConnection
   var fd: U32 = -1
@@ -9,7 +17,7 @@ class TCPConnection
   let _enclosing: (TCPConnectionActor ref | None)
   let _pending: List[(ByteSeq, USize)] = _pending.create()
 
-  new client(auth: TCPConnectionAuth,
+  new client(auth: TCPConnectionClientAuth,
     host: String,
     port: String,
     from: String,
@@ -19,7 +27,10 @@ class TCPConnection
     _enclosing = enclosing
     PonyTCP.connect(enclosing, host, port, from)
 
-  new server(fd': U32, enclosing: TCPConnectionActor ref) =>
+  new server(auth: TCPConnectionServerAuth,
+    fd': U32,
+    enclosing: TCPConnectionActor ref)
+  =>
     fd = fd'
     // TODO: sort out client and server side setup. it's a mess
     _enclosing = enclosing

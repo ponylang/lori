@@ -83,7 +83,10 @@ actor _TestPinger is TCPConnectionActor
   var _pings_to_send: I32
   let _h: TestHelper
 
-  new create(auth: TCPConnectionAuth, pings_to_send: I32, h: TestHelper) =>
+  new create(auth: TCPConnectionClientAuth,
+    pings_to_send: I32,
+    h: TestHelper)
+  =>
     _pings_to_send = pings_to_send
     _h = h
     _connection = TCPConnection.client(auth, "127.0.0.1", "7669", "", this)
@@ -118,10 +121,14 @@ actor _TestPonger is TCPConnectionActor
   var _pings_to_receive: I32
   let _h: TestHelper
 
-  new create(fd: U32, pings_to_receive: I32, h: TestHelper) =>
+  new create(auth: TCPConnectionServerAuth,
+    fd: U32,
+    pings_to_receive: I32,
+    h: TestHelper)
+  =>
     _pings_to_receive = pings_to_receive
     _h = h
-    _connection = TCPConnection.server(fd, this)
+    _connection = TCPConnection.server(auth, fd, this)
 
   fun ref connection(): TCPConnection =>
     _connection
@@ -147,6 +154,7 @@ actor _TestPongerListener is TCPListenerActor
   var _pings_to_receive: I32
   let _h: TestHelper
   var _pinger: (_TestPinger | None) = None
+  let _server_auth: TCPServerAuth
 
   new create(listener_auth: TCPListenAuth,
     pings_to_receive: I32,
@@ -154,13 +162,14 @@ actor _TestPongerListener is TCPListenerActor
   =>
     _pings_to_receive = pings_to_receive
     _h = h
+    _server_auth = TCPServerAuth(listener_auth)
     _listener = TCPListener(listener_auth, "127.0.0.1", "7669", this)
 
   fun ref listener(): TCPListener =>
     _listener
 
   fun ref on_accept(fd: U32): _TestPonger =>
-    _TestPonger(fd, _pings_to_receive, _h)
+    _TestPonger(_server_auth, fd, _pings_to_receive, _h)
 
   fun ref on_closed() =>
     try
