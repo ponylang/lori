@@ -4,32 +4,32 @@ class TCPConnection
   var fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
   var _state: U32 = 0
-  let _sender: (TCPConnectionActor ref | None)
+  let _enclosing: (TCPConnectionActor ref | None)
   let _pending: List[(ByteSeq, USize)] = _pending.create()
 
   new client(host: String,
     port: String,
     from: String,
-    sender: TCPConnectionActor ref)
+    enclosing: TCPConnectionActor ref)
   =>
     // TODO: handle happy eyeballs here - connect count
-    _sender = sender
-    PonyTCP.connect(sender, host, port, from)
+    _enclosing = enclosing
+    PonyTCP.connect(enclosing, host, port, from)
 
-  new server(fd': U32, sender: TCPConnectionActor ref) =>
+  new server(fd': U32, enclosing: TCPConnectionActor ref) =>
     fd = fd'
     // TODO: sort out client and server side setup. it's a mess
-    _sender = sender
-    _event = PonyASIO.create_event(sender, fd)
+    _enclosing = enclosing
+    _event = PonyASIO.create_event(enclosing, fd)
     open()
     // should set readable state
-    sender.on_connected()
+    enclosing.on_connected()
 
   new none() =>
     """
     For initializing an empty variable
     """
-    _sender = None
+    _enclosing = None
 
   fun ref open() =>
     // TODO: should this be private? I think so.
@@ -118,7 +118,7 @@ class TCPConnection
     _state = BitSet.unset(_state, 1)
 
   fun ref read() =>
-    match _sender
+    match _enclosing
     | let s: TCPConnectionActor ref =>
       try
         if is_open() then
@@ -150,7 +150,7 @@ class TCPConnection
     end
 
   fun ref _apply_backpressure() =>
-    match _sender
+    match _enclosing
     | let s: TCPConnectionActor ref =>
       if not is_throttled() then
         throttled()
@@ -162,7 +162,7 @@ class TCPConnection
     end
 
   fun ref _release_backpressure() =>
-    match _sender
+    match _enclosing
     | let s: TCPConnectionActor ref =>
       if is_throttled() then
         unthrottled()
@@ -193,7 +193,7 @@ class TCPConnection
     flags: U32,
     arg: U32)
   =>
-    match _sender
+    match _enclosing
     | let s: TCPConnectionActor ref =>
       if event isnt _event then
         if AsioEvent.writeable(flags) then
