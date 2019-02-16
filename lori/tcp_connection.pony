@@ -29,6 +29,13 @@ class TCPConnection
     None
 
   fun ref open() =>
+    // TODO: should this be private? I think so.
+    // I don't think the actor that is using the connection should
+    // ever need this.
+    // client-  open() gets called from our event_notify
+    // server- calls this
+    //
+    // seems like no need to call from external
     _state = BitSet.set(_state, 0)
     writeable()
 
