@@ -10,39 +10,25 @@ class TCPListener
     host = host'
     port = port'
     _enclosing = enclosing
-    open()
+    let event = PonyTCP.listen(enclosing, host, port)
+    if not event.is_null() then
+      _fd = PonyASIO.event_fd(event)
+      _event = event
+      state = Open
+      enclosing.on_listening()
+    else
+      enclosing.on_failure()
+    end
 
   new none() =>
     host = ""
     port = ""
     _enclosing = None
 
-  fun ref open() =>
-    match _enclosing
-    | let e: TCPListenerActor ref =>
-      if state is Closed then
-        let event = PonyTCP.listen(e, host, port)
-        if not event.is_null() then
-          _fd = PonyASIO.event_fd(event)
-          _event = event
-          state = Open
-          e.on_listening()
-        else
-          e.on_failure()
-        end
-      else
-        ifdef debug then
-          FatalUserError("Open called on already open TCPListener.")
-        end
-      end
-    | None =>
-      // TODO: blow up here
-      None
-    end
-
   fun ref close() =>
     match _enclosing
     | let e: TCPListenerActor ref =>
+      // TODO: when in debug mode we should blow up if listener is closed
       if state is Open then
         state = Closed
 
