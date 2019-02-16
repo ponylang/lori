@@ -13,7 +13,6 @@ actor Listener is TCPListenerActor
   new create(out: OutStream) =>
     _out = out
     state = TCPListener("127.0.0.1", "7669", this)
-    open()
 
   fun ref self(): TCPListener =>
     state

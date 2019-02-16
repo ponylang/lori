@@ -149,7 +149,6 @@ actor _TestPongerListener is TCPListenerActor
     _pings_to_receive = pings_to_receive
     _h = h
     state = TCPListener("127.0.0.1", "7669", this)
-    open()
 
   fun ref self(): TCPListener =>
     state
