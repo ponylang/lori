@@ -70,10 +70,13 @@ class iso _PingPong is UnitTest
   fun apply(h: TestHelper) =>
     let pings_to_send: I32 = 100
 
-    let listener = _TestPongerListener(pings_to_send, h)
+    try
+      let auth = TCPListenAuth(h.env.root as AmbientAuth)
+      let listener = _TestPongerListener(auth, pings_to_send, h)
+      h.dispose_when_done(listener)
+    end
 
     h.long_test(5_000_000_000)
-    h.dispose_when_done(listener)
 
 actor _TestPinger is TCPConnectionActor
   var _connection: TCPConnection = TCPConnection.none()
@@ -145,10 +148,13 @@ actor _TestPongerListener is TCPListenerActor
   let _h: TestHelper
   var _pinger: (_TestPinger | None) = None
 
-  new create(pings_to_receive: I32, h: TestHelper) =>
+  new create(listener_auth: TCPListenAuth,
+    pings_to_receive: I32,
+    h: TestHelper)
+  =>
     _pings_to_receive = pings_to_receive
     _h = h
-    _listener = TCPListener("127.0.0.1", "7669", this)
+    _listener = TCPListener(listener_auth, "127.0.0.1", "7669", this)
 
   fun ref listener(): TCPListener =>
     _listener

@@ -1,3 +1,5 @@
+type TCPListenerAuth is (AmbientAuth | NetAuth | TCPAuth | TCPListenAuth)
+
 class TCPListener
   let host: String
   let port: String
@@ -6,7 +8,7 @@ class TCPListener
   var state: TCPConnectionState = Closed
   var _enclosing: (TCPListenerActor ref | None)
 
-  new create(host': String, port': String, enclosing: TCPListenerActor ref) =>
+  new create(auth: TCPListenerAuth, host': String, port': String, enclosing: TCPListenerActor ref) =>
     host = host'
     port = port'
     _enclosing = enclosing
