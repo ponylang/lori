@@ -80,10 +80,10 @@ actor _TestPinger is TCPConnectionActor
   var _pings_to_send: I32
   let _h: TestHelper
 
-  new create(pings_to_send: I32, h: TestHelper) =>
+  new create(auth: TCPConnectionAuth, pings_to_send: I32, h: TestHelper) =>
     _pings_to_send = pings_to_send
     _h = h
-    _connection = TCPConnection.client("127.0.0.1", "7669", "", this)
+    _connection = TCPConnection.client(auth, "127.0.0.1", "7669", "", this)
 
 
   fun ref connection(): TCPConnection =>
@@ -162,7 +162,10 @@ actor _TestPongerListener is TCPListenerActor
     end
 
   fun ref on_listening() =>
-    _pinger = _TestPinger(_pings_to_receive, _h)
+    try
+      let auth = TCPConnectAuth(_h.env.root as AmbientAuth)
+      _pinger = _TestPinger(auth, _pings_to_receive, _h)
+    end
 
   fun ref on_failure() =>
     _h.fail("Unable to open _TestPongerListener")
