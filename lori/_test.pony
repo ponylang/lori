@@ -76,31 +76,31 @@ class iso _PingPong is UnitTest
     h.dispose_when_done(listener)
 
 actor _TestPinger is TCPConnectionActor
-  var _state: TCPConnection = TCPConnection.none()
+  var _connection: TCPConnection = TCPConnection.none()
   var _pings_to_send: I32
   let _h: TestHelper
 
   new create(pings_to_send: I32, h: TestHelper) =>
     _pings_to_send = pings_to_send
     _h = h
-    _state = TCPConnection.client("127.0.0.1", "7669", "", this)
+    _connection = TCPConnection.client("127.0.0.1", "7669", "", this)
 
 
-  fun ref self(): TCPConnection =>
-    _state
+  fun ref connection(): TCPConnection =>
+    _connection
 
   fun ref on_closed() =>
     None
 
   fun ref on_connected() =>
     if _pings_to_send > 0 then
-      _state.send(this, "Ping")
+      _connection.send(this, "Ping")
       _pings_to_send = _pings_to_send - 1
     end
 
   fun ref on_received(data: Array[U8] iso) =>
     if _pings_to_send > 0 then
-      _state.send(this, "Ping")
+      _connection.send(this, "Ping")
       _pings_to_send = _pings_to_send - 1
     elseif _pings_to_send == 0 then
       _pings_to_send = _pings_to_send - 1
@@ -111,17 +111,17 @@ actor _TestPinger is TCPConnectionActor
     end
 
 actor _TestPonger is TCPConnectionActor
-  var _state: TCPConnection = TCPConnection.none()
+  var _connection: TCPConnection = TCPConnection.none()
   var _pings_to_receive: I32
   let _h: TestHelper
 
   new create(fd: U32, pings_to_receive: I32, h: TestHelper) =>
     _pings_to_receive = pings_to_receive
     _h = h
-    _state = TCPConnection.server(fd, this)
+    _connection = TCPConnection.server(fd, this)
 
-  fun ref self(): TCPConnection =>
-    _state
+  fun ref connection(): TCPConnection =>
+    _connection
 
   fun ref on_closed() =>
     None
@@ -130,10 +130,10 @@ actor _TestPonger is TCPConnectionActor
     None
 
   fun ref on_received(data: Array[U8] iso) =>
-    _state.send(this, "Pong")
+    _connection.send(this, "Pong")
     _pings_to_receive = _pings_to_receive - 1
     if _pings_to_receive == 0 then
-      _state.send(this, "Pong")
+      _connection.send(this, "Pong")
     end
     if _pings_to_receive < 0 then
       _h.fail("Too many pings received")
