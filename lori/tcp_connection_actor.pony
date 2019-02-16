@@ -1,5 +1,5 @@
 interface tag TCPConnectionActor
-  fun ref self(): TCPConnection
+  fun ref connection(): TCPConnection
 
   fun ref on_closed()
     """
@@ -34,13 +34,13 @@ interface tag TCPConnectionActor
     """
     Close connection
     """
-    self().close()
+    connection().close()
 
   be _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
-    self().event_notify(this, event, flags, arg)
+    connection().event_notify(this, event, flags, arg)
 
   be _read_again() =>
     """
     Resume reading
     """
-    self().read(this)
+    connection().read(this)
