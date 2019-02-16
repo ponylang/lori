@@ -4,13 +4,18 @@ use "../../lori"
 
 actor Main
   new create(env: Env) =>
-    Listener(env.out)
+    try
+      let connect_auth = TCPConnectAuth(env.root as AmbientAuth)
+      Listener(connect_auth, env.out)
+    end
 
 actor  Listener is TCPListenerActor
   var _listener: TCPListener = TCPListener.none()
   let _out: OutStream
+  let _connect_auth: TCPConnectionAuth
 
-  new create(out: OutStream) =>
+  new create(connect_auth: TCPConnectionAuth, out: OutStream) =>
+    _connect_auth = connect_auth
     _out = out
     _listener = TCPListener("127.0.0.1", "7669", this)
 
@@ -24,7 +29,7 @@ actor  Listener is TCPListenerActor
     None
 
   fun ref on_listening() =>
-    Client("127.0.0.1", "7669", "", _out)
+    Client(_connect_auth, "127.0.0.1", "7669", "", _out)
 
   fun ref on_failure() =>
     _out.print("Unable to open listener")
@@ -54,9 +59,9 @@ actor Client is TCPConnectionActor
   var _connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
-  new create(host: String, port: String, from: String, out: OutStream) =>
+  new create(auth: TCPConnectionAuth, host: String, port: String, from: String, out: OutStream) =>
     _out = out
-    _connection = TCPConnection.client(host, port, from, this)
+    _connection = TCPConnection.client(auth, host, port, from, this)
 
   fun ref connection(): TCPConnection =>
     _connection

@@ -1,5 +1,7 @@
 use "collections"
 
+type TCPConnectionAuth is (AmbientAuth | NetAuth | TCPAuth | TCPConnectAuth)
+
 class TCPConnection
   var fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
@@ -7,7 +9,8 @@ class TCPConnection
   let _enclosing: (TCPConnectionActor ref | None)
   let _pending: List[(ByteSeq, USize)] = _pending.create()
 
-  new client(host: String,
+  new client(auth: TCPConnectionAuth,
+    host: String,
     port: String,
     from: String,
     enclosing: TCPConnectionActor ref)
