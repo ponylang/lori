@@ -6,12 +6,12 @@ actor Main
     echo.start()
 
 actor EchoServer is TCPListenerActor
-  let _listener: TCPListener
+  var _listener: TCPListener = TCPListener.none()
   let _out: OutStream
 
   new create(host: String, port: String, out: OutStream) =>
-    _listener = TCPListener(host, port)
     _out = out
+    _listener = TCPListener(host, port, this)
 
   be start() =>
     open()
