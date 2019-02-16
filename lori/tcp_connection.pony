@@ -79,6 +79,10 @@ class TCPConnection
       else
         _pending.push((data, 0))
       end
+    else
+      // TODO: handle trying to send on a closed connection
+      // maybe an error?
+      return
     end
 
   fun ref _send_pending_writes() =>
