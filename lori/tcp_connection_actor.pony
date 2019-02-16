@@ -20,14 +20,12 @@ interface tag TCPConnectionActor
     """
     Called when we start experiencing backpressure
     """
-
     None
 
   fun ref on_unthrottled() =>
     """
     Called when backpressure is released
     """
-
     None
 
   be dispose() =>
