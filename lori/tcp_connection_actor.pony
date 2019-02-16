@@ -36,20 +36,6 @@ interface tag TCPConnectionActor
     """
     self().close()
 
-  fun ref connect(host: String, port: String, from: String) =>
-    """
-    Called to open a new outgoing connection
-    """
-    let connect_count = PonyTCP.connect(this, host, port, from)
-/*    if connect_count > 0 then
-      // TODO: call out for connecting?
-      return
-    else
-      // TODO: handle failure
-      return
-    end
-*/
-
   be _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
     self().event_notify(this, event, flags, arg)
 

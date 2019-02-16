@@ -6,8 +6,13 @@ class TCPConnection
   var _state: U32 = 0
   let _pending: List[(ByteSeq, USize)] = _pending.create()
 
-  new client() =>
-    None
+  new client(host: String,
+    port: String,
+    from: String,
+    sender: TCPConnectionActor ref)
+  =>
+    // TODO: handle happy eyeballs here - connect count
+    PonyTCP.connect(sender, host, port, from)
 
   new server(fd': U32, sender: TCPConnectionActor ref) =>
     fd = fd'
