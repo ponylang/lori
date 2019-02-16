@@ -37,10 +37,10 @@ interface tag TCPConnectionActor
     connection().close()
 
   be _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
-    connection().event_notify(this, event, flags, arg)
+    connection().event_notify(event, flags, arg)
 
   be _read_again() =>
     """
     Resume reading
     """
-    connection().read(this)
+    connection().read()

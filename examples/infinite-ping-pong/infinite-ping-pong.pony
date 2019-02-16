@@ -49,7 +49,7 @@ actor Server is TCPConnectionActor
 
   fun ref on_received(data: Array[U8] iso) =>
     _out.print(consume data)
-    _connection.send(this, "Pong")
+    _connection.send("Pong")
 
 actor Client is TCPConnectionActor
   var _connection: TCPConnection = TCPConnection.none()
@@ -66,8 +66,8 @@ actor Client is TCPConnectionActor
     None
 
   fun ref on_connected() =>
-   _connection.send(this, "Ping")
+   _connection.send("Ping")
 
   fun ref on_received(data: Array[U8] iso) =>
    _out.print(consume data)
-   _connection.send(this, "Ping")
+   _connection.send(Ping")

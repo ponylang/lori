@@ -4,6 +4,7 @@ class TCPConnection
   var fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
   var _state: U32 = 0
+  let _sender: (TCPConnectionActor ref | None)
   let _pending: List[(ByteSeq, USize)] = _pending.create()
 
   new client(host: String,
@@ -12,11 +13,13 @@ class TCPConnection
     sender: TCPConnectionActor ref)
   =>
     // TODO: handle happy eyeballs here - connect count
+    _sender = sender
     PonyTCP.connect(sender, host, port, from)
 
   new server(fd': U32, sender: TCPConnectionActor ref) =>
     fd = fd'
     // TODO: sort out client and server side setup. it's a mess
+    _sender = sender
     _event = PonyASIO.create_event(sender, fd)
     open()
     // should set readable state
@@ -26,7 +29,7 @@ class TCPConnection
     """
     For initializing an empty variable
     """
-    None
+    _sender = None
 
   fun ref open() =>
     // TODO: should this be private? I think so.
@@ -54,7 +57,7 @@ class TCPConnection
   fun is_closed(): Bool =>
     not is_open()
 
-  fun ref send(sender: TCPConnectionActor ref, data: ByteSeq) =>
+  fun ref send(data: ByteSeq) =>
     if is_open() then
       if is_writeable() then
         if has_pending_writes() then
@@ -63,7 +66,7 @@ class TCPConnection
             if (len < data.size()) then
               // unable to write all data
               _pending.push((data, len))
-              _apply_backpressure(sender)
+              _apply_backpressure()
             end
           else
             // TODO: is there any way to get here if connnection is open?
@@ -71,14 +74,14 @@ class TCPConnection
           end
         else
           _pending.push((data, 0))
-          _send_pending_writes(sender)
+          _send_pending_writes()
         end
       else
         _pending.push((data, 0))
       end
     end
 
-  fun ref _send_pending_writes(sender: TCPConnectionActor ref) =>
+  fun ref _send_pending_writes() =>
     while is_writeable() and has_pending_writes() do
       try
         let node = _pending.head()?
@@ -89,7 +92,7 @@ class TCPConnection
         if (len + offset) < data.size() then
           // not all data was sent
           node()? = (data, offset + len)
-          _apply_backpressure(sender)
+          _apply_backpressure()
         else
           _pending.shift()?
         end
@@ -102,7 +105,7 @@ class TCPConnection
 
     if has_pending_writes() then
       // all pending data was sent
-      _release_backpressure(sender)
+      _release_backpressure()
     end
 
   fun is_writeable(): Bool =>
@@ -114,42 +117,60 @@ class TCPConnection
   fun ref unwriteable() =>
     _state = BitSet.unset(_state, 1)
 
-  fun ref read(sender: TCPConnectionActor ref) =>
-    try
-      if is_open() then
-        let buffer = recover Array[U8].>undefined(64) end
-        let bytes_read = PonyTCP.receive(_event,
+  fun ref read() =>
+    match _sender
+    | let s: TCPConnectionActor ref =>
+      try
+        if is_open() then
+          let buffer = recover Array[U8].>undefined(64) end
+          let bytes_read = PonyTCP.receive(_event,
           buffer.cpointer(),
           buffer.size())?
-        if (bytes_read == 0) then
-          PonyASIO.set_unreadable(_event)
-          // would block. try again later
-          // TCPConnection handles with:
-          //@pony_asio_event_set_readable[None](self().event, false)
-          // _readable = false
-          // @pony_asio_event_resubscribe_read(_event)
-          return
+          if (bytes_read == 0) then
+            PonyASIO.set_unreadable(_event)
+            // would block. try again later
+            // TCPConnection handles with:
+            //@pony_asio_event_set_readable[None](self().event, false)
+            // _readable = false
+            // @pony_asio_event_resubscribe_read(_event)
+            return
+          end
+
+          buffer.truncate(bytes_read)
+          s.on_received(consume buffer)
+          s._read_again()
         end
-
-        buffer.truncate(bytes_read)
-        sender.on_received(consume buffer)
-        sender._read_again()
+      else
+        // Socket shutdown from other side
+        close()
       end
-    else
-      // Socket shutdown from other side
-      close()
+    | None =>
+      // TODO: SHOULD WE BLOW UP WITH SOME SORT OF UNREACHABLE HERE?
+      None
     end
 
-  fun ref _apply_backpressure(sender: TCPConnectionActor ref) =>
-    if not is_throttled() then
-      throttled()
-      sender.on_throttled()
+  fun ref _apply_backpressure() =>
+    match _sender
+    | let s: TCPConnectionActor ref =>
+      if not is_throttled() then
+        throttled()
+        s.on_throttled()
+      end
+    | None =>
+      // TODO: Blow up here!
+      None
     end
 
-  fun ref _release_backpressure(sender: TCPConnectionActor ref) =>
-    if is_throttled() then
-      unthrottled()
-      sender.on_unthrottled()
+  fun ref _release_backpressure() =>
+    match _sender
+    | let s: TCPConnectionActor ref =>
+      if is_throttled() then
+        unthrottled()
+        s.on_unthrottled()
+      end
+    | None =>
+      // TODO: blow up here
+      None
     end
 
   fun is_throttled(): Bool =>
@@ -168,36 +189,41 @@ class TCPConnection
   fun has_pending_writes(): Bool =>
     _pending.size() != 0
 
-  fun ref event_notify(sender: TCPConnectionActor ref,
-    event: AsioEventID,
+  fun ref event_notify(event: AsioEventID,
     flags: U32,
     arg: U32)
   =>
-    if event isnt _event then
-      if AsioEvent.writeable(flags) then
-        // TODO: this assumes the connection succeed. That might not be true.
-        // more logic needs to go here
-        fd = PonyASIO.event_fd(event)
-        _event = event
-        open()
-        sender.on_connected()
-        read(sender)
-      end
-    end
-
-    if event is _event then
-      if AsioEvent.readable(flags) then
-        // should set that we are readable
-        read(sender)
+    match _sender
+    | let s: TCPConnectionActor ref =>
+      if event isnt _event then
+        if AsioEvent.writeable(flags) then
+          // TODO: this assumes the connection succeed. That might not be true.
+          // more logic needs to go here
+          fd = PonyASIO.event_fd(event)
+          _event = event
+          open()
+          s.on_connected()
+          read()
+        end
       end
 
-      if AsioEvent.writeable(flags) then
-        writeable()
-        _send_pending_writes(sender)
-      end
+      if event is _event then
+        if AsioEvent.readable(flags) then
+          // should set that we are readable
+          read()
+        end
 
-      if AsioEvent.disposable(flags) then
-        PonyASIO.destroy(event)
-        _event = AsioEvent.none()
+        if AsioEvent.writeable(flags) then
+          writeable()
+          _send_pending_writes()
+        end
+
+        if AsioEvent.disposable(flags) then
+          PonyASIO.destroy(event)
+          _event = AsioEvent.none()
+        end
       end
+    | None =>
+      // TODO: blow up here
+      None
     end
