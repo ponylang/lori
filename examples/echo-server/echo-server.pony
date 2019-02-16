@@ -3,7 +3,6 @@ use "../../lori"
 actor Main
   new create(env: Env) =>
     let echo = EchoServer("", "7669", env.out)
-    echo.start()
 
 actor EchoServer is TCPListenerActor
   var _listener: TCPListener = TCPListener.none()
@@ -12,9 +11,6 @@ actor EchoServer is TCPListenerActor
   new create(host: String, port: String, out: OutStream) =>
     _out = out
     _listener = TCPListener(host, port, this)
-
-  be start() =>
-    open()
 
   fun ref self(): TCPListener =>
     _listener
