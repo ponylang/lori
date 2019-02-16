@@ -111,17 +111,17 @@ actor _TestPinger is TCPConnectionActor
     end
 
 actor _TestPonger is TCPConnectionActor
-  let state: TCPConnection
+  var _state: TCPConnection = TCPConnection.none()
   var _pings_to_receive: I32
   let _h: TestHelper
 
-  new create(state': TCPConnection iso, pings_to_receive: I32, h: TestHelper) =>
-    state = consume state'
+  new create(fd: U32, pings_to_receive: I32, h: TestHelper) =>
     _pings_to_receive = pings_to_receive
     _h = h
+    _state = TCPConnection.server(fd, this)
 
   fun ref self(): TCPConnection =>
-    state
+    _state
 
   fun ref on_closed() =>
     None
@@ -130,10 +130,10 @@ actor _TestPonger is TCPConnectionActor
     None
 
   fun ref on_received(data: Array[U8] iso) =>
-    state.send(this, "Pong")
+    _state.send(this, "Pong")
     _pings_to_receive = _pings_to_receive - 1
     if _pings_to_receive == 0 then
-      state.send(this, "Pong")
+      _state.send(this, "Pong")
     end
     if _pings_to_receive < 0 then
       _h.fail("Too many pings received")
@@ -154,8 +154,8 @@ actor _TestPongerListener is TCPListenerActor
   fun ref self(): TCPListener =>
     state
 
-  fun ref on_accept(state': TCPConnection iso): _TestPonger =>
-    _TestPonger(consume state', _pings_to_receive, _h)
+  fun ref on_accept(fd: U32): _TestPonger =>
+    _TestPonger(fd, _pings_to_receive, _h)
 
   fun ref on_closed() =>
     try

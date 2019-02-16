@@ -19,8 +19,8 @@ actor EchoServer is TCPListenerActor
   fun ref self(): TCPListener =>
     _state
 
-  fun ref on_accept(state: TCPConnection iso): TCPConnectionActor =>
-    Echoer(consume state, _out)
+  fun ref on_accept(fd: U32): TCPConnectionActor =>
+    Echoer(fd, _out)
 
   fun ref on_closed() =>
     _out.print("Echo server shut down.")
@@ -32,12 +32,12 @@ actor EchoServer is TCPListenerActor
     _out.print("Echo server started.")
 
 actor Echoer is TCPConnectionActor
-  let _state: TCPConnection
+  var _state: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
-  new create(state: TCPConnection iso, out: OutStream) =>
-    _state = consume state
+  new create(fd: U32, out: OutStream) =>
     _out = out
+    _state = TCPConnection.server(fd, this)
 
   fun ref self(): TCPConnection =>
     _state
