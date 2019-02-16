@@ -7,12 +7,12 @@ actor Main
     Listener(env.out)
 
 actor Listener is TCPListenerActor
-  let state: TCPListener
+  var state: TCPListener = TCPListener.none()
   let _out: OutStream
 
   new create(out: OutStream) =>
     _out = out
-    state = TCPListener("127.0.0.1", "7669")
+    state = TCPListener("127.0.0.1", "7669", this)
     open()
 
   fun ref self(): TCPListener =>
@@ -70,4 +70,4 @@ actor Client is TCPConnectionActor
 
   fun ref on_received(data: Array[U8] iso) =>
    _out.print(consume data)
-   _connection.send(Ping")
+   _connection.send("Ping")

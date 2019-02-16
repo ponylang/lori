@@ -140,7 +140,7 @@ actor _TestPonger is TCPConnectionActor
     end
 
 actor _TestPongerListener is TCPListenerActor
-  let state: TCPListener
+  var state: TCPListener = TCPListener.none()
   var _pings_to_receive: I32
   let _h: TestHelper
   var _pinger: (_TestPinger | None) = None
@@ -148,7 +148,7 @@ actor _TestPongerListener is TCPListenerActor
   new create(pings_to_receive: I32, h: TestHelper) =>
     _pings_to_receive = pings_to_receive
     _h = h
-    state = TCPListener("127.0.0.1", "7669")
+    state = TCPListener("127.0.0.1", "7669", this)
     open()
 
   fun ref self(): TCPListener =>
