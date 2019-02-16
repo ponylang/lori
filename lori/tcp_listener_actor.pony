@@ -1,5 +1,5 @@
 interface tag TCPListenerActor
-  fun ref self(): TCPListener
+  fun ref listener(): TCPListener
 
   fun ref on_accept(fd: U32): TCPConnectionActor
     """
@@ -25,7 +25,7 @@ interface tag TCPListenerActor
     """
     Stop listening
     """
-    self().close()
+    listener().close()
 
   be _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
-    self().event_notify(event, flags, arg)
+    listener().event_notify(event, flags, arg)

@@ -6,16 +6,16 @@ actor Main
   new create(env: Env) =>
     Listener(env.out)
 
-actor Listener is TCPListenerActor
-  var state: TCPListener = TCPListener.none()
+actor  Listener is TCPListenerActor
+  var _listener: TCPListener = TCPListener.none()
   let _out: OutStream
 
   new create(out: OutStream) =>
     _out = out
-    state = TCPListener("127.0.0.1", "7669", this)
+    _listener = TCPListener("127.0.0.1", "7669", this)
 
-  fun ref self(): TCPListener =>
-    state
+  fun ref listener(): TCPListener =>
+    _listener
 
   fun ref on_accept(fd: U32): Server =>
     Server(fd, _out)
