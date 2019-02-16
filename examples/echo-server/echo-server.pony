@@ -12,7 +12,7 @@ actor EchoServer is TCPListenerActor
     _out = out
     _listener = TCPListener(host, port, this)
 
-  fun ref self(): TCPListener =>
+  fun ref listener(): TCPListener =>
     _listener
 
   fun ref on_accept(fd: U32): TCPConnectionActor =>
