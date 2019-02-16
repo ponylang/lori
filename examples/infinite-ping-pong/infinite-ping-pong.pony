@@ -13,21 +13,23 @@ actor Main
 actor  Listener is TCPListenerActor
   var _listener: TCPListener = TCPListener.none()
   let _out: OutStream
-  let _connect_auth: TCPConnectionAuth
+  let _connect_auth: TCPConnectionClientAuth
+  let _server_auth: TCPServerAuth
 
   new create(listen_auth: TCPListenAuth,
-    connect_auth: TCPConnectionAuth,
+    connect_auth: TCPConnectionClientAuth,
     out: OutStream)
   =>
     _connect_auth = connect_auth
     _out = out
+    _server_auth = TCPServerAuth(listen_auth)
     _listener = TCPListener(listen_auth, "127.0.0.1", "7669", this)
 
   fun ref listener(): TCPListener =>
     _listener
 
   fun ref on_accept(fd: U32): Server =>
-    Server(fd, _out)
+    Server(_server_auth, fd, _out)
 
   fun ref on_closed() =>
     None
@@ -42,9 +44,9 @@ actor Server is TCPConnectionActor
   var _connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
-  new create(fd: U32, out: OutStream) =>
+  new create(auth: TCPConnectionServerAuth, fd: U32, out: OutStream) =>
     _out = out
-    _connection =  TCPConnection.server(fd, this)
+    _connection =  TCPConnection.server(auth, fd, this)
 
   fun ref connection(): TCPConnection =>
     _connection
@@ -63,7 +65,7 @@ actor Client is TCPConnectionActor
   var _connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
-  new create(auth: TCPConnectionAuth, host: String, port: String, from: String, out: OutStream) =>
+  new create(auth: TCPConnectionClientAuth, host: String, port: String, from: String, out: OutStream) =>
     _out = out
     _connection = TCPConnection.client(auth, host, port, from, this)
 

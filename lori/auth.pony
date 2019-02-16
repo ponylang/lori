@@ -13,3 +13,7 @@ primitive TCPListenAuth
 primitive TCPConnectAuth
   new create(from: (AmbientAuth | NetAuth | TCPAuth)) =>
     None
+
+primitive TCPServerAuth
+  new create(from: (AmbientAuth | NetAuth | TCPAuth | TCPListenAuth)) =>
+    None

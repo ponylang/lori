@@ -10,16 +10,22 @@ actor Main
 actor EchoServer is TCPListenerActor
   var _listener: TCPListener = TCPListener.none()
   let _out: OutStream
+  let _server_auth: TCPServerAuth
 
-  new create(listen_auth: TCPListenAuth, host: String, port: String, out: OutStream) =>
+  new create(listen_auth: TCPListenAuth,
+    host: String,
+    port: String,
+    out: OutStream)
+  =>
     _out = out
+    _server_auth = TCPServerAuth(listen_auth)
     _listener = TCPListener(listen_auth, host, port, this)
 
   fun ref listener(): TCPListener =>
     _listener
 
   fun ref on_accept(fd: U32): TCPConnectionActor =>
-    Echoer(fd, _out)
+    Echoer(_server_auth, fd, _out)
 
   fun ref on_closed() =>
     _out.print("Echo server shut down.")
@@ -35,9 +41,9 @@ actor Echoer is TCPConnectionActor
   var _connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
-  new create(fd: U32, out: OutStream) =>
+  new create(auth: TCPConnectionServerAuth, fd: U32, out: OutStream) =>
     _out = out
-    _connection = TCPConnection.server(fd, this)
+    _connection = TCPConnection.server(auth, fd, this)
 
   fun ref connection(): TCPConnection =>
     _connection
