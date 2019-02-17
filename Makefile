@@ -16,7 +16,7 @@ else
 	PONYC = ponyc --debug
 endif
 
-SOURCE_FILES := $(shell find $(SRC_DIR) -path $(SRC_DIR) -prune -o -name \*.pony)
+SOURCE_FILES := $(shell find $(SRC_DIR) -name \*.pony)
 
 test: unit-tests build-examples
 
