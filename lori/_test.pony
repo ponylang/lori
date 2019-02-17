@@ -95,9 +95,6 @@ actor _TestPinger is TCPConnectionActor
   fun ref connection(): TCPConnection =>
     _connection
 
-  fun ref on_closed() =>
-    None
-
   fun ref on_connected() =>
     if _pings_to_send > 0 then
       _connection.send("Ping")

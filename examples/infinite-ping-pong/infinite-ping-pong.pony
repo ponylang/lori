@@ -31,9 +31,6 @@ actor  Listener is TCPListenerActor
   fun ref on_accept(fd: U32): Server =>
     Server(_server_auth, fd, _out)
 
-  fun ref on_closed() =>
-    None
-
   fun ref on_listening() =>
     Client(_connect_auth, "127.0.0.1", "7669", "", _out)
 
