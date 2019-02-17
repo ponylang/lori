@@ -34,7 +34,7 @@ class TCPConnection
     fd = fd'
     // TODO: sort out client and server side setup. it's a mess
     _enclosing = enclosing
-    _event = PonyASIO.create_event(enclosing, fd)
+    _event = PonyAsio.create_event(enclosing, fd)
     open()
     // should set readable state
     enclosing.on_connected()
@@ -64,7 +64,7 @@ class TCPConnection
       _state = BitSet.unset(_state, 0)
       unwriteable()
       PonyTCP.shutdown(fd)
-      PonyASIO.unsubscribe(_event)
+      PonyAsio.unsubscribe(_event)
       fd = -1
     end
 
@@ -145,7 +145,7 @@ class TCPConnection
           buffer.cpointer(),
           buffer.size())?
           if (bytes_read == 0) then
-            PonyASIO.set_unreadable(_event)
+            PonyAsio.set_unreadable(_event)
             // would block. try again later
             // TCPConnection handles with:
             //@pony_asio_event_set_readable[None](self().event, false)
@@ -199,7 +199,7 @@ class TCPConnection
     // throttled means we are also unwriteable
     // being unthrottled doesn't however mean we are writable
     unwriteable()
-    PonyASIO.set_unwriteable(_event)
+    PonyAsio.set_unwriteable(_event)
 
   fun ref unthrottled() =>
     _state = BitSet.unset(_state, 2)
@@ -217,7 +217,7 @@ class TCPConnection
         if AsioEvent.writeable(flags) then
           // TODO: this assumes the connection succeed. That might not be true.
           // more logic needs to go here
-          fd = PonyASIO.event_fd(event)
+          fd = PonyAsio.event_fd(event)
           _event = event
           open()
           s.on_connected()
@@ -237,7 +237,7 @@ class TCPConnection
         end
 
         if AsioEvent.disposable(flags) then
-          PonyASIO.destroy(event)
+          PonyAsio.destroy(event)
           _event = AsioEvent.none()
         end
       end

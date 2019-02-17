@@ -14,7 +14,7 @@ class TCPListener
     _enclosing = enclosing
     let event = PonyTCP.listen(enclosing, host, port)
     if not event.is_null() then
-      _fd = PonyASIO.event_fd(event)
+      _fd = PonyAsio.event_fd(event)
       _event = event
       state = Open
       enclosing.on_listening()
@@ -35,7 +35,7 @@ class TCPListener
         state = Closed
 
         if not _event.is_null() then
-          PonyASIO.unsubscribe(_event)
+          PonyAsio.unsubscribe(_event)
           PonyTCP.close(_fd)
           _fd = -1
           e.on_closed()
@@ -56,7 +56,7 @@ class TCPListener
     end
 
     if AsioEvent.disposable(flags) then
-      PonyASIO.destroy(_event)
+      PonyAsio.destroy(_event)
       _event = AsioEvent.none()
       state = Closed
     end

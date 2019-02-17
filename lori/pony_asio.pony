@@ -6,7 +6,7 @@ use @pony_asio_event_set_readable[None](event: AsioEventID, readable: Bool)
 use @pony_asio_event_set_writeable[None](event: AsioEventID, writeable: Bool)
 use @pony_asio_event_unsubscribe[None](event: AsioEventID)
 
-primitive PonyASIO
+primitive PonyAsio
   fun create_event(the_actor: AsioEventNotify, fd: U32): AsioEventID =>
     @pony_asio_event_create(the_actor, fd, AsioEvent.read_write(), 0, true)
 
