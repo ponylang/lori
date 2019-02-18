@@ -41,7 +41,7 @@ actor Echoer is TCPConnectionActor
   var _connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
-  new create(auth: TCPConnectionServerAuth, fd: U32, out: OutStream) =>
+  new create(auth: IncomingTCPAuth, fd: U32, out: OutStream) =>
     _out = out
     _connection = TCPConnection.server(auth, fd, this)
 
@@ -51,7 +51,7 @@ actor Echoer is TCPConnectionActor
   fun ref on_closed() =>
     _out.print("Connection Closed")
 
-  fun ref on_connected() =>
+  fun ref on_connected(conn: TCPConnection ref) =>
     _out.print("We have a new connection!")
 
   fun ref on_received(data: Array[U8] iso) =>

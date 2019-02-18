@@ -1,5 +1,6 @@
 use "ponytest"
 
+
 actor Main is TestList
   new create(env: Env) =>
     PonyTest(env, this)
@@ -11,6 +12,7 @@ actor Main is TestList
     test(_BitSet)
     test(_TCPConnectionState)
     test(_PingPong)
+    test(_TestBasicExpect)
 
 class iso _BitSet is UnitTest
   fun name(): String => "BitSet"
@@ -78,12 +80,12 @@ class iso _PingPong is UnitTest
 
     h.long_test(5_000_000_000)
 
-actor _TestPinger is TCPConnectionActor
+actor _TestPinger is TCPClientActor
   var _connection: TCPConnection = TCPConnection.none()
   var _pings_to_send: I32
   let _h: TestHelper
 
-  new create(auth: TCPConnectionClientAuth,
+  new create(auth: OutgoingTCPAuth,
     pings_to_send: I32,
     h: TestHelper)
   =>
@@ -118,7 +120,7 @@ actor _TestPonger is TCPConnectionActor
   var _pings_to_receive: I32
   let _h: TestHelper
 
-  new create(auth: TCPConnectionServerAuth,
+  new create(auth: IncomingTCPAuth,
     fd: U32,
     pings_to_receive: I32,
     h: TestHelper)
@@ -129,12 +131,6 @@ actor _TestPonger is TCPConnectionActor
 
   fun ref connection(): TCPConnection =>
     _connection
-
-  fun ref on_closed() =>
-    None
-
-  fun ref on_connected() =>
-    None
 
   fun ref on_received(data: Array[U8] iso) =>
     _connection.send("Pong")
@@ -153,7 +149,7 @@ actor _TestPongerListener is TCPListenerActor
   var _pinger: (_TestPinger | None) = None
   let _server_auth: TCPServerAuth
 
-  new create(listener_auth: TCPListenAuth,
+  new create(listener_auth: TCPListenerAuth,
     pings_to_receive: I32,
     h: TestHelper)
   =>
@@ -181,3 +177,105 @@ actor _TestPongerListener is TCPListenerActor
 
   fun ref on_failure() =>
     _h.fail("Unable to open _TestPongerListener")
+
+class iso _TestBasicExpect is UnitTest
+  fun name(): String => "TestBasicExpect"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("server listening")
+    h.expect_action("client connected")
+    h.expect_action("expected data received")
+
+    try
+      let la = TCPListenAuth(h.env.root as AmbientAuth)
+      let ca = TCPConnectAuth(h.env.root as AmbientAuth)
+      let s = _TestBasicExpectListener(la, ca, h)
+
+      h.dispose_when_done(s)
+    else
+      h.fail("unable to start _TestBasicExpect")
+    end
+
+    h.long_test(2_000_000_000)
+
+actor _TestBasicExpectClient is TCPClientActor
+  var _connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(auth: OutgoingTCPAuth, h: TestHelper) =>
+    _h = h
+    _connection = TCPConnection.client(auth, "127.0.0.1", "7670", "", this)
+
+  fun ref connection(): TCPConnection =>
+    _connection
+
+  fun ref on_connected() =>
+    _h.complete_action("client connected")
+    _connection.send("hi there, how are you???")
+
+  fun ref on_received(data: Array[U8] iso) =>
+    _h.fail("Client shouldn't get data")
+
+actor _TestBasicExpectListener is TCPListenerActor
+  let _h: TestHelper
+  var _listener: TCPListener = TCPListener.none()
+  let _server_auth: TCPServerAuth
+  let _client_auth: TCPConnectAuth
+  var _client: (_TestBasicExpectClient | None) = None
+
+  new create(listener_auth: TCPListenerAuth,
+    client_auth: TCPConnectAuth,
+    h: TestHelper)
+  =>
+    _h = h
+    _client_auth = client_auth
+    _server_auth = TCPServerAuth(listener_auth)
+    _listener = TCPListener(listener_auth, "127.0.0.1", "7670", this)
+
+  fun ref listener(): TCPListener =>
+    _listener
+
+  fun ref on_accept(fd: U32): _TestBasicExpectServer =>
+    _TestBasicExpectServer(_server_auth, fd, _h)
+
+  fun ref on_closed() =>
+    try (_client as _TestBasicExpectClient).dispose() end
+
+  fun ref on_listening() =>
+    _h.complete_action("server listening")
+    _client =_TestBasicExpectClient(_client_auth, _h)
+
+  fun ref on_failure() =>
+    _h.fail("Unable to open _TestBasicExpectListener")
+
+actor _TestBasicExpectServer is TCPServerActor
+  let _h: TestHelper
+  var _connection: TCPConnection = TCPConnection.none()
+  var _received_count: U8 = 0
+
+  new create(auth: IncomingTCPAuth, fd: U32, h: TestHelper) =>
+    _h = h
+    _connection = TCPConnection.server(auth, fd, this)
+    try _connection.expect(4)? end
+
+  fun ref connection(): TCPConnection =>
+    _connection
+
+  fun ref on_received(data: Array[U8] iso) =>
+    _received_count = _received_count + 1
+
+    if _received_count == 1 then
+      _h.assert_eq[String]("hi t", String.from_array(consume data))
+    elseif _received_count == 2 then
+      _h.assert_eq[String]("here", String.from_array(consume data))
+    elseif _received_count == 3 then
+      _h.assert_eq[String](", ho", String.from_array(consume data))
+    elseif _received_count == 4 then
+      _h.assert_eq[String]("w ar", String.from_array(consume data))
+    elseif _received_count == 5 then
+      _h.assert_eq[String]("e yo", String.from_array(consume data))
+    elseif _received_count == 6 then
+      _h.assert_eq[String]("u???", String.from_array(consume data))
+      _h.complete_action("expected data received")
+      _connection.close()
+    end
