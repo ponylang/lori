@@ -158,21 +158,19 @@ class TCPConnection
           while true do
             // Handle any data already in the read buffer
             while _there_is_buffered_read_data() do
-              let data =
-                if _expect == 0 then
-                  // get all available data
-                  let data' = _read_buffer = recover Array[U8] end
-                  data'.truncate(_bytes_in_read_buffer)
-                  _bytes_in_read_buffer = 0
-                  consume data'
-                else
-                  let x = _read_buffer = recover Array[U8] end
-                  (let data', _read_buffer) = (consume x).chop(_expect)
-                  _bytes_in_read_buffer = _bytes_in_read_buffer - _expect
-                  consume data'
-                end
+              let bytes_to_consume = if _expect == 0 then
+                // if we aren't getting in `_expect` chunks,
+                // we should grab all the bytes that are currently available
+                _bytes_in_read_buffer
+              else
+                _expect
+              end
 
-              s.on_received(consume data)
+              let x = _read_buffer = recover Array[U8] end
+              (let data', _read_buffer) = (consume x).chop(bytes_to_consume)
+              _bytes_in_read_buffer = _bytes_in_read_buffer - bytes_to_consume
+
+              s.on_received(consume data')
             end
 
             if total_bytes_read >= _max_read_buffer_size then
