@@ -30,7 +30,7 @@ class TCPConnection
   =>
     // TODO: handle happy eyeballs here - connect count
     _enclosing = enclosing
-    PonyTCP.connect(enclosing, host, port, from)
+    PonyTCP.connect(enclosing, host, port, from, AsioEvent.read_write())
 
   new server(auth: IncomingTCPAuth,
     fd': U32,
