@@ -1,0 +1,23 @@
+task:
+  osx_instance:
+    image: high-sierra-xcode-9.4.1
+
+  name: "release-vs-ponyc-release-macOS"
+
+  install_script:
+    - brew install ponyc
+
+  test_script:
+    - make test config=debug
+
+task:
+  osx_instance:
+    image: high-sierra-xcode-9.4.1
+
+  name: "debug-vs-ponyc-release-macOS"
+
+  install_script:
+    - brew install ponyc
+
+  test_script:
+    - make test config=debug
