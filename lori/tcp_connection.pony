@@ -178,9 +178,7 @@ class TCPConnection
               return
             end
 
-            if _read_buffer.size() <= _bytes_in_read_buffer then
-              _resize_read_buffer()
-            end
+            _resize_read_buffer_if_needed()
 
             let bytes_read = PonyTCP.receive(_event,
               _read_buffer.cpointer(_bytes_in_read_buffer),
@@ -216,18 +214,23 @@ class TCPConnection
   fun _there_is_buffered_read_data(): Bool =>
     (_bytes_in_read_buffer >= _expect) and (_bytes_in_read_buffer > 0)
 
-  fun ref _resize_read_buffer() =>
+  fun ref _resize_read_buffer_if_needed() =>
     """
     Resize the read buffer as needed
     """
-    if _expect != 0 then
-      _next_read_buffer_size =
-        _expect.next_pow2()
-          .min(_next_read_buffer_size)
-          .max(_max_read_buffer_size)
-    end
 
-    _read_buffer.undefined(_next_read_buffer_size)
+    // resize if read buffer is more than half full
+    // TODO: revisit this resizing logic
+    if _bytes_in_read_buffer > (_read_buffer.size() / 2) then
+      if _expect != 0 then
+        _next_read_buffer_size =
+          _expect.next_pow2()
+            .max(_next_read_buffer_size)
+            .min(_max_read_buffer_size)
+      end
+
+      _read_buffer.undefined(_next_read_buffer_size)
+    end
 
   fun ref _apply_backpressure() =>
     match _enclosing
