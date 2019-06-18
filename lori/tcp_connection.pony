@@ -18,8 +18,7 @@ class TCPConnection
   let _pending: List[(ByteSeq, USize)] = _pending.create()
   var _read_buffer: Array[U8] iso = recover Array[U8] end
   var _bytes_in_read_buffer: USize = 0
-  var _next_read_buffer_size: USize = 64
-  var _max_read_buffer_size: USize = 16384
+  var _read_buffer_size: USize = 16384
   var _expect: USize = 0
 
   new client(auth: OutgoingTCPAuth,
@@ -48,7 +47,7 @@ class TCPConnection
     _enclosing = None
 
   fun ref expect(qty: USize) ? =>
-    if qty <= _max_read_buffer_size then
+    if qty <= _read_buffer_size then
       _expect = qty
     else
       // saying you want a chunk larger than the max size would result
@@ -173,21 +172,18 @@ class TCPConnection
               s.on_received(consume data')
             end
 
-            if total_bytes_read >= _max_read_buffer_size then
+            if total_bytes_read >= _read_buffer_size then
               s._read_again()
               return
             end
 
-            if _read_buffer.size() <= _bytes_in_read_buffer then
-              _resize_read_buffer()
-            end
+            _resize_read_buffer_if_needed()
 
             let bytes_read = PonyTCP.receive(_event,
               _read_buffer.cpointer(_bytes_in_read_buffer),
               _read_buffer.size() - _bytes_in_read_buffer)?
 
-            match bytes_read
-            | 0 =>
+            if bytes_read == 0 then
               // would block. try again later
               PonyAsio.set_unreadable(_event)
               // TCPConnection handles with:
@@ -195,9 +191,6 @@ class TCPConnection
               // _readable = false
               // @pony_asio_event_resubscribe_read(_event)
               return
-            | (_read_buffer.size() - _bytes_in_read_buffer) =>
-              _next_read_buffer_size =
-                _max_read_buffer_size.min(_next_read_buffer_size.next_pow2())
             end
 
             _bytes_in_read_buffer = _bytes_in_read_buffer + bytes_read
@@ -216,18 +209,13 @@ class TCPConnection
   fun _there_is_buffered_read_data(): Bool =>
     (_bytes_in_read_buffer >= _expect) and (_bytes_in_read_buffer > 0)
 
-  fun ref _resize_read_buffer() =>
+  fun ref _resize_read_buffer_if_needed() =>
     """
-    Resize the read buffer as needed
+    Resize the read buffer if it's empty or smaller than expected data size
     """
-    if _expect != 0 then
-      _next_read_buffer_size =
-        _expect.next_pow2()
-          .min(_next_read_buffer_size)
-          .max(_max_read_buffer_size)
+    if _read_buffer.size() <= _expect then
+      _read_buffer.undefined(_read_buffer_size)
     end
-
-    _read_buffer.undefined(_next_read_buffer_size)
 
   fun ref _apply_backpressure() =>
     match _enclosing
