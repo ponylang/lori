@@ -174,7 +174,6 @@ class TCPConnection
             end
 
             if total_bytes_read >= _max_read_buffer_size then
-              _resize_read_buffer()
               s._read_again()
               return
             end
