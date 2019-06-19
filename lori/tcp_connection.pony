@@ -29,7 +29,8 @@ class TCPConnection
   =>
     // TODO: handle happy eyeballs here - connect count
     _enclosing = enclosing
-    PonyTCP.connect(enclosing, host, port, from, AsioEvent.read_write())
+    PonyTCP.connect(enclosing, host, port, from,
+      AsioEvent.read_write_oneshot())
 
   new server(auth: IncomingTCPAuth,
     fd': U32,
@@ -185,11 +186,7 @@ class TCPConnection
 
             if bytes_read == 0 then
               // would block. try again later
-              PonyAsio.set_unreadable(_event)
-              // TCPConnection handles with:
-              //@pony_asio_event_set_readable[None](self().event, false)
-              // _readable = false
-              // @pony_asio_event_resubscribe_read(_event)
+              _mark_unreadable()
               return
             end
 
@@ -250,6 +247,7 @@ class TCPConnection
     // being unthrottled doesn't however mean we are writable
     unwriteable()
     PonyAsio.set_unwriteable(_event)
+    PonyAsio.resubscribe_write(_event)
 
   fun ref unthrottled() =>
     _state = BitSet.unset(_state, 2)
@@ -292,3 +290,10 @@ class TCPConnection
         _event = AsioEvent.none()
       end
     end
+
+  fun _mark_unreadable() =>
+    PonyAsio.set_unreadable(_event)
+    // TODO: should be able to switch from one-shot to edge-triggered without
+    // changing this. need a switch based on flags that we do not have at
+    // the moment
+    PonyAsio.resubscribe_read(_event)
