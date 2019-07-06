@@ -2,13 +2,13 @@ version: 2
 jobs:
   release-vs-ponyc-release:
     docker:
-      - image: ponylang/ponyc:latest
+      - image: ponylang/ponyc:release
     steps:
       - checkout
       - run: make test config=release
   debug-vs-ponyc-release:
     docker:
-      - image: ponylang/ponyc:latest
+      - image: ponylang/ponyc:release
     steps:
       - checkout
       - run: make test config=debug
