@@ -21,3 +21,44 @@ task:
 
   test_script:
     - make test config=debug
+
+task:
+  freebsd_instance:
+    image: freebsd-12-0-release-amd64
+
+  name: "release-vs-ponyc-release-freebsd-12"
+  install_script:
+    - echo "FETCH_RETRY = 6" >> /usr/local/etc/pkg.conf
+    - pkg update
+    - pkg install -y gmake pcre2 libunwind llvm70 git
+    - cd /tmp
+    - git clone https://github.com/ponylang/ponyc.git
+    - cd ponyc
+    - git checkout release
+    - LLVM_CONFIG=llvm-config70 gmake install config=release default_ssl=openssl_1.1.x
+    - cd $CIRRUS_WORKING_DIR
+
+  test_script:
+    - gmake test config=release
+
+task:
+  freebsd_instance:
+    image: freebsd-12-0-release-amd64
+
+  name: "debug-vs-ponyc-release-freebsd-12"
+
+  install_script:
+    - echo "FETCH_RETRY = 6" >> /usr/local/etc/pkg.conf
+    - pkg update
+    - pkg install -y gmake pcre2 libunwind llvm70 git
+    - pwd
+    - echo $CIRRUS_WORKING_DIR
+    - cd /tmp
+    - git clone https://github.com/ponylang/ponyc.git
+    - cd ponyc
+    - git checkout release
+    - LLVM_CONFIG=llvm-config70 gmake install config=release default_ssl=openssl_1.1.x
+    - cd $CIRRUS_WORKING_DIR
+
+  test_script:
+    - gmake test config=debug
