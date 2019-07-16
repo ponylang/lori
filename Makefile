@@ -27,7 +27,7 @@ $(tests_binary): $(GEN_FILES) $(SOURCE_FILES) | $(BUILD_DIR)
 	${PONYC} -o ${BUILD_DIR} $(SRC_DIR)
 
 build-examples:
-	find examples/*/* -name '*.pony' -print | xargs -n 1 dirname  | sort -u | grep -v ffi- | xargs -n 1 -I {} ponyc  -d -s --checktree -o ${BUILD_DIR} {}
+	find examples/*/* -name '*.pony' -print | xargs -n 1 dirname  | sort -u | grep -v ffi- | xargs -n 1 -I {} ${PONYC} -s --checktree -o ${BUILD_DIR} {}
 
 clean:
 	rm -rf $(BUILD_DIR)
