@@ -4,8 +4,6 @@ Pony TCP classes reimagined.
 
 ## Status
 
-[![CircleCI](https://circleci.com/gh/SeanTAllen/lori.svg?style=svg)](https://circleci.com/gh/seantallen/lori)
-
 This is an experimental project and shouldn't be used in a production environment.
 
 ## Installation
@@ -14,7 +12,7 @@ This is an experimental project and shouldn't be used in a production environmen
 * Update your `bundle.json`
 
 ```json
-{ 
+{
   "type": "github",
   "repo": "seantallen/lori"
 }
