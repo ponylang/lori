@@ -4,7 +4,7 @@ on: pull_request
 
 jobs:
   release-vs-ponyc-release:
-    name: Verify PR builds in release mode on Linux with most recent ponyc release
+    name: Verify release mode on Linux with most recent ponyc release
     runs-on: ubuntu-latest
     container:
       image: ponylang/shared-docker-ci-x86-64-unknown-linux-builder:release
@@ -14,7 +14,7 @@ jobs:
         run: make test config=release
 
   debug-vs-ponyc-release:
-    name: Verify PR builds in debug mode on Linux with most recent ponyc release
+    name: Verify debug mode on Linux with most recent ponyc release
     runs-on: ubuntu-latest
     container:
       image: ponylang/shared-docker-ci-x86-64-unknown-linux-builder:release
