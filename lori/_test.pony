@@ -108,10 +108,8 @@ actor _TestPinger is TCPClientActor
       _connection.send("Ping")
       _pings_to_send = _pings_to_send - 1
     elseif _pings_to_send == 0 then
-      _pings_to_send = _pings_to_send - 1
       _h.complete(true)
     else
-      // If we end up here, we got too many Pongs.
       _h.fail("Too many pongs received")
     end
 
@@ -133,12 +131,12 @@ actor _TestPonger is TCPConnectionActor
     _connection
 
   fun ref on_received(data: Array[U8] iso) =>
-    _connection.send("Pong")
-    _pings_to_receive = _pings_to_receive - 1
-    if _pings_to_receive == 0 then
+    if _pings_to_receive > 0 then
       _connection.send("Pong")
-    end
-    if _pings_to_receive < 0 then
+      _pings_to_receive = _pings_to_receive - 1
+    elseif _pings_to_receive == 0 then
+      _connection.send("Pong")
+    else
       _h.fail("Too many pings received")
     end
 
