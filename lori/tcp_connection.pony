@@ -31,7 +31,7 @@ class TCPConnection
     // TODO: handle happy eyeballs here - connect count
     _enclosing = enclosing
     PonyTCP.connect(enclosing, host, port, from,
-    AsioEvent.read_write_oneshot())
+      AsioEvent.read_write_oneshot())
 
   new server(auth: IncomingTCPAuth,
     fd': U32,
@@ -212,26 +212,26 @@ class TCPConnection
 
           let bytes_read = PonyTCP.receive(_event,
             _read_buffer.cpointer(_bytes_in_read_buffer),
-            _read_buffer.size() - _bytes_in_read_buffer)?
+              _read_buffer.size() - _bytes_in_read_buffer)?
 
-            if bytes_read == 0 then
-              // would block. try again later
-              _mark_unreadable()
-              return
+              if bytes_read == 0 then
+                // would block. try again later
+                _mark_unreadable()
+                return
+              end
+
+              _bytes_in_read_buffer = _bytes_in_read_buffer + bytes_read
+              total_bytes_read = total_bytes_read + bytes_read
             end
-
-            _bytes_in_read_buffer = _bytes_in_read_buffer + bytes_read
-            total_bytes_read = total_bytes_read + bytes_read
           end
+        else
+          // Socket shutdown from other side
+          close()
         end
-      else
-        // Socket shutdown from other side
-        close()
+      | None =>
+        // TODO: SHOULD WE BLOW UP WITH SOME SORT OF UNREACHABLE HERE?
+        None
       end
-    | None =>
-      // TODO: SHOULD WE BLOW UP WITH SOME SORT OF UNREACHABLE HERE?
-      None
-    end
 
   fun _there_is_buffered_read_data(): Bool =>
     (_bytes_in_read_buffer >= _expect) and (_bytes_in_read_buffer > 0)
