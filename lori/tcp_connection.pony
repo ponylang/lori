@@ -163,10 +163,10 @@ class TCPConnection
       end
     end
 
-  if has_pending_writes() then
-    // all pending data was sent
-    _release_backpressure()
-  end
+    if has_pending_writes() then
+      // all pending data was sent
+      _release_backpressure()
+    end
 
   fun is_writeable(): Bool =>
     BitSet.is_set(_state, 1)
@@ -213,7 +213,7 @@ class TCPConnection
 
             let bytes_read = PonyTCP.receive(_event,
               _read_buffer.cpointer(_bytes_in_read_buffer),
-                _read_buffer.size() - _bytes_in_read_buffer)?
+              _read_buffer.size() - _bytes_in_read_buffer)?
 
             if bytes_read == 0 then
               // would block. try again later
@@ -305,22 +305,22 @@ class TCPConnection
       end
     end
 
-  if event is _event then
-    if AsioEvent.readable(flags) then
-      // should set that we are readable
-      read()
-    end
+    if event is _event then
+      if AsioEvent.readable(flags) then
+        // should set that we are readable
+        read()
+      end
 
-    if AsioEvent.writeable(flags) then
-      writeable()
-      _send_pending_writes()
-    end
+      if AsioEvent.writeable(flags) then
+        writeable()
+        _send_pending_writes()
+      end
 
-    if AsioEvent.disposable(flags) then
-      PonyAsio.destroy(event)
-      _event = AsioEvent.none()
+      if AsioEvent.disposable(flags) then
+        PonyAsio.destroy(event)
+        _event = AsioEvent.none()
+      end
     end
-  end
 
   fun _mark_unreadable() =>
     PonyAsio.set_unreadable(_event)
