@@ -163,10 +163,10 @@ class TCPConnection
       end
     end
 
-    if has_pending_writes() then
-      // all pending data was sent
-      _release_backpressure()
-    end
+  if has_pending_writes() then
+    // all pending data was sent
+    _release_backpressure()
+  end
 
   fun is_writeable(): Bool =>
     BitSet.is_set(_state, 1)
@@ -188,50 +188,51 @@ class TCPConnection
           while true do
             // Handle any data already in the read buffer
             while _there_is_buffered_read_data() do
-              let bytes_to_consume = if _expect == 0 then
-              // if we aren't getting in `_expect` chunks,
-              // we should grab all the bytes that are currently available
-              _bytes_in_read_buffer
-            else
-              _expect
+              let bytes_to_consume =
+                if _expect == 0 then
+                  // if we aren't getting in `_expect` chunks,
+                  // we should grab all the bytes that are currently available
+                  _bytes_in_read_buffer
+                else
+                  _expect
+                end
+
+              let x = _read_buffer = recover Array[U8] end
+              (let data', _read_buffer) = (consume x).chop(bytes_to_consume)
+              _bytes_in_read_buffer = _bytes_in_read_buffer - bytes_to_consume
+
+              s.on_received(consume data')
             end
 
-            let x = _read_buffer = recover Array[U8] end
-            (let data', _read_buffer) = (consume x).chop(bytes_to_consume)
-            _bytes_in_read_buffer = _bytes_in_read_buffer - bytes_to_consume
-
-            s.on_received(consume data')
-          end
-
-          if total_bytes_read >= _read_buffer_size then
-            s._read_again()
-            return
-          end
-
-          _resize_read_buffer_if_needed()
-
-          let bytes_read = PonyTCP.receive(_event,
-            _read_buffer.cpointer(_bytes_in_read_buffer),
-              _read_buffer.size() - _bytes_in_read_buffer)?
-
-              if bytes_read == 0 then
-                // would block. try again later
-                _mark_unreadable()
-                return
-              end
-
-              _bytes_in_read_buffer = _bytes_in_read_buffer + bytes_read
-              total_bytes_read = total_bytes_read + bytes_read
+            if total_bytes_read >= _read_buffer_size then
+              s._read_again()
+              return
             end
+
+            _resize_read_buffer_if_needed()
+
+            let bytes_read = PonyTCP.receive(_event,
+              _read_buffer.cpointer(_bytes_in_read_buffer),
+                _read_buffer.size() - _bytes_in_read_buffer)?
+
+            if bytes_read == 0 then
+              // would block. try again later
+              _mark_unreadable()
+              return
+            end
+
+            _bytes_in_read_buffer = _bytes_in_read_buffer + bytes_read
+            total_bytes_read = total_bytes_read + bytes_read
           end
-        else
-          // Socket shutdown from other side
-          close()
         end
-      | None =>
-        // TODO: SHOULD WE BLOW UP WITH SOME SORT OF UNREACHABLE HERE?
-        None
+      else
+        // Socket shutdown from other side
+        close()
       end
+    | None =>
+      // TODO: SHOULD WE BLOW UP WITH SOME SORT OF UNREACHABLE HERE?
+      None
+    end
 
   fun _there_is_buffered_read_data(): Bool =>
     (_bytes_in_read_buffer >= _expect) and (_bytes_in_read_buffer > 0)
@@ -304,22 +305,22 @@ class TCPConnection
       end
     end
 
-    if event is _event then
-      if AsioEvent.readable(flags) then
-        // should set that we are readable
-        read()
-      end
-
-      if AsioEvent.writeable(flags) then
-        writeable()
-        _send_pending_writes()
-      end
-
-      if AsioEvent.disposable(flags) then
-        PonyAsio.destroy(event)
-        _event = AsioEvent.none()
-      end
+  if event is _event then
+    if AsioEvent.readable(flags) then
+      // should set that we are readable
+      read()
     end
+
+    if AsioEvent.writeable(flags) then
+      writeable()
+      _send_pending_writes()
+    end
+
+    if AsioEvent.disposable(flags) then
+      PonyAsio.destroy(event)
+      _event = AsioEvent.none()
+    end
+  end
 
   fun _mark_unreadable() =>
     PonyAsio.set_unreadable(_event)
