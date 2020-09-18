@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 
+- Fix loss of incoming connections ([PR #63](https://github.com/seantallen-org/lori/pull/63))
 
 ### Added
 
