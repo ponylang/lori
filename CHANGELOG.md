@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Changed
 
+- Change license to BSD ([PR #62](https://github.com/seantallen-org/lori/pull/62))
 
 ## [0.0.1] - 2020-09-18
 
