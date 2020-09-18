@@ -83,7 +83,6 @@ class TCPListener
             return
           else
             e.on_accept(fd)
-            return
           end
         end
       end
