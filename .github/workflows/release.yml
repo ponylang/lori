@@ -31,5 +31,6 @@ jobs:
           step: trigger-release-announcement
           git_user_name: "Sean T. Allen"
           git_user_email: "sean@seantallen.com"
+          default_branch: "main"
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
