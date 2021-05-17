@@ -30,6 +30,5 @@ interface tag TCPListenerActor
     """
     listener().close()
 
-
   be _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
     listener().event_notify(event, flags, arg)
