@@ -18,7 +18,11 @@ endif
 
 SOURCE_FILES := $(shell find $(SRC_DIR) -name \*.pony)
 
-test: unit-tests build-examples
+test: unit-tests
+
+ci: unit-tests build-examples
+
+examples: build-examples
 
 unit-tests: $(tests_binary)
 	$^ --exclude=integration --sequential

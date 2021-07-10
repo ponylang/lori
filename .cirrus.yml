@@ -13,7 +13,7 @@ task:
 
   test_script:
     - export PATH="/tmp/corral/bin:/tmp/ponyc/bin/:$PATH"
-    - gmake test config=release
+    - gmake ci config=release
 
 task:
   freebsd_instance:
@@ -30,4 +30,4 @@ task:
 
   test_script:
     - export PATH="/tmp/corral/bin:/tmp/ponyc/bin/:$PATH"
-    - gmake test config=debug
+    - gmake ci config=debug
