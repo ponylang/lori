@@ -36,7 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@v1
       - name: Test with the most recent ponyc release
-        run: make test config=release
+        run: make ci config=release
 
   debug-vs-ponyc-release:
     name: Verify debug mode on Linux with most recent ponyc release
@@ -46,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v1
       - name: Test with the most recent ponyc release
-        run: make test config=debug
+        run: make ci config=debug
 
   macos-debug-vs-ponyc-release:
     name: Verify PR builds on macOS with most recent ponyc release
@@ -58,7 +58,7 @@ jobs:
       - name: Test with the most recent ponyc release
         run: |
           export PATH=/Users/runner/.local/share/ponyup/bin/:$PATH
-          make test config=debug
+          make ci config=debug
 
   macos-release-vs-ponyc-release:
     name: Verify PR builds on macOS with most recent ponyc release
@@ -70,4 +70,4 @@ jobs:
       - name: Test with the most recent ponyc release
         run: |
           export PATH=/Users/runner/.local/share/ponyup/bin/:$PATH
-          make test config=release
+          make ci config=release
