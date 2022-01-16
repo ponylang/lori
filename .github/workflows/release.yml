@@ -28,8 +28,6 @@ jobs:
   trigger-release-announcement:
     name: Trigger release announcement
     runs-on: ubuntu-latest
-    needs:
-      - generate-documentation
     steps:
       - uses: actions/checkout@v2
         with:
