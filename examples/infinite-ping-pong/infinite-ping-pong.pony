@@ -4,11 +4,9 @@ use "../../lori"
 
 actor Main
   new create(env: Env) =>
-    try
-      let listen_auth = TCPListenAuth(env.root as AmbientAuth)
-      let connect_auth = TCPConnectAuth(env.root as AmbientAuth)
-      Listener(listen_auth, connect_auth, env.out)
-    end
+    let listen_auth = TCPListenAuth(env.root)
+    let connect_auth = TCPConnectAuth(env.root)
+    Listener(listen_auth, connect_auth, env.out)
 
 actor  Listener is TCPListenerActor
   var _listener: TCPListener = TCPListener.none()

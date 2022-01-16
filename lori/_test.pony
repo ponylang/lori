@@ -72,11 +72,9 @@ class iso _PingPong is UnitTest
   fun apply(h: TestHelper) =>
     let pings_to_send: I32 = 100
 
-    try
-      let auth = TCPListenAuth(h.env.root as AmbientAuth)
-      let listener = _TestPongerListener(auth, pings_to_send, h)
-      h.dispose_when_done(listener)
-    end
+    let auth = TCPListenAuth(h.env.root)
+    let listener = _TestPongerListener(auth, pings_to_send, h)
+    h.dispose_when_done(listener)
 
     h.long_test(5_000_000_000)
 
@@ -168,10 +166,8 @@ actor _TestPongerListener is TCPListenerActor
     end
 
   fun ref on_listening() =>
-    try
-      let auth = TCPConnectAuth(_h.env.root as AmbientAuth)
-      _pinger = _TestPinger(auth, _pings_to_receive, _h)
-    end
+    let auth = TCPConnectAuth(_h.env.root)
+    _pinger = _TestPinger(auth, _pings_to_receive, _h)
 
   fun ref on_failure() =>
     _h.fail("Unable to open _TestPongerListener")
@@ -184,15 +180,11 @@ class iso _TestBasicExpect is UnitTest
     h.expect_action("client connected")
     h.expect_action("expected data received")
 
-    try
-      let la = TCPListenAuth(h.env.root as AmbientAuth)
-      let ca = TCPConnectAuth(h.env.root as AmbientAuth)
-      let s = _TestBasicExpectListener(la, ca, h)
+    let la = TCPListenAuth(h.env.root)
+    let ca = TCPConnectAuth(h.env.root)
+    let s = _TestBasicExpectListener(la, ca, h)
 
-      h.dispose_when_done(s)
-    else
-      h.fail("unable to start _TestBasicExpect")
-    end
+    h.dispose_when_done(s)
 
     h.long_test(2_000_000_000)
 
