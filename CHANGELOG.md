@@ -2,17 +2,11 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/) and [Keep a CHANGELOG](http://keepachangelog.com/).
 
-## [unreleased] - unreleased
+## [0.1.1] - 2022-01-16
 
 ### Fixed
 
 - Update to work with Pony 0.46.0 ([PR #70](https://github.com/seantallen-org/lori/pull/70))
-
-### Added
-
-
-### Changed
-
 
 ## [0.1.0] - 2021-05-07
 
