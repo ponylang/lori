@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 
+- Update to work with Pony 0.46.0 ([PR #70](https://github.com/seantallen-org/lori/pull/70))
 
 ### Added
 
