@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Changed
 
+- Update interfaces with private methods work with Pony 0.47.0 ([PR #71](https://github.com/seantallen-org/lori/pull/71))
 
 ## [0.1.1] - 2022-01-16
 
