@@ -1,13 +1,13 @@
-interface tag TCPClientActor is TCPConnectionActor
+trait tag TCPClientActor is TCPConnectionActor
   fun ref on_connected() =>
     """
     Called when a connection is opened
     """
     None
 
-interface tag TCPServerActor is TCPConnectionActor
+trait tag TCPServerActor is TCPConnectionActor
 
-interface tag TCPConnectionActor
+trait tag TCPConnectionActor is AsioEventNotify
   fun ref connection(): TCPConnection
 
   fun ref on_closed() =>

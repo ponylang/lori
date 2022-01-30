@@ -35,7 +35,7 @@ actor EchoServer is TCPListenerActor
   fun ref on_listening() =>
     _out.print("Echo server started.")
 
-actor Echoer is TCPConnectionActor
+actor Echoer is TCPServerActor
   var _connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
