@@ -1,4 +1,4 @@
-interface tag TCPListenerActor
+trait tag TCPListenerActor is AsioEventNotify
   fun ref listener(): TCPListener
 
   fun ref on_accept(fd: U32): TCPConnectionActor

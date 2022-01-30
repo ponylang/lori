@@ -111,7 +111,7 @@ actor _TestPinger is TCPClientActor
       _h.fail("Too many pongs received")
     end
 
-actor _TestPonger is TCPConnectionActor
+actor _TestPonger is TCPServerActor
   var _connection: TCPConnection = TCPConnection.none()
   var _pings_to_receive: I32
   let _h: TestHelper
