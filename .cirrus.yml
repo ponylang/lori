@@ -9,7 +9,7 @@ task:
     - echo "IGNORE_OSVERSION = yes" >> /usr/local/etc/pkg.conf
     - pkg update
     - pkg install -y bash gmake git
-    - bash .ci-scripts/freebsd-13-install-nightly-pony-tools.bash
+    - bash .ci-scripts/freebsd-13-install-release-pony-tools.bash
 
   test_script:
     - export PATH="$HOME/.local/share/ponyup/bin/:$PATH"
@@ -26,7 +26,7 @@ task:
     - echo "IGNORE_OSVERSION = yes" >> /usr/local/etc/pkg.conf
     - pkg update
     - pkg install -y bash gmake git
-    - bash .ci-scripts/freebsd-13-install-nightly-pony-tools.bash
+    - bash .ci-scripts/freebsd-13-install-release-pony-tools.bash
 
   test_script:
     - export PATH="$HOME/.local/share/ponyup/bin/:$PATH"
