@@ -1,6 +1,14 @@
 {
   "deps": [],
+  "packages": [
+    "lori"
+  ],
   "info": {
-    "version": "0.2.0"
+    "description": "Pony TCP classes reimagined.",
+    "homepage": "https://github.com/seantallen-org/lori",
+    "license": "BSD-2-Clause",
+    "documentation_url": "https://seantallen-org.github.io/lori/",
+    "version": "0.2.0",
+    "name": "lori"
   }
 }
