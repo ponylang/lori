@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 
+- Add basic "outgoing failed logic" ([PR #75](https://github.com/seantallen-org/lori/pull/75))
 
 ### Changed
 
