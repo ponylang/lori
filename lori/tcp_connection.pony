@@ -11,7 +11,7 @@ type IncomingTCPAuth is (AmbientAuth |
   TCPServerAuth)
 
 class TCPConnection
-  var fd: U32 = -1
+  var _fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
   var _state: U32 = 0
   let _enclosing: (TCPClientActor ref | TCPServerActor ref | None)
@@ -36,9 +36,9 @@ class TCPConnection
     fd': U32,
     enclosing: TCPServerActor ref)
   =>
-    fd = fd'
+    _fd = fd'
     _enclosing = enclosing
-    _event = PonyAsio.create_event(enclosing, fd)
+    _event = PonyAsio.create_event(enclosing, _fd)
     open()
 
   new none() =>
@@ -75,9 +75,9 @@ class TCPConnection
     if is_open() then
       _state = BitSet.unset(_state, 0)
       unwriteable()
-      PonyTCP.shutdown(fd)
+      PonyTCP.shutdown(_fd)
       PonyAsio.unsubscribe(_event)
-      fd = -1
+      _fd = -1
     end
 
   fun is_closed(): Bool =>
@@ -263,13 +263,23 @@ class TCPConnection
     | let c: TCPClientActor ref =>
       if event isnt _event then
         if AsioEvent.writeable(flags) then
-          // TODO: this assumes the connection succeed. That might not be true.
+          // TODO: this assumed the connection succeed. That might not be true.
           // more logic needs to go here
-          fd = PonyAsio.event_fd(event)
-          _event = event
-          open()
-          c.on_connected()
-          read()
+          // I've added some logic here but it isn't fully complete
+          // Also needs more about state machine here, are we connected? closed?
+          let fd = PonyAsio.event_fd(event)
+          if _is_socket_connected(fd) then
+            _event = event
+            _fd = fd
+            open()
+            c.on_connected()
+            read()
+          else
+            PonyAsio.unsubscribe(event)
+            PonyTCP.close(fd)
+            close()
+            c.on_failure()
+          end
         end
       end
     end
@@ -297,3 +307,7 @@ class TCPConnection
     // changing this. need a switch based on flags that we do not have at
     // the moment
     PonyAsio.resubscribe_read(_event)
+
+  fun _is_socket_connected(fd: U32): Bool =>
+    (let errno: U32, let value: U32) = _OSSocket.get_so_error(fd)
+    (errno == 0) and (value == 0)
