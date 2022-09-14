@@ -5,6 +5,12 @@ trait tag TCPClientActor is TCPConnectionActor
     """
     None
 
+  fun ref on_failure() =>
+    """
+    Called when a connection fails to open
+    """
+    None
+
 trait tag TCPServerActor is TCPConnectionActor
 
 trait tag TCPConnectionActor is AsioEventNotify

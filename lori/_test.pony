@@ -11,6 +11,7 @@ actor Main is TestList
   fun tag tests(test: PonyTest) =>
     test(_BitSet)
     test(_TCPConnectionState)
+    test(_OutgoingFails)
     test(_PingPong)
     test(_TestBasicExpect)
 
@@ -62,6 +63,36 @@ class iso _TCPConnectionState is UnitTest
     h.assert_true(a.is_writeable())
     a.writeable()
     h.assert_true(a.is_writeable())
+
+class iso _OutgoingFails is UnitTest
+  """
+  Test that we get a failure callback when an outgoing connection fails
+  """
+  fun name(): String => "OutgoingFails"
+
+  fun apply(h: TestHelper) =>
+    let auth = h.env.root
+    let client = _TestOutgoingFailure(auth, h)
+    h.dispose_when_done(client)
+
+    h.long_test(5_000_000_000)
+
+actor _TestOutgoingFailure is TCPClientActor
+  var _connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(auth: OutgoingTCPAuth, h: TestHelper) =>
+    _h = h
+    _connection = TCPConnection.client(auth, "127.0.0.1", "9667", "", this)
+
+  fun ref connection(): TCPConnection =>
+    _connection
+
+  fun ref on_connected() =>
+    _h.fail("on_connected for a connection that should have failed")
+
+  fun ref on_failure() =>
+    _h.complete(true)
 
 class iso _PingPong is UnitTest
   """
