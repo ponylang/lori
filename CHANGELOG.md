@@ -2,17 +2,11 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/) and [Keep a CHANGELOG](http://keepachangelog.com/).
 
-## [unreleased] - unreleased
-
-### Fixed
-
+## [0.2.2] - 2022-09-14
 
 ### Added
 
 - Add basic "outgoing failed logic" ([PR #75](https://github.com/seantallen-org/lori/pull/75))
-
-### Changed
-
 
 ## [0.2.1] - 2022-02-26
 
