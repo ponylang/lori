@@ -11,11 +11,11 @@ actor Main
 actor  Listener is TCPListenerActor
   var _listener: TCPListener = TCPListener.none()
   let _out: OutStream
-  let _connect_auth: OutgoingTCPAuth
+  let _connect_auth: TCPConnectAuth
   let _server_auth: TCPServerAuth
 
   new create(listen_auth: TCPListenAuth,
-    connect_auth: OutgoingTCPAuth,
+    connect_auth: TCPConnectAuth,
     out: OutStream)
   =>
     _connect_auth = connect_auth
@@ -39,7 +39,7 @@ actor Server is TCPServerActor
   var _connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
-  new create(auth: IncomingTCPAuth, fd: U32, out: OutStream) =>
+  new create(auth: TCPServerAuth, fd: U32, out: OutStream) =>
     _out = out
     _connection =  TCPConnection.server(auth, fd, this)
 
@@ -54,7 +54,7 @@ actor Client is TCPClientActor
   var _connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
-  new create(auth: OutgoingTCPAuth,
+  new create(auth: TCPConnectAuth,
     host: String,
     port: String,
     from: String,

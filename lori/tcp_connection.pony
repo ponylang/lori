@@ -1,15 +1,5 @@
 use "collections"
 
-type OutgoingTCPAuth is (AmbientAuth |
-  NetAuth |
-  TCPAuth |
-  TCPConnectAuth)
-
-type IncomingTCPAuth is (AmbientAuth |
-  NetAuth |
-  TCPAuth |
-  TCPServerAuth)
-
 class TCPConnection
   var _fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
@@ -21,7 +11,7 @@ class TCPConnection
   var _read_buffer_size: USize = 16384
   var _expect: USize = 0
 
-  new client(auth: OutgoingTCPAuth,
+  new client(auth: TCPConnectAuth,
     host: String,
     port: String,
     from: String,
@@ -32,7 +22,7 @@ class TCPConnection
     PonyTCP.connect(enclosing, host, port, from,
       AsioEvent.read_write_oneshot())
 
-  new server(auth: IncomingTCPAuth,
+  new server(auth: TCPServerAuth,
     fd': U32,
     enclosing: TCPServerActor ref)
   =>

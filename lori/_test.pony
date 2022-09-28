@@ -72,7 +72,7 @@ class iso _OutgoingFails is UnitTest
 
   fun apply(h: TestHelper) =>
     let auth = h.env.root
-    let client = _TestOutgoingFailure(auth, h)
+    let client = _TestOutgoingFailure(TCPConnectAuth(auth), h)
     h.dispose_when_done(client)
 
     h.long_test(5_000_000_000)
@@ -81,7 +81,7 @@ actor _TestOutgoingFailure is TCPClientActor
   var _connection: TCPConnection = TCPConnection.none()
   let _h: TestHelper
 
-  new create(auth: OutgoingTCPAuth, h: TestHelper) =>
+  new create(auth: TCPConnectAuth, h: TestHelper) =>
     _h = h
     _connection = TCPConnection.client(auth, "127.0.0.1", "9667", "", this)
 
@@ -114,7 +114,7 @@ actor _TestPinger is TCPClientActor
   var _pings_to_send: I32
   let _h: TestHelper
 
-  new create(auth: OutgoingTCPAuth,
+  new create(auth: TCPConnectAuth,
     pings_to_send: I32,
     h: TestHelper)
   =>
@@ -147,7 +147,7 @@ actor _TestPonger is TCPServerActor
   var _pings_to_receive: I32
   let _h: TestHelper
 
-  new create(auth: IncomingTCPAuth,
+  new create(auth: TCPServerAuth,
     fd: U32,
     pings_to_receive: I32,
     h: TestHelper)
@@ -176,7 +176,7 @@ actor _TestPongerListener is TCPListenerActor
   var _pinger: (_TestPinger | None) = None
   let _server_auth: TCPServerAuth
 
-  new create(listener_auth: TCPListenerAuth,
+  new create(listener_auth: TCPListenAuth,
     pings_to_receive: I32,
     h: TestHelper)
   =>
@@ -223,7 +223,7 @@ actor _TestBasicExpectClient is TCPClientActor
   var _connection: TCPConnection = TCPConnection.none()
   let _h: TestHelper
 
-  new create(auth: OutgoingTCPAuth, h: TestHelper) =>
+  new create(auth: TCPConnectAuth, h: TestHelper) =>
     _h = h
     _connection = TCPConnection.client(auth, "127.0.0.1", "7670", "", this)
 
@@ -244,7 +244,7 @@ actor _TestBasicExpectListener is TCPListenerActor
   let _client_auth: TCPConnectAuth
   var _client: (_TestBasicExpectClient | None) = None
 
-  new create(listener_auth: TCPListenerAuth,
+  new create(listener_auth: TCPListenAuth,
     client_auth: TCPConnectAuth,
     h: TestHelper)
   =>
@@ -274,7 +274,7 @@ actor _TestBasicExpectServer is TCPServerActor
   var _connection: TCPConnection = TCPConnection.none()
   var _received_count: U8 = 0
 
-  new create(auth: IncomingTCPAuth, fd: U32, h: TestHelper) =>
+  new create(auth: TCPServerAuth, fd: U32, h: TestHelper) =>
     _h = h
     _connection = TCPConnection.server(auth, fd, this)
     try _connection.expect(4)? end
