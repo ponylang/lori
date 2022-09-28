@@ -39,7 +39,7 @@ actor Echoer is TCPServerActor
   var _connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
-  new create(auth: IncomingTCPAuth, fd: U32, out: OutStream) =>
+  new create(auth: TCPServerAuth, fd: U32, out: OutStream) =>
     _out = out
     _connection = TCPConnection.server(auth, fd, this)
 
