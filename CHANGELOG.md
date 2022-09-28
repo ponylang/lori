@@ -12,11 +12,6 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Changed
 
-
-## [0.3.0] - 2022-09-28
-
-### Changed
-
 - Update object capabilities to match Pony standard library pattern ([PR #76](https://github.com/seantallen-org/lori/pull/76))
 
 ## [0.2.2] - 2022-09-14
