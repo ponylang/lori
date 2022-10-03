@@ -32,7 +32,7 @@ actor  Listener is TCPListenerActor
   fun ref on_listening() =>
     Client(_connect_auth, "127.0.0.1", "7669", "", _out)
 
-  fun ref on_failure() =>
+  fun ref on_connection_failure() =>
     _out.print("Unable to open listener")
 
 actor Server is TCPServerActor

@@ -12,7 +12,7 @@ trait tag TCPListenerActor is AsioEventNotify
     """
     None
 
-  fun ref on_failure() =>
+  fun ref on_connection_failure() =>
     """
     Called if we are unable to open the listener
     """

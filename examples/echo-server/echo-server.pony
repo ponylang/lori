@@ -28,7 +28,7 @@ actor EchoServer is TCPListenerActor
   fun ref on_closed() =>
     _out.print("Echo server shut down.")
 
-  fun ref on_failure() =>
+  fun ref on_connection_failure() =>
     _out.print("Couldn't start Echo server. " +
       "Perhaps try another network interface?")
 
