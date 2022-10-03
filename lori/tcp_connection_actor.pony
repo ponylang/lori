@@ -5,7 +5,7 @@ trait tag TCPClientActor is TCPConnectionActor
     """
     None
 
-  fun ref on_failure() =>
+  fun ref on_connection_failure() =>
     """
     Called when a connection fails to open
     """

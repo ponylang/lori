@@ -17,7 +17,7 @@ class TCPListener
       state = Open
       enclosing.on_listening()
     else
-      enclosing.on_failure()
+      enclosing.on_connection_failure()
     end
 
   new none() =>

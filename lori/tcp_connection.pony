@@ -268,7 +268,7 @@ class TCPConnection
             PonyAsio.unsubscribe(event)
             PonyTCP.close(fd)
             close()
-            c.on_failure()
+            c.on_connection_failure()
           end
         end
       end
