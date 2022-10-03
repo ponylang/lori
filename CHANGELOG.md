@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Changed
 
+- Rename on_failure callback to on_connection_failure ([PR #79](https://github.com/seantallen-org/lori/pull/79))
 
 ## [0.3.0] - 2022-09-28
 
