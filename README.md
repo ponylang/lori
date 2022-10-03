@@ -11,7 +11,7 @@ This is an experimental project and shouldn't be used in a production environmen
 ## Installation
 
 * Install [corral](https://github.com/ponylang/corral)
-* `corral add github.com/seantallen/lori.git --version 0.3.0`
+* `corral add github.com/seantallen/lori.git --version 0.4.0`
 * `corral fetch` to fetch your dependencies
 * `use "lori"` to include this package
 * `corral run -- ponyc` to compile your application
