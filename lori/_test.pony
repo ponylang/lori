@@ -199,7 +199,7 @@ actor _TestPongerListener is TCPListenerActor
     let auth = TCPConnectAuth(_h.env.root)
     _pinger = _TestPinger(auth, _pings_to_receive, _h)
 
-  fun ref _on_connection_failure() =>
+  fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestPongerListener")
 
 class iso _TestBasicExpect is UnitTest
@@ -265,7 +265,7 @@ actor _TestBasicExpectListener is TCPListenerActor
     _h.complete_action("server listening")
     _client =_TestBasicExpectClient(_client_auth, _h)
 
-  fun ref _on_connection_failure() =>
+  fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestBasicExpectListener")
 
 actor _TestBasicExpectServer is TCPServerActor
