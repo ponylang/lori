@@ -15,9 +15,9 @@ class TCPListener
       _fd = PonyAsio.event_fd(event)
       _event = event
       state = Open
-      enclosing.on_listening()
+      enclosing._on_listening()
     else
-      enclosing.on_connection_failure()
+      enclosing._on_connection_failure()
     end
 
   new none() =>
@@ -36,7 +36,7 @@ class TCPListener
           PonyAsio.unsubscribe(_event)
           PonyTCP.close(_fd)
           _fd = -1
-          e.on_closed()
+          e._on_closed()
         end
       end
     | None =>
@@ -80,7 +80,7 @@ class TCPListener
             // Would block. Bail out.
             return
           else
-            e.on_accept(fd)
+            e._on_accept(fd)
           end
         end
       end
