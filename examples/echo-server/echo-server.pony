@@ -49,9 +49,6 @@ actor Echoer is TCPServerActor
   fun ref _on_closed() =>
     _out.print("Connection Closed")
 
-  fun ref _on_connected(conn: TCPConnection ref) =>
-    _out.print("We have a new connection!")
-
   fun ref _on_received(data: Array[U8] iso) =>
     _out.print("Data received. Echoing it back.")
     _tcp_connection.send(consume data)
