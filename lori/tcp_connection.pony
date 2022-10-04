@@ -160,7 +160,7 @@ class TCPConnection
               (let data', _read_buffer) = (consume x).chop(bytes_to_consume)
               _bytes_in_read_buffer = _bytes_in_read_buffer - bytes_to_consume
 
-              s.on_received(consume data')
+              s._on_received(consume data')
             end
 
             if total_bytes_read >= _read_buffer_size then
@@ -209,7 +209,7 @@ class TCPConnection
     | let s: TCPConnectionActor ref =>
       if not is_throttled() then
         throttled()
-        s.on_throttled()
+        s._on_throttled()
       end
     | None =>
       // TODO: Blow up here!
@@ -221,7 +221,7 @@ class TCPConnection
     | let s: TCPConnectionActor ref =>
       if is_throttled() then
         unthrottled()
-        s.on_unthrottled()
+        s._on_unthrottled()
       end
     | None =>
       // TODO: blow up here
@@ -262,13 +262,13 @@ class TCPConnection
             _event = event
             _fd = fd
             open()
-            c.on_connected()
+            c._on_connected()
             read()
           else
             PonyAsio.unsubscribe(event)
             PonyTCP.close(fd)
             close()
-            c.on_connection_failure()
+            c._on_connection_failure()
           end
         end
       end

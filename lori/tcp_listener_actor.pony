@@ -1,24 +1,24 @@
 trait tag TCPListenerActor is AsioEventNotify
-  fun ref listener(): TCPListener
+  fun ref _listener(): TCPListener
 
-  fun ref on_accept(fd: U32): TCPConnectionActor
+  fun ref _on_accept(fd: U32): TCPConnectionActor
     """
     Called when a connection is accepted
     """
 
-  fun ref on_closed() =>
+  fun ref _on_closed() =>
     """
     Called after the listener is closed
     """
     None
 
-  fun ref on_connection_failure() =>
+  fun ref _on_connection_failure() =>
     """
     Called if we are unable to open the listener
     """
     None
 
-  fun ref on_listening() =>
+  fun ref _on_listening() =>
     """
     Called once the listener is ready to accept connections
     """
@@ -28,7 +28,7 @@ trait tag TCPListenerActor is AsioEventNotify
     """
     Stop listening
     """
-    listener().close()
+    _listener().close()
 
   be _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
-    listener().event_notify(event, flags, arg)
+    _listener().event_notify(event, flags, arg)

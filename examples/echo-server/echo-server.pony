@@ -6,7 +6,7 @@ actor Main
     let echo = EchoServer(auth, "", "7669", env.out)
 
 actor EchoServer is TCPListenerActor
-  var _listener: TCPListener = TCPListener.none()
+  var _tcp_listener: TCPListener = TCPListener.none()
   let _out: OutStream
   let _server_auth: TCPServerAuth
 
@@ -17,41 +17,41 @@ actor EchoServer is TCPListenerActor
   =>
     _out = out
     _server_auth = TCPServerAuth(listen_auth)
-    _listener = TCPListener(listen_auth, host, port, this)
+    _tcp_listener = TCPListener(listen_auth, host, port, this)
 
-  fun ref listener(): TCPListener =>
-    _listener
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
 
-  fun ref on_accept(fd: U32): TCPConnectionActor =>
+  fun ref _on_accept(fd: U32): TCPConnectionActor =>
     Echoer(_server_auth, fd, _out)
 
-  fun ref on_closed() =>
+  fun ref _on_closed() =>
     _out.print("Echo server shut down.")
 
-  fun ref on_connection_failure() =>
+  fun ref _on_connection_failure() =>
     _out.print("Couldn't start Echo server. " +
       "Perhaps try another network interface?")
 
-  fun ref on_listening() =>
+  fun ref _on_listening() =>
     _out.print("Echo server started.")
 
 actor Echoer is TCPServerActor
-  var _connection: TCPConnection = TCPConnection.none()
+  var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
   new create(auth: TCPServerAuth, fd: U32, out: OutStream) =>
     _out = out
-    _connection = TCPConnection.server(auth, fd, this)
+    _tcp_connection = TCPConnection.server(auth, fd, this)
 
-  fun ref connection(): TCPConnection =>
-    _connection
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
 
-  fun ref on_closed() =>
+  fun ref _on_closed() =>
     _out.print("Connection Closed")
 
-  fun ref on_connected(conn: TCPConnection ref) =>
+  fun ref _on_connected(conn: TCPConnection ref) =>
     _out.print("We have a new connection!")
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
     _out.print("Data received. Echoing it back.")
-    _connection.send(consume data)
+    _tcp_connection.send(consume data)

@@ -9,7 +9,7 @@ actor Main
     Listener(listen_auth, connect_auth, env.out)
 
 actor  Listener is TCPListenerActor
-  var _listener: TCPListener = TCPListener.none()
+  var _tcp_listener: TCPListener = TCPListener.none()
   let _out: OutStream
   let _connect_auth: TCPConnectAuth
   let _server_auth: TCPServerAuth
@@ -21,37 +21,37 @@ actor  Listener is TCPListenerActor
     _connect_auth = connect_auth
     _out = out
     _server_auth = TCPServerAuth(listen_auth)
-    _listener = TCPListener(listen_auth, "127.0.0.1", "7669", this)
+    _tcp_listener = TCPListener(listen_auth, "127.0.0.1", "7669", this)
 
-  fun ref listener(): TCPListener =>
-    _listener
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
 
-  fun ref on_accept(fd: U32): Server =>
+  fun ref _on_accept(fd: U32): Server =>
     Server(_server_auth, fd, _out)
 
-  fun ref on_listening() =>
+  fun ref _on_listening() =>
     Client(_connect_auth, "127.0.0.1", "7669", "", _out)
 
-  fun ref on_connection_failure() =>
+  fun ref _on_connection_failure() =>
     _out.print("Unable to open listener")
 
 actor Server is TCPServerActor
-  var _connection: TCPConnection = TCPConnection.none()
+  var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
   new create(auth: TCPServerAuth, fd: U32, out: OutStream) =>
     _out = out
-    _connection =  TCPConnection.server(auth, fd, this)
+    _tcp_connection =  TCPConnection.server(auth, fd, this)
 
-  fun ref connection(): TCPConnection =>
-    _connection
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
     _out.print(consume data)
-    _connection.send("Pong")
+    _tcp_connection.send("Pong")
 
 actor Client is TCPClientActor
-  var _connection: TCPConnection = TCPConnection.none()
+  var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
   new create(auth: TCPConnectAuth,
@@ -61,14 +61,14 @@ actor Client is TCPClientActor
     out: OutStream)
   =>
     _out = out
-    _connection = TCPConnection.client(auth, host, port, from, this)
+    _tcp_connection = TCPConnection.client(auth, host, port, from, this)
 
-  fun ref connection(): TCPConnection =>
-    _connection
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
 
-  fun ref on_connected() =>
-   _connection.send("Ping")
+  fun ref _on_connected() =>
+   _tcp_connection.send("Ping")
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
    _out.print(consume data)
-   _connection.send("Ping")
+   _tcp_connection.send("Ping")
