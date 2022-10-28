@@ -10,7 +10,13 @@ use @pony_asio_event_unsubscribe[None](event: AsioEventID)
 
 primitive PonyAsio
   fun create_event(the_actor: AsioEventNotify, fd: U32): AsioEventID =>
-    @pony_asio_event_create(the_actor, fd, AsioEvent.read_write(), 0, true)
+    let asio_flags = ifdef windows then
+      AsioEvent.read_write()
+    else
+      AsioEvent.read_write_oneshot()
+    end
+
+    @pony_asio_event_create(the_actor, fd, asio_flags, 0, true)
 
   fun destroy(event: AsioEventID) =>
     @pony_asio_event_destroy(event)

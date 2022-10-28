@@ -19,8 +19,14 @@ class TCPConnection
   =>
     // TODO: handle happy eyeballs here - connect count
     _enclosing = enclosing
-    PonyTCP.connect(enclosing, host, port, from,
-      AsioEvent.read_write_oneshot())
+
+    let asio_flags = ifdef windows then
+      AsioEvent.read_write()
+    else
+      AsioEvent.read_write_oneshot()
+    end
+
+    PonyTCP.connect(enclosing, host, port, from, asio_flags)
 
   new server(auth: TCPServerAuth,
     fd': U32,
