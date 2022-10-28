@@ -283,7 +283,7 @@ class TCPConnection
           _write_completed(arg)
         else
           _send_pending_writes()
-        endif
+        end
       end
 
       if AsioEvent.disposable(flags) then
