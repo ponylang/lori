@@ -81,30 +81,18 @@ class TCPConnection
 
   fun ref send(data: ByteSeq) =>
     if is_open() then
-      if is_writeable() then
-        if has_pending_writes() then
-          try
-            let len = PonyTCP.send(_event, data)?
-            if (len < data.size()) then
-              // unable to write all data
-              _pending.push((data, len))
-              _apply_backpressure()
-            end
-          else
-            // TODO: is there any way to get here if connnection is open?
-            return
-          end
+      _pending.push((data, 0))
+      ifdef windows then
+        try
+          PonyTCP.send(_event, data, 0)?
         else
-          _pending.push((data, 0))
-          _send_pending_writes()
+          // TODO
+          // is there an error here on Windows?
+          None
         end
       else
-        _pending.push((data, 0))
+        _send_pending_writes()
       end
-    else
-      // TODO: handle trying to send on a closed connection
-      // maybe an error?
-      return
     end
 
   fun ref _send_pending_writes() =>
@@ -129,10 +117,14 @@ class TCPConnection
       end
     end
 
-    if has_pending_writes() then
+    if not has_pending_writes() then
       // all pending data was sent
       _release_backpressure()
     end
+
+  fun _write_completed(len: USize) =>
+    // TODO we need to take pending and remove `len` from it
+    None
 
   fun is_writeable(): Bool =>
     BitSet.is_set(_state, 1)
@@ -243,7 +235,9 @@ class TCPConnection
     // being unthrottled doesn't however mean we are writable
     unwriteable()
     PonyAsio.set_unwriteable(_event)
-    PonyAsio.resubscribe_write(_event)
+    ifdef not windows then
+      PonyAsio.resubscribe_write(_event)
+    end
 
   fun ref unthrottled() =>
     _state = BitSet.unset(_state, 2)
@@ -251,10 +245,7 @@ class TCPConnection
   fun has_pending_writes(): Bool =>
     _pending.size() != 0
 
-  fun ref event_notify(event: AsioEventID,
-    flags: U32,
-    arg: U32)
-  =>
+  fun ref event_notify(event: AsioEventID, flags: U32, arg: U32) =>
     match _enclosing
     | let c: TCPClientActor ref =>
       if event isnt _event then
@@ -288,7 +279,11 @@ class TCPConnection
 
       if AsioEvent.writeable(flags) then
         writeable()
-        _send_pending_writes()
+        ifdef windows then
+          _write_completed(arg)
+        else
+          _send_pending_writes()
+        endif
       end
 
       if AsioEvent.disposable(flags) then
@@ -302,7 +297,9 @@ class TCPConnection
     // TODO: should be able to switch from one-shot to edge-triggered without
     // changing this. need a switch based on flags that we do not have at
     // the moment
-    PonyAsio.resubscribe_read(_event)
+    ifdef not windows then
+      PonyAsio.resubscribe_read(_event)
+    end
 
   fun _is_socket_connected(fd: U32): Bool =>
     (let errno: U32, let value: U32) = _OSSocket.get_so_error(fd)
