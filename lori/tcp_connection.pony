@@ -122,7 +122,7 @@ class TCPConnection
       _release_backpressure()
     end
 
-  fun _write_completed(len: USize) =>
+  fun _write_completed(len: U32) =>
     // TODO we need to take pending and remove `len` from it
     None
 
