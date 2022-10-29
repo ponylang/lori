@@ -8,11 +8,16 @@ actor Main is TestList
     None
 
   fun tag tests(test: PonyTest) =>
-    test(_BitSet)
-    test(_TCPConnectionState)
-    test(_OutgoingFails)
-    test(_PingPong)
-    test(_TestBasicExpect)
+    ifdef windows then
+      test(_BitSet)
+      test(_TCPConnectionState)
+    else
+      test(_BitSet)
+      test(_TCPConnectionState)
+      test(_OutgoingFails)
+      test(_PingPong)
+      test(_TestBasicExpect)
+    end
 
 class iso _BitSet is UnitTest
   fun name(): String => "BitSet"
