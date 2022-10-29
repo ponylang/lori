@@ -11,6 +11,7 @@ actor Main is TestList
     ifdef windows then
       test(_BitSet)
       test(_TCPConnectionState)
+      test(_OutgoingFails)
     else
       test(_BitSet)
       test(_TCPConnectionState)
