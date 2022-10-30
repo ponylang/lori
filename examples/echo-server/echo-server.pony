@@ -22,7 +22,7 @@ actor EchoServer is TCPListenerActor
   fun ref _listener(): TCPListener =>
     _tcp_listener
 
-  fun ref _on_accept(fd: U32): TCPConnectionActor =>
+  fun ref _on_accept(fd: U32): TCPServerActor =>
     Echoer(_server_auth, fd, _out)
 
   fun ref _on_closed() =>
