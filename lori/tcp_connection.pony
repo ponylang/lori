@@ -302,5 +302,10 @@ class TCPConnection
     end
 
   fun _is_socket_connected(fd: U32): Bool =>
-    (let errno: U32, let value: U32) = _OSSocket.get_so_error(fd)
-    (errno == 0) and (value == 0)
+    ifdef windows then
+      (let errno: U32, let value: U32) = _OSSocket.get_so_connect_time(fd)
+      (errno == 0) and (value != 0xffffffff)
+    else
+      (let errno: U32, let value: U32) = _OSSocket.get_so_error(fd)
+      (errno == 0) and (value == 0)
+    end

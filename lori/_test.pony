@@ -88,13 +88,14 @@ actor _TestOutgoingFailure is TCPClientActor
 
   new create(auth: TCPConnectAuth, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "9667", "", this)
+    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "7669", "", this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _on_connected() =>
     _h.fail("on_connected for a connection that should have failed")
+    _h.complete(false)
 
   fun ref _on_connection_failure() =>
     _h.complete(true)
