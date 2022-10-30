@@ -25,7 +25,7 @@ ci: unit-tests build-examples
 examples: build-examples
 
 unit-tests: $(tests_binary)
-	$^ --exclude=integration --sequential
+	$^ --exclude=integration
 
 $(tests_binary): $(GEN_FILES) $(SOURCE_FILES) | $(BUILD_DIR)
 	${PONYC} -o ${BUILD_DIR} $(SRC_DIR)

@@ -90,7 +90,7 @@ actor _TestOutgoingFailure is TCPClientActor
 
   new create(auth: TCPConnectAuth, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "7669", "", this)
+    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "3245", "", this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -128,7 +128,7 @@ actor _TestPinger is TCPClientActor
   =>
     _pings_to_send = pings_to_send
     _h = h
-    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "7669", "", this)
+    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "7664", "", this)
 
 
   fun ref _connection(): TCPConnection =>
@@ -191,7 +191,7 @@ actor _TestPongerListener is TCPListenerActor
     _pings_to_receive = pings_to_receive
     _h = h
     _server_auth = TCPServerAuth(listener_auth)
-    _tcp_listener = TCPListener(listener_auth, "127.0.0.1", "7669", this)
+    _tcp_listener = TCPListener(listener_auth, "127.0.0.1", "7664", this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -233,7 +233,7 @@ actor _TestBasicExpectClient is TCPClientActor
 
   new create(auth: TCPConnectAuth, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "7670", "", this)
+    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "9728", "", this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -259,7 +259,7 @@ actor _TestBasicExpectListener is TCPListenerActor
     _h = h
     _client_auth = client_auth
     _server_auth = TCPServerAuth(listener_auth)
-    _tcp_listener = TCPListener(listener_auth, "127.0.0.1", "7670", this)
+    _tcp_listener = TCPListener(listener_auth, "127.0.0.1", "9728", this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -331,7 +331,7 @@ actor _TestCanListenListener is TCPListenerActor
   new create(listener_auth: TCPListenAuth, h: TestHelper) =>
     _h = h
     _server_auth = TCPServerAuth(listener_auth)
-    _tcp_listener = TCPListener(listener_auth, "127.0.0.1", "7669", this)
+    _tcp_listener = TCPListener(listener_auth, "127.0.0.1", "5786", this)
 
   fun ref _on_accept(fd: U32): _TestDoNothingServerActor =>
     _h.fail("_on_accept shouldn't be called")
