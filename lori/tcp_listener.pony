@@ -68,6 +68,11 @@ class TCPListener
         // attempt. If that is the case or the listener is otherwise not open,
         // return and do not start a new connection
         ifdef windows then
+          if arg == -1 then
+            PonyAsio.unsubscribe(_event)
+            return
+          end
+
           if arg > 0 then
             PonyTCP.close(arg)
           end
