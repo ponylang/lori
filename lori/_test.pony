@@ -233,21 +233,13 @@ class iso _TestBasicExpect is UnitTest
 actor _TestBasicExpectClient is TCPClientActor
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _h: TestHelper
-  let _listener: _TestBasicExpectListener
 
-  new create(auth: TCPConnectAuth,
-    h: TestHelper,
-    listener: _TestBasicExpectListener)
-  =>
+  new create(auth: TCPConnectAuth, h: TestHelper) =>
     _h = h
-    _listener = listener
     _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "9728", "", this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
-
-  fun ref _on_closed() =>
-    _listener.client_closed()
 
   fun ref _on_connected() =>
     _h.complete_action("client connected")
@@ -262,7 +254,6 @@ actor _TestBasicExpectListener is TCPListenerActor
   let _server_auth: TCPServerAuth
   let _client_auth: TCPConnectAuth
   var _client: (_TestBasicExpectClient | None) = None
-  var _server: (_TestBasicExpectServer | None) = None
 
   new create(listener_auth: TCPListenAuth,
     client_auth: TCPConnectAuth,
@@ -273,23 +264,18 @@ actor _TestBasicExpectListener is TCPListenerActor
     _server_auth = TCPServerAuth(listener_auth)
     _tcp_listener = TCPListener(listener_auth, "127.0.0.1", "9728", this)
 
-  be client_closed() =>
-    try (_server as _TestBasicExpectServer).dispose() end
-
   fun ref _listener(): TCPListener =>
     _tcp_listener
 
   fun ref _on_accept(fd: U32): _TestBasicExpectServer =>
-    let s = _TestBasicExpectServer(_server_auth, fd, _h)
-    _server = s
-    s
+    _TestBasicExpectServer(_server_auth, fd, _h)
 
   fun ref _on_closed() =>
     try (_client as _TestBasicExpectClient).dispose() end
 
   fun ref _on_listening() =>
     _h.complete_action("server listening")
-    _client =_TestBasicExpectClient(_client_auth, _h, this)
+    _client =_TestBasicExpectClient(_client_auth, _h)
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestBasicExpectListener")
