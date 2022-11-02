@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 
+- Add Windows Support ([PR #82](https://github.com/seantallen-org/lori/pull/82))
 
 ### Changed
 
