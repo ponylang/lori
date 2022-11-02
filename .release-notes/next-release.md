@@ -6,3 +6,6 @@ All tested functionality is equivalent between Windows and Posix platforms. Howe
 
 Extensive additional work will be done on Windows support, but going forward, Windows will be a first-class Lori platform.
 
+## `TCPListenerActor.on_accept` signature changed
+
+Previously, the signature had `TCPConnectionActor` as the type. It has been updated to be `TCPServerActor`. Listeners must return a server instance, the old signature allowed for returning a client. Returning a client would result in a runtime error. The change in signature makes this a compile time error.

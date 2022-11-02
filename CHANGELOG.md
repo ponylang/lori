@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Changed
 
+- `TCPListenerActor.on_accept` signature ([PR #82](https://github.com/seantallen-org/lori/pull/82))
 
 ## [0.4.0] - 2022-10-04
 
