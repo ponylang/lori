@@ -19,8 +19,15 @@ class TCPConnection
   =>
     // TODO: handle happy eyeballs here - connect count
     _enclosing = enclosing
-    PonyTCP.connect(enclosing, host, port, from,
-      AsioEvent.read_write_oneshot())
+
+    let asio_flags = ifdef windows then
+      AsioEvent.read_write()
+    else
+      AsioEvent.read_write_oneshot()
+    end
+
+    _resize_read_buffer_if_needed()
+    PonyTCP.connect(enclosing, host, port, from, asio_flags)
 
   new server(auth: TCPServerAuth,
     fd': U32,
@@ -28,8 +35,12 @@ class TCPConnection
   =>
     _fd = fd'
     _enclosing = enclosing
+
+    _resize_read_buffer_if_needed()
     _event = PonyAsio.create_event(enclosing, _fd)
+    // TODO should we be opening here? Perhaps that waits for the event
     open()
+    _iocp_read()
 
   new none() =>
     """
@@ -65,67 +76,93 @@ class TCPConnection
     if is_open() then
       _state = BitSet.unset(_state, 0)
       unwriteable()
-      PonyTCP.shutdown(_fd)
+      ifdef windows then
+        PonyTCP.close(_fd)
+      else
+        PonyTCP.shutdown(_fd)
+      end
       PonyAsio.unsubscribe(_event)
       _fd = -1
+      match _enclosing
+      | let s: TCPConnectionActor ref =>
+        s._on_closed()
+      end
     end
 
   fun is_closed(): Bool =>
     not is_open()
 
   fun ref send(data: ByteSeq) =>
-    if is_open() then
-      if is_writeable() then
-        if has_pending_writes() then
-          try
-            let len = PonyTCP.send(_event, data)?
-            if (len < data.size()) then
-              // unable to write all data
-              _pending.push((data, len))
-              _apply_backpressure()
-            end
-          else
-            // TODO: is there any way to get here if connnection is open?
-            return
-          end
-        else
-          _pending.push((data, 0))
-          _send_pending_writes()
-        end
-      else
-        _pending.push((data, 0))
-      end
-    else
-      // TODO: handle trying to send on a closed connection
-      // maybe an error?
+    if (data.size() == 0) then
       return
     end
 
-  fun ref _send_pending_writes() =>
-    while is_writeable() and has_pending_writes() do
-      try
-        let node = _pending.head()?
-        (let data, let offset) = node()?
-
-        let len = PonyTCP.send(_event, data, offset)?
-
-        if (len + offset) < data.size() then
-          // not all data was sent
-          node()? = (data, offset + len)
-          _apply_backpressure()
+    if is_open() then
+      ifdef windows then
+        try
+          PonyTCP.send(_event, data, 0)?
         else
-          _pending.shift()?
+          close()
         end
       else
-        // error sending. appears our connection has been shutdown.
-        // TODO: handle close here
-        None
+        _pending.push((data, 0))
+        _send_pending_writes()
       end
     end
 
-    if has_pending_writes() then
-      // all pending data was sent
-      _release_backpressure()
+  fun ref _send_pending_writes() =>
+    """
+    Send pending write data.
+    This is POSIX only.
+    """
+    ifdef posix then
+      while is_writeable() and has_pending_writes() do
+        try
+          let node = _pending.head()?
+          (let data, let offset) = node()?
+
+          let len = PonyTCP.send(_event, data, offset)?
+
+          if (len + offset) < data.size() then
+            // not all data was sent
+            node()? = (data, offset + len)
+            _apply_backpressure()
+          else
+            _pending.shift()?
+          end
+        else
+          // error sending. appears our connection has been shutdown.
+          // TODO: handle close here
+          None
+        end
+      end
+
+      if not has_pending_writes() then
+        // all pending data was sent
+        _release_backpressure()
+      end
+    else
+      // TODO unreachable
+      None
+    end
+
+  fun ref _write_completed(len: U32) =>
+    """
+    The OS has informed us that `len` bytes of pending writes have completed.
+    This occurs only with IOCP on Windows.
+    """
+    ifdef windows then
+      if len == 0 then
+        // Chunk failed to write
+        close()
+        return
+      end
+
+      // TODO we have no way to report if a write was successful or not
+      None
+    else
+      // TODO unreachable
+      None
     end
 
   fun is_writeable(): Bool =>
@@ -137,59 +174,123 @@ class TCPConnection
   fun ref unwriteable() =>
     _state = BitSet.unset(_state, 1)
 
+  // TODO should this be private? Probably.
+  // There's no equiv to this on Windows with IOCP so we probably
+  // want to hide all of this.
   fun ref read() =>
-    match _enclosing
-    | let s: TCPConnectionActor ref =>
-      try
-        if is_open() then
-          var total_bytes_read: USize = 0
+    ifdef posix then
+      match _enclosing
+      | let s: TCPConnectionActor ref =>
+        try
+          if is_open() then
+            var total_bytes_read: USize = 0
 
-          // TODO: this probably shouldn't be "while true"
-          while true do
-            // Handle any data already in the read buffer
-            while _there_is_buffered_read_data() do
-              let bytes_to_consume = if _expect == 0 then
-                // if we aren't getting in `_expect` chunks,
-                // we should grab all the bytes that are currently available
-                _bytes_in_read_buffer
-              else
-                _expect
+            // TODO: this probably shouldn't be "while true"
+            while true do
+              // Handle any data already in the read buffer
+              while _there_is_buffered_read_data() do
+                let bytes_to_consume = if _expect == 0 then
+                  // if we aren't getting in `_expect` chunks,
+                  // we should grab all the bytes that are currently available
+                  _bytes_in_read_buffer
+                else
+                  _expect
+                end
+
+                let x = _read_buffer = recover Array[U8] end
+                (let data', _read_buffer) = (consume x).chop(bytes_to_consume)
+                _bytes_in_read_buffer = _bytes_in_read_buffer - bytes_to_consume
+
+                s._on_received(consume data')
               end
 
-              let x = _read_buffer = recover Array[U8] end
-              (let data', _read_buffer) = (consume x).chop(bytes_to_consume)
-              _bytes_in_read_buffer = _bytes_in_read_buffer - bytes_to_consume
+              if total_bytes_read >= _read_buffer_size then
+                s._read_again()
+                return
+              end
 
-              s._on_received(consume data')
+              _resize_read_buffer_if_needed()
+
+              let bytes_read = PonyTCP.receive(_event,
+                _read_buffer.cpointer(_bytes_in_read_buffer),
+                _read_buffer.size() - _bytes_in_read_buffer)?
+
+              if bytes_read == 0 then
+                // would block. try again later
+                _mark_unreadable()
+                return
+              end
+
+              _bytes_in_read_buffer = _bytes_in_read_buffer + bytes_read
+              total_bytes_read = total_bytes_read + bytes_read
             end
-
-            if total_bytes_read >= _read_buffer_size then
-              s._read_again()
-              return
-            end
-
-            _resize_read_buffer_if_needed()
-
-            let bytes_read = PonyTCP.receive(_event,
-              _read_buffer.cpointer(_bytes_in_read_buffer),
-              _read_buffer.size() - _bytes_in_read_buffer)?
-
-            if bytes_read == 0 then
-              // would block. try again later
-              _mark_unreadable()
-              return
-            end
-
-            _bytes_in_read_buffer = _bytes_in_read_buffer + bytes_read
-            total_bytes_read = total_bytes_read + bytes_read
           end
+        else
+          // Socket shutdown from other side
+          close()
         end
+      | None =>
+        // TODO: SHOULD WE BLOW UP WITH SOME SORT OF UNREACHABLE HERE?
+        None
+      end
+    else
+      // TODO unreachable
+      None
+    end
+
+  fun ref _iocp_read() =>
+    ifdef windows then
+      try
+        PonyTCP.receive(_event,
+          _read_buffer.cpointer(_bytes_in_read_buffer),
+          _read_buffer.size() - _bytes_in_read_buffer)?
       else
-        // Socket shutdown from other side
         close()
       end
-    | None =>
-      // TODO: SHOULD WE BLOW UP WITH SOME SORT OF UNREACHABLE HERE?
+    else
+      // TODO unreachable
+      None
+    end
+
+  fun ref _read_completed(len: U32) =>
+    """
+    The OS has informed us that `len` bytes of data has been read and is now
+    available.
+    """
+    ifdef windows then
+      match _enclosing
+      | let s: TCPConnectionActor ref =>
+        if len == 0 then
+          // The socket has been closed from the other side, or a hard close has
+          // cancelled the queued read.
+          close()
+          return
+        end
+
+        // Handle the data
+        _bytes_in_read_buffer = _bytes_in_read_buffer + len.usize()
+
+        while (_bytes_in_read_buffer >= _expect)
+          and (_bytes_in_read_buffer > 0)
+        do
+          // get data to be distributed and update `_bytes_in_read_buffer`
+          let chop_at = if _expect == 0 then
+            _bytes_in_read_buffer
+          else
+            _expect
+          end
+          (let data, _read_buffer) = (consume _read_buffer).chop(chop_at)
+          _bytes_in_read_buffer = _bytes_in_read_buffer - chop_at
+
+          s._on_received(consume data)
+
+          _resize_read_buffer_if_needed()
+        end
+
+        _iocp_read()
+      end
+    else
+      // TODO unreachable
       None
     end
 
@@ -237,7 +338,9 @@ class TCPConnection
     // being unthrottled doesn't however mean we are writable
     unwriteable()
     PonyAsio.set_unwriteable(_event)
-    PonyAsio.resubscribe_write(_event)
+    ifdef not windows then
+      PonyAsio.resubscribe_write(_event)
+    end
 
   fun ref unthrottled() =>
     _state = BitSet.unset(_state, 2)
@@ -245,10 +348,32 @@ class TCPConnection
   fun has_pending_writes(): Bool =>
     _pending.size() != 0
 
-  fun ref event_notify(event: AsioEventID,
-    flags: U32,
-    arg: U32)
-  =>
+  fun ref event_notify(event: AsioEventID, flags: U32, arg: U32) =>
+    if event is _event then
+      if AsioEvent.writeable(flags) then
+        writeable()
+        ifdef windows then
+          _write_completed(arg)
+        else
+          _send_pending_writes()
+        end
+      end
+
+      if AsioEvent.readable(flags) then
+        // TODO should set that we are readable
+        ifdef windows then
+          _read_completed(arg)
+        else
+          read()
+        end
+      end
+
+      if AsioEvent.disposable(flags) then
+        PonyAsio.destroy(event)
+        _event = AsioEvent.none()
+      end
+    end
+
     match _enclosing
     | let c: TCPClientActor ref =>
       if event isnt _event then
@@ -263,31 +388,23 @@ class TCPConnection
             _fd = fd
             open()
             c._on_connected()
-            read()
+            ifdef windows then
+              _iocp_read()
+            else
+              read()
+            end
           else
             PonyAsio.unsubscribe(event)
             PonyTCP.close(fd)
             close()
             c._on_connection_failure()
           end
+        else
+          // TODO this shouldn't be scoped to just client
+          if AsioEvent.disposable(flags) then
+            PonyAsio.destroy(event)
+          end
         end
-      end
-    end
-
-    if event is _event then
-      if AsioEvent.readable(flags) then
-        // should set that we are readable
-        read()
-      end
-
-      if AsioEvent.writeable(flags) then
-        writeable()
-        _send_pending_writes()
-      end
-
-      if AsioEvent.disposable(flags) then
-        PonyAsio.destroy(event)
-        _event = AsioEvent.none()
       end
     end
 
@@ -296,8 +413,15 @@ class TCPConnection
     // TODO: should be able to switch from one-shot to edge-triggered without
     // changing this. need a switch based on flags that we do not have at
     // the moment
-    PonyAsio.resubscribe_read(_event)
+    ifdef not windows then
+      PonyAsio.resubscribe_read(_event)
+    end
 
   fun _is_socket_connected(fd: U32): Bool =>
-    (let errno: U32, let value: U32) = _OSSocket.get_so_error(fd)
-    (errno == 0) and (value == 0)
+    ifdef windows then
+      (let errno: U32, let value: U32) = _OSSocket.get_so_connect_time(fd)
+      (errno == 0) and (value != 0xffffffff)
+    else
+      (let errno: U32, let value: U32) = _OSSocket.get_so_error(fd)
+      (errno == 0) and (value == 0)
+    end

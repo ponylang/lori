@@ -67,20 +67,44 @@ class TCPListener
         // It's possible that after closing, we got an event for a connection
         // attempt. If that is the case or the listener is otherwise not open,
         // return and do not start a new connection
+        ifdef windows then
+          if arg == -1 then
+            PonyAsio.unsubscribe(_event)
+            return
+          end
+
+          if arg > 0 then
+            PonyTCP.close(arg)
+          end
+        end
         return
       | Open =>
-        while true do
-          var fd = PonyTCP.accept(_event)
-
-          match fd
-            | -1 =>
-            // Wouldn't block but we got an error. Keep trying.
-            None
-            | 0 =>
-            // Would block. Bail out.
+        ifdef windows then
+          // Unsubscribe if we get an invalid socket in an event
+          if arg == -1 then
+            PonyAsio.unsubscribe(_event)
             return
-          else
-            e._on_accept(fd)
+          end
+
+          if arg > 0 then
+            e._on_accept(arg)
+          end
+
+          PonyTCP.accept(_event)
+        else
+          while true do
+            var fd = PonyTCP.accept(_event)
+
+            match fd
+              | -1 =>
+              // Wouldn't block but we got an error. Keep trying.
+              None
+              | 0 =>
+              // Would block. Bail out.
+              return
+            else
+              e._on_accept(fd)
+            end
           end
         end
       end

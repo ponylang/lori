@@ -8,11 +8,21 @@ actor Main is TestList
     None
 
   fun tag tests(test: PonyTest) =>
-    test(_BitSet)
-    test(_TCPConnectionState)
-    test(_OutgoingFails)
-    test(_PingPong)
-    test(_TestBasicExpect)
+    ifdef windows then
+      test(_BitSet)
+      test(_TCPConnectionState)
+      test(_OutgoingFails)
+      test(_CanListen)
+      test(_PingPong)
+      test(_TestBasicExpect)
+    else
+      test(_BitSet)
+      test(_TCPConnectionState)
+      test(_OutgoingFails)
+      test(_CanListen)
+      test(_PingPong)
+      test(_TestBasicExpect)
+    end
 
 class iso _BitSet is UnitTest
   fun name(): String => "BitSet"
@@ -82,13 +92,14 @@ actor _TestOutgoingFailure is TCPClientActor
 
   new create(auth: TCPConnectAuth, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "9667", "", this)
+    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "3245", "", this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _on_connected() =>
     _h.fail("on_connected for a connection that should have failed")
+    _h.complete(false)
 
   fun ref _on_connection_failure() =>
     _h.complete(true)
@@ -119,8 +130,8 @@ actor _TestPinger is TCPClientActor
   =>
     _pings_to_send = pings_to_send
     _h = h
-    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "7669", "", this)
-
+    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "7664", "", this)
+    try _tcp_connection.expect(4)? end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -154,6 +165,7 @@ actor _TestPonger is TCPServerActor
     _pings_to_receive = pings_to_receive
     _h = h
     _tcp_connection = TCPConnection.server(auth, fd, this)
+    try _tcp_connection.expect(4)? end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -182,7 +194,7 @@ actor _TestPongerListener is TCPListenerActor
     _pings_to_receive = pings_to_receive
     _h = h
     _server_auth = TCPServerAuth(listener_auth)
-    _tcp_listener = TCPListener(listener_auth, "127.0.0.1", "7669", this)
+    _tcp_listener = TCPListener(listener_auth, "127.0.0.1", "7664", this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -224,7 +236,7 @@ actor _TestBasicExpectClient is TCPClientActor
 
   new create(auth: TCPConnectAuth, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "7670", "", this)
+    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "9728", "", this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -250,7 +262,7 @@ actor _TestBasicExpectListener is TCPListenerActor
     _h = h
     _client_auth = client_auth
     _server_auth = TCPServerAuth(listener_auth)
-    _tcp_listener = TCPListener(listener_auth, "127.0.0.1", "7670", this)
+    _tcp_listener = TCPListener(listener_auth, "127.0.0.1", "9728", this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -299,3 +311,51 @@ actor _TestBasicExpectServer is TCPServerActor
       _h.complete_action("expected data received")
       _tcp_connection.close()
     end
+
+class iso _CanListen is UnitTest
+  """
+  Test that we can listen on a socket for incoming connections and that the
+  `_on_listening` callback is correctly called.
+  """
+  fun name(): String => "CanListen"
+
+  fun apply(h: TestHelper) =>
+    let auth = TCPListenAuth(h.env.root)
+    let listener = _TestCanListenListener(auth, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor _TestCanListenListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  let _server_auth: TCPServerAuth
+
+  new create(listener_auth: TCPListenAuth, h: TestHelper) =>
+    _h = h
+    _server_auth = TCPServerAuth(listener_auth)
+    _tcp_listener = TCPListener(listener_auth, "127.0.0.1", "5786", this)
+
+  fun ref _on_accept(fd: U32): _TestDoNothingServerActor =>
+    _h.fail("_on_accept shouldn't be called")
+    _h.complete(false)
+    _TestDoNothingServerActor(_server_auth, fd)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("listening failed")
+    _h.complete(false)
+
+  fun ref _on_listening() =>
+    _h.complete(true)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+actor _TestDoNothingServerActor is TCPServerActor
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+
+  new create(auth: TCPServerAuth, fd: U32) =>
+    _tcp_connection = TCPConnection.server(auth, fd, this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
