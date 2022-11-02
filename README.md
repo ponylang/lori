@@ -4,9 +4,7 @@ Pony TCP classes reimagined.
 
 ## Status
 
-![vs-ponyc-latest](https://github.com/seantallen/lori/workflows/vs-ponyc-latest/badge.svg)
-
-This is an experimental project and shouldn't be used in a production environment.
+Lori is an alpha-level project. It should be relatively bug free but is undergoing extensive changes.
 
 ## Installation
 
