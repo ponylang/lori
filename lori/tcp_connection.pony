@@ -3,6 +3,7 @@ use "collections"
 class TCPConnection
   var _fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
+  // state bit 0 is open/close. bit 1 is writable. bit 2 is throttled.
   var _state: U32 = 0
   let _enclosing: (TCPClientActor ref | TCPServerActor ref | None)
   let _pending: List[(ByteSeq, USize)] = _pending.create()
