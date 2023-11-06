@@ -5,22 +5,14 @@ on:
     types: [shared-docker-linux-builders-updated]
 
 jobs:
-  release-vs-ponyc-main:
-    name: Verify in release mode on Linux with most recent ponyc
+  linux:
+    name: Linux
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/ponylang/shared-docker-ci-x86-64-unknown-linux-builder:latest
     steps:
       - uses: actions/checkout@v3
-      - name: Test with the most recent ponyc
-        run: make ci config=release
-
-  debug-vs-ponyc-main:
-    name: Verify in debug mode on Linux with most recent ponyc
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/ponylang/shared-docker-ci-x86-64-unknown-linux-builder:latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Test with the most recent ponyc
+      - name: config=debug
         run: make ci config=debug
+      - name: config=release
+        run: make ci config=release
