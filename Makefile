@@ -3,6 +3,7 @@ config ?= release
 BUILD_DIR ?= build/$(config)
 SRC_DIR ?= lori
 tests_binary := $(BUILD_DIR)/lori
+docs_dir := build/$(PACKAGE)-docs
 
 ifdef config
 	ifeq (,$(filter $(config),debug release))
@@ -16,7 +17,7 @@ else
 	PONYC = ponyc --debug
 endif
 
-SOURCE_FILES := $(shell find $(SRC_DIR) -name \*.pony)
+SOURCE_FILES := $(shell find $(SRC_DIR) -name *.pony)
 
 test: unit-tests
 
@@ -38,6 +39,12 @@ clean:
 
 realclean:
 	rm -rf build
+
+$(docs_dir): $(SOURCE_FILES)
+	rm -rf $(docs_dir)
+	$(PONYC) --docs-public --pass=docs --output build $(SRC_DIR)
+
+docs: $(docs_dir)
 
 TAGS:
 	ctags --recurse=yes $(SRC_DIR)
