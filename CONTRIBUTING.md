@@ -1,6 +1,6 @@
 # Contributing
 
-You want to contribute to Lori? Awesome.
+You want to contribute to lori? Awesome.
 
 There are a number of ways to contribute. As this document is a little long, feel free to jump to the section that applies to you currently:
 
@@ -16,7 +16,7 @@ Additional notes regarding formatting:
 
 ## Bug report
 
-First of all please [search existing issues](https://github.com/seantallen/Lori/issues) to make sure your issue hasn't already been reported. If you cannot find a suitable issue — [create a new one](https://github.com/seantallen/Lori/issues/new).
+First of all please [search existing issues](https://github.com/ponylang/lori/issues) to make sure your issue hasn't already been reported. If you cannot find a suitable issue — [create a new one](https://github.com/ponylang/lori/issues/new).
 
 Provide the following details:
 
@@ -30,12 +30,12 @@ If possible, try to isolate the problem and provide just enough code to demonstr
 
 ## How to Contribute
 
-This project uses a fairly standard GitHub pull request workflow. If you have already contributed to a project via GitHub pull request, you can skip this section and proceed to the [specific details of what we ask for in a pull request](#pull-request). If this is your first time contributing to a project via GitHub, read on.
+We use a fairly standard GitHub pull request workflow. If you have already contributed to a project via GitHub pull request, you can skip this section and proceed to the [specific details of what we ask for in a pull request](#pull-request). If this is your first time contributing to a project via GitHub, read on.
 
 Here is the basic GitHub workflow:
 
 1. Fork this repo. you can do this via the GitHub website. This will result in you having your own copy of the repo under your GitHub account.
-2. Clone your forked repo to your local machine
+2. Clone your fork to your local machine
 3. Make a branch for your change
 4. Make your change on that branch
 5. Push your change to your repo
@@ -44,12 +44,12 @@ Here is the basic GitHub workflow:
 Some things to note that aren't immediately obvious to folks just starting out:
 
 1. Your fork doesn't automatically stay up to date with changes in the main repo.
-2. Any changes you make on your branch that you used for one PR will automatically appear in another PR so if you have more than 1 PR, be sure to always create different branches for them.
-3. Weird things happen with commit history if you don't create your PR branches off of `main` so always make sure you have the `main` branch checked out before creating a branch for a PR
+2. Any changes you make on your branch that you used for the PR will automatically appear in the PR so if you have more than 1 PR, be sure to always create different branches for them.
+3. Weird things happen with commit history if you don't create your PR branches off of main so always make sure you have the main branch checked out before creating a branch for a PR
 
-If you feel overwhelmed at any point, don't worry, it can be a lot to learn when you get started. You can usually find me on the [Pony IRC](https://webchat.freenode.net/?channels=%ponylang) if you need help.
+If you feel overwhelmed at any point, don't worry, it can be a lot to learn when you get started. Feel free to reach out via [Zulip](https://ponylang.zulipchat.com/#narrow/stream/192795-contribute-to-Pony).
 
-You can get help using GitHub via [the official documentation](https://help.github.com/). Some hightlights include:
+You can get help using GitHub via [the official documentation](https://help.github.com/). Some highlights include:
 
 * [Fork A Repo](https://help.github.com/articles/fork-a-repo/)
 * [Creating a pull request](https://help.github.com/articles/creating-a-pull-request/)
@@ -57,16 +57,25 @@ You can get help using GitHub via [the official documentation](https://help.gith
 
 ## Pull request
 
-Before issuing a pull request we ask that you squash all your commits into a single logical commit. While your PR is in review, we may ask for additional changes, please do not squash those commits while the review is underway. Once everything is good, I'll then ask you to further squash those commits before merging. We ask that you not squash while a review is underway as it can make it hard to follow what is going on. Additionally, we ask that you:
+While we don't require that your pull request be a single commit, note that we will end up squashing all your commits into a single commit when we merge. While your PR is in review, we may ask for additional changes, please do not squash those commits while the review is underway. We ask that you not squash while a review is underway as it can make it hard to follow what is going on.
 
-* [Write a good commit message](http://chris.beams.io/posts/git-commit/)
-* Issue 1 Pull Request per feature. Don't lump unrelated changes together.
+When opening your pull request, please make sure that the initial comment on the PR is the commit message we should use when we merge. Making sure your commit message conforms to these guidelines for [writ(ing) a good commit message](http://chris.beams.io/posts/git-commit/).
 
-If you aren't sure how to squash multiple commits into one, Steve Klabnik wrote [a handy guide](http://blog.steveklabnik.com/posts/2012-11-08-how-to-squash-commits-in-a-github-pull-request) that you can refer to.
+Make sure to issue 1 pull request per feature. Don't lump unrelated changes together. If you find yourself using the word "and" in your commit comment, you
+are probably doing too much for a single PR.
 
-Once those conditions are met, the PR can be merged.
+We keep a [CHANGELOG](CHANGELOG.md) of all software changes with behavioural effects in ponyc. If your PR includes such changes (rather than say a documentation update), a Pony team member will do the following before merging it, so that the PR will be automatically added to the CHANGELOG:
 
-Please note, if your changes are purely to things like README, CHANGELOG etc, you can add [skip ci] as the last line of your commit message and your PR won't be run through our continuous integration systems. We ask that you use [skip ci] where appropriate as it helps to get changes through CI faster and doesn't waste resources that CircleCI is kindly donating to the Open Source community.
+* Ensure that the ticket is tagged with one or more appropriate "changelog - *" labels - each label corresponds to a section of the CHANGELOG where this change will be automatically mentioned.
+* Ensure that the ticket title is appropriate - the title will be used as the summary of the change, so it should be appropriately formatted, including a ticket reference if the PR is a fix to an existing bug ticket.
+  * For example, an appropriate title for a PR that fixes a bug reported in issue ticket #98 might look like:
+  * *Fixed crash related to improper input handling (issue #98)*
+
+Once those conditions are met, the PR can be merged, and an automated system will immediately add the entry to the CHANGELOG. Keeping the CHANGELOG entries out of the file changes in the PR helps to avoid conflicts and other administrative headaches when many PRs are in progress.
+
+Any change that involves a CHANGELOG entry will trigger a bot to request that you add release notes to your PR.
+
+Pull requests from accounts that aren't members of the Ponylang organization require approval from a member before running. Approval is required after each update that you make. This could involve a lot of waiting on your part for approvals. If you are opening PRs to verify that changes all pass CI before "opening it for real", we strongly suggest that you open the PR against the `main` branch of your fork. CI will then run in your fork and you don't need to wait for approval from a Ponylang member.
 
 ## Documentation formatting
 
