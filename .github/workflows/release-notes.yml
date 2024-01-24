@@ -31,5 +31,5 @@ jobs:
           organization-url: 'https://ponylang.zulipchat.com/'
           to: notifications
           type: stream
-          topic: ${{ github.repository }} scheduled job failure
+          topic: ${{ github.repository }} unattended job failure
           content: ${{ github.server_url}}/${{ github.repository }}/actions/runs/${{ github.run_id }} failed.
