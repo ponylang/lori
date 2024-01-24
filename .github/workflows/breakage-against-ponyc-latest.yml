@@ -1,4 +1,4 @@
-name: vs-ponyc-latest
+name: ponyc update breakage test
 
 on:
   repository_dispatch:
