@@ -1,11 +1,16 @@
-name: Release Notes Reminder Bot
+name: Release Notes Reminder
 
 on:
   pull_request_target:
-    types: [labeled]
+    types:
+      - labeled
+
+permissions:
+  packages: read
+  pull-requests: write
 
 jobs:
-  release-note-reminder-bot:
+  release-note-reminder:
     runs-on: ubuntu-latest
     name: Prompt to add release notes
     steps:
@@ -13,3 +18,4 @@ jobs:
         uses: docker://ghcr.io/ponylang/release-notes-reminder-bot-action:0.1.1
         env:
           API_CREDENTIALS: ${{ secrets.PONYLANG_MAIN_API_TOKEN }}
+

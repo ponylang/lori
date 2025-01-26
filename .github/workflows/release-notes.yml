@@ -1,4 +1,4 @@
-name: Release Notes Bot
+name: Release Notes
 
 on:
   push:
@@ -10,8 +10,13 @@ on:
       - .release-notes/next-release.md
       - .release-notes/\d+.\d+.\d+.md
 
+permissions:
+  packages: read
+  pull-requests: read
+  contents: write
+
 jobs:
-  release-notes-bot:
+  release-notes:
     runs-on: ubuntu-latest
     name: Update release notes
     steps:
@@ -31,5 +36,5 @@ jobs:
           organization-url: 'https://ponylang.zulipchat.com/'
           to: notifications
           type: stream
-          topic: ${{ github.repository }} unattended job failure
+          topic: ${{ github.repository }} scheduled job failure
           content: ${{ github.server_url}}/${{ github.repository }}/actions/runs/${{ github.run_id }} failed.
