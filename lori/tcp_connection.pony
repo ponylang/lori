@@ -75,14 +75,10 @@ class TCPConnection
 
   fun ref close() =>
     if is_open() then
+      PonyAsio.unsubscribe(_event)
       _state = BitSet.unset(_state, 0)
       unwriteable()
-      ifdef windows then
-        PonyTCP.close(_fd)
-      else
-        PonyTCP.shutdown(_fd)
-      end
-      PonyAsio.unsubscribe(_event)
+      PonyTCP.close(_fd)
       _fd = -1
       match _enclosing
       | let s: TCPConnectionActor ref =>
@@ -211,6 +207,15 @@ class TCPConnection
               end
 
               _resize_read_buffer_if_needed()
+
+              if (is_closed()) then
+                // If this connection was closed, but the file descriptor
+                // just happened to be reallocated, this will prevent us
+                // reading data on the mew Actor's connection
+                _mark_unreadable()
+                unwriteable()
+                break
+              end
 
               let bytes_read = PonyTCP.receive(_event,
                 _read_buffer.cpointer(_bytes_in_read_buffer),
@@ -350,6 +355,7 @@ class TCPConnection
     _pending.size() != 0
 
   fun ref event_notify(event: AsioEventID, flags: U32, arg: U32) =>
+    if (PonyAsio.event_fd(_event) != _fd) then return end
     if event is _event then
       if AsioEvent.writeable(flags) then
         writeable()
