@@ -53,7 +53,10 @@ class TCPConnection
     end
     _writeable = true
     _readable = true
+    // Queue up reads as we are now connected
+    // But might have been in a race with ASIO
     _iocp_read()
+    enclosing._read_again()
 
   new none() =>
     """
