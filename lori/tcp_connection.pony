@@ -1,7 +1,5 @@
 use "collections"
 
-use @printf[I32](fmt: Pointer[U8] tag, ...)
-
 class TCPConnection
   var _connected: Bool = false
   var _closed: Bool = false
@@ -214,47 +212,45 @@ class TCPConnection
       match _enclosing
       | let s: TCPConnectionActor ref =>
         try
-          if is_open() then
-            var total_bytes_read: USize = 0
+          var total_bytes_read: USize = 0
 
-            while _readable and not _shutdown_peer do
-              // Handle any data already in the read buffer
-              while _there_is_buffered_read_data() do
-                let bytes_to_consume = if _expect == 0 then
-                  // if we aren't getting in `_expect` chunks,
-                  // we should grab all the bytes that are currently available
-                  _bytes_in_read_buffer
-                else
-                  _expect
-                end
-
-                let x = _read_buffer = recover Array[U8] end
-                (let data', _read_buffer) = (consume x).chop(bytes_to_consume)
-                _bytes_in_read_buffer = _bytes_in_read_buffer - bytes_to_consume
-
-                s._on_received(consume data')
+          while _readable and not _shutdown_peer do
+            // Handle any data already in the read buffer
+            while _there_is_buffered_read_data() do
+              let bytes_to_consume = if _expect == 0 then
+                // if we aren't getting in `_expect` chunks,
+                // we should grab all the bytes that are currently available
+                _bytes_in_read_buffer
+              else
+                _expect
               end
 
-              if total_bytes_read >= _read_buffer_size then
-                s._read_again()
-                return
-              end
+              let x = _read_buffer = recover Array[U8] end
+              (let data', _read_buffer) = (consume x).chop(bytes_to_consume)
+              _bytes_in_read_buffer = _bytes_in_read_buffer - bytes_to_consume
 
-              _resize_read_buffer_if_needed()
-
-              let bytes_read = PonyTCP.receive(_event,
-                _read_buffer.cpointer(_bytes_in_read_buffer),
-                _read_buffer.size() - _bytes_in_read_buffer)?
-
-              if bytes_read == 0 then
-                // would block. try again later
-                _mark_unreadable()
-                return
-              end
-
-              _bytes_in_read_buffer = _bytes_in_read_buffer + bytes_read
-              total_bytes_read = total_bytes_read + bytes_read
+              s._on_received(consume data')
             end
+
+            if total_bytes_read >= _read_buffer_size then
+              s._read_again()
+              return
+            end
+
+            _resize_read_buffer_if_needed()
+
+            let bytes_read = PonyTCP.receive(_event,
+              _read_buffer.cpointer(_bytes_in_read_buffer),
+              _read_buffer.size() - _bytes_in_read_buffer)?
+
+            if bytes_read == 0 then
+              // would block. try again later
+              _mark_unreadable()
+              return
+            end
+
+            _bytes_in_read_buffer = _bytes_in_read_buffer + bytes_read
+            total_bytes_read = total_bytes_read + bytes_read
           end
         else
           // The socket has been closed from the other side.
@@ -402,14 +398,13 @@ class TCPConnection
       end
 
       _try_shutdown()
-    end
-
-    match _enclosing
-    | let c: TCPClientActor ref =>
-      if event isnt _event then
-        if AsioEvent.writeable(flags) then
-          let fd = PonyAsio.event_fd(event)
-          if not _connected and not _closed then
+    else
+      if AsioEvent.writeable(flags) then
+        let fd = PonyAsio.event_fd(event)
+        if not _connected and not _closed then
+          // We don't have a connection yet so we are a client
+          match _enclosing
+          | let c: TCPClientActor ref =>
             if _is_socket_connected(fd) then
               _event = event
               _fd = fd
@@ -428,24 +423,23 @@ class TCPConnection
               close()
               c._on_connection_failure()
             end
-          else
-            // There is a possibility that a non-Windows system has
-            // already unsubscribed this event already.  (Windows might
-            // be vulnerable to this race, too, I'm not sure.) It's a
-            // bug to do a second time.  Look at the disposable status
-            // of the event (not the flags that this behavior's args!)
-            // to see if it's ok to unsubscribe.
-            if not PonyAsio.get_disposable(event) then
-              PonyAsio.unsubscribe(event)
-            end
-            PonyTCP.close(fd)
-            _try_shutdown()
           end
         else
-          // TODO this shouldn't be scoped to just client
-          if AsioEvent.disposable(flags) then
-            PonyAsio.destroy(event)
+          // There is a possibility that a non-Windows system has
+          // already unsubscribed this event already.  (Windows might
+          // be vulnerable to this race, too, I'm not sure.) It's a
+          // bug to do a second time.  Look at the disposable status
+          // of the event (not the flags that this behavior's args!)
+          // to see if it's ok to unsubscribe.
+          if not PonyAsio.get_disposable(event) then
+            PonyAsio.unsubscribe(event)
           end
+          PonyTCP.close(fd)
+          _try_shutdown()
+        end
+      else
+        if AsioEvent.disposable(flags) then
+          PonyAsio.destroy(event)
         end
       end
     end
