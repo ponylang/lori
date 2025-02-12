@@ -355,7 +355,6 @@ class TCPConnection
     _pending.size() != 0
 
   fun ref event_notify(event: AsioEventID, flags: U32, arg: U32) =>
-    if (PonyAsio.event_fd(_event) != _fd) then return end
     if event is _event then
       if AsioEvent.writeable(flags) then
         writeable()
