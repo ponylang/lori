@@ -173,9 +173,8 @@ class TCPConnection
             _pending.shift()?
           end
         else
-          // error sending. appears our connection has been shutdown.
-          // TODO: handle close here
-          None
+          // Non-graceful shutdown on error.
+          hard_close()
         end
       end
 
