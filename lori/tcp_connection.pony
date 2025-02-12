@@ -1,10 +1,18 @@
 use "collections"
 
+use @printf[I32](fmt: Pointer[U8] tag, ...)
+
 class TCPConnection
+  var _connected: Bool = false
+  var _closed: Bool = false
+  var _shutdown: Bool = false
+  var _shutdown_peer: Bool = false
+  var _throttled: Bool = false
+  var _readable: Bool = false
+  var _writeable: Bool = false
+
   var _fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
-  // state bit 0 is open/close. bit 1 is writable. bit 2 is throttled.
-  var _state: U32 = 0
   let _enclosing: (TCPClientActor ref | TCPServerActor ref | None)
   let _pending: List[(ByteSeq, USize)] = _pending.create()
   var _read_buffer: Array[U8] iso = recover Array[U8] end
@@ -40,7 +48,13 @@ class TCPConnection
     _resize_read_buffer_if_needed()
     _event = PonyAsio.create_event(enclosing, _fd)
     // TODO should we be opening here? Perhaps that waits for the event
-    open()
+
+    _connected = true
+    ifdef not windows then
+      PonyAsio.set_writeable(_event)
+    end
+    _writeable = true
+    _readable = true
     _iocp_read()
 
   new none() =>
@@ -59,39 +73,65 @@ class TCPConnection
       error
     end
 
-  fun ref open() =>
-    // TODO: should this be private? I think so.
-    // I don't think the actor that is using the connection should
-    // ever need this.
-    // client-  open() gets called from our event_notify
-    // server- calls this
-    //
-    // seems like no need to call from external
-    _state = BitSet.set(_state, 0)
-    writeable()
-
-  fun is_open(): Bool =>
-    BitSet.is_set(_state, 0)
-
   fun ref close() =>
-    if is_open() then
-      _state = BitSet.unset(_state, 0)
-      unwriteable()
-      ifdef windows then
-        PonyTCP.close(_fd)
-      else
+    _closed = true
+    _try_shutdown()
+
+  fun ref _try_shutdown() =>
+    """
+    If we have closed and we have no remaining writes or pending connections,
+    then shutdown.
+    """
+    if not _closed then
+      return
+    end
+
+    if not _shutdown then
+      _shutdown = true
+      if _connected then
         PonyTCP.shutdown(_fd)
-      end
-      PonyAsio.unsubscribe(_event)
-      _fd = -1
-      match _enclosing
-      | let s: TCPConnectionActor ref =>
-        s._on_closed()
+      else
+        _shutdown_peer = true
       end
     end
 
+    if _connected and _shutdown and _shutdown_peer then
+      hard_close()
+    end
+
+  fun ref hard_close() =>
+    """
+    When an error happens, do a non-graceful close.
+    """
+    if not _connected then
+      return
+    end
+
+    _connected = false
+    _closed = true
+    _shutdown = true
+    _shutdown_peer = true
+
+    PonyAsio.unsubscribe(_event)
+    _readable = false
+    _writeable = false
+    PonyAsio.set_unreadable(_event)
+    PonyAsio.set_unwriteable(_event)
+
+    // On windows, this will also cancel all outstanding IOCP operations.
+    PonyTCP.close(_fd)
+    _fd = -1
+
+    match _enclosing
+    | let s: TCPConnectionActor ref =>
+      s._on_closed()
+    end
+
+  fun is_open(): Bool =>
+    _connected and not _closed
+
   fun is_closed(): Bool =>
-    not is_open()
+    _closed
 
   fun ref send(data: ByteSeq) =>
     if (data.size() == 0) then
@@ -117,7 +157,7 @@ class TCPConnection
     This is POSIX only.
     """
     ifdef posix then
-      while is_writeable() and has_pending_writes() do
+      while _writeable and has_pending_writes() do
         try
           let node = _pending.head()?
           (let data, let offset) = node()?
@@ -166,15 +206,6 @@ class TCPConnection
       None
     end
 
-  fun is_writeable(): Bool =>
-    BitSet.is_set(_state, 1)
-
-  fun ref writeable() =>
-    _state = BitSet.set(_state, 1)
-
-  fun ref unwriteable() =>
-    _state = BitSet.unset(_state, 1)
-
   // TODO should this be private? Probably.
   // There's no equiv to this on Windows with IOCP so we probably
   // want to hide all of this.
@@ -186,8 +217,7 @@ class TCPConnection
           if is_open() then
             var total_bytes_read: USize = 0
 
-            // TODO: this probably shouldn't be "while true"
-            while true do
+            while _readable and not _shutdown_peer do
               // Handle any data already in the read buffer
               while _there_is_buffered_read_data() do
                 let bytes_to_consume = if _expect == 0 then
@@ -227,8 +257,9 @@ class TCPConnection
             end
           end
         else
-          // Socket shutdown from other side
-          close()
+          // The socket has been closed from the other side.
+          _shutdown_peer = true
+          hard_close()
         end
       | None =>
         // TODO: SHOULD WE BLOW UP WITH SOME SORT OF UNREACHABLE HERE?
@@ -264,6 +295,8 @@ class TCPConnection
         if len == 0 then
           // The socket has been closed from the other side, or a hard close has
           // cancelled the queued read.
+          _readable = false
+          _shutdown_peer = true
           close()
           return
         end
@@ -309,7 +342,7 @@ class TCPConnection
   fun ref _apply_backpressure() =>
     match _enclosing
     | let s: TCPConnectionActor ref =>
-      if not is_throttled() then
+      if not _throttled then
         throttled()
         s._on_throttled()
       end
@@ -321,8 +354,8 @@ class TCPConnection
   fun ref _release_backpressure() =>
     match _enclosing
     | let s: TCPConnectionActor ref =>
-      if is_throttled() then
-        unthrottled()
+      if _throttled then
+        _throttled = false
         s._on_unthrottled()
       end
     | None =>
@@ -330,21 +363,15 @@ class TCPConnection
       None
     end
 
-  fun is_throttled(): Bool =>
-    BitSet.is_set(_state, 2)
-
   fun ref throttled() =>
-    _state = BitSet.set(_state, 2)
+    _throttled = true
     // throttled means we are also unwriteable
     // being unthrottled doesn't however mean we are writable
-    unwriteable()
+    _writeable = false
     PonyAsio.set_unwriteable(_event)
     ifdef not windows then
       PonyAsio.resubscribe_write(_event)
     end
-
-  fun ref unthrottled() =>
-    _state = BitSet.unset(_state, 2)
 
   fun has_pending_writes(): Bool =>
     _pending.size() != 0
@@ -352,7 +379,7 @@ class TCPConnection
   fun ref event_notify(event: AsioEventID, flags: U32, arg: U32) =>
     if event is _event then
       if AsioEvent.writeable(flags) then
-        writeable()
+        _writeable = true
         ifdef windows then
           _write_completed(arg)
         else
@@ -361,7 +388,7 @@ class TCPConnection
       end
 
       if AsioEvent.readable(flags) then
-        // TODO should set that we are readable
+        _readable = true
         ifdef windows then
           _read_completed(arg)
         else
@@ -373,32 +400,46 @@ class TCPConnection
         PonyAsio.destroy(event)
         _event = AsioEvent.none()
       end
+
+      _try_shutdown()
     end
 
     match _enclosing
     | let c: TCPClientActor ref =>
       if event isnt _event then
         if AsioEvent.writeable(flags) then
-          // TODO: this assumed the connection succeed. That might not be true.
-          // more logic needs to go here
-          // I've added some logic here but it isn't fully complete
-          // Also needs more about state machine here, are we connected? closed?
           let fd = PonyAsio.event_fd(event)
-          if _is_socket_connected(fd) then
-            _event = event
-            _fd = fd
-            open()
-            c._on_connected()
-            ifdef windows then
-              _iocp_read()
+          if not _connected and not _closed then
+            if _is_socket_connected(fd) then
+              _event = event
+              _fd = fd
+              _connected = true
+              _writeable = true
+              _readable = true
+              c._on_connected()
+              ifdef windows then
+                _iocp_read()
+              else
+                read()
+              end
             else
-              read()
+              PonyAsio.unsubscribe(event)
+              PonyTCP.close(fd)
+              close()
+              c._on_connection_failure()
             end
           else
-            PonyAsio.unsubscribe(event)
+            // There is a possibility that a non-Windows system has
+            // already unsubscribed this event already.  (Windows might
+            // be vulnerable to this race, too, I'm not sure.) It's a
+            // bug to do a second time.  Look at the disposable status
+            // of the event (not the flags that this behavior's args!)
+            // to see if it's ok to unsubscribe.
+            if not PonyAsio.get_disposable(event) then
+              PonyAsio.unsubscribe(event)
+            end
             PonyTCP.close(fd)
-            close()
-            c._on_connection_failure()
+            _try_shutdown()
           end
         else
           // TODO this shouldn't be scoped to just client
@@ -409,7 +450,8 @@ class TCPConnection
       end
     end
 
-  fun _mark_unreadable() =>
+  fun ref _mark_unreadable() =>
+    _readable = false
     PonyAsio.set_unreadable(_event)
     // TODO: should be able to switch from one-shot to edge-triggered without
     // changing this. need a switch based on flags that we do not have at
