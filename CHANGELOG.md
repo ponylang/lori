@@ -2,12 +2,18 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/) and [Keep a CHANGELOG](http://keepachangelog.com/).
 
-## [0.5.1] - 2025-02-13
+## [unreleased] - unreleased
 
 ### Fixed
 
 - Fix a Server Shutdown Race Condition ([PR #101](https://github.com/ponylang/lori/pull/101))
 - Fix a "Data Never Seen on Server Start" Race Condition ([PR #101](https://github.com/ponylang/lori/pull/101))
+
+### Added
+
+
+### Changed
+
 
 ## [0.5.0] - 2022-11-02
 
