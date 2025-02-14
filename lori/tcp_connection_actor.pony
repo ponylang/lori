@@ -12,6 +12,11 @@ trait tag TCPClientActor is TCPConnectionActor
     None
 
 trait tag TCPServerActor is TCPConnectionActor
+  fun ref _on_accepted() =>
+    """
+    Called when a connection is accepted
+    """
+    None
 
 trait tag TCPConnectionActor is AsioEventNotify
   fun ref _connection(): TCPConnection
