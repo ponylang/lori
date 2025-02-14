@@ -52,6 +52,11 @@ class TCPConnection
       PonyAsio.set_writeable(_event)
     end
     _writeable = true
+
+    // SSL TODO:
+    // SSL protocol needs to hook in here
+    // THIS IS AN "ON CONNECTION ACCEPTED" HOOK
+
     _readable = true
     // Queue up reads as we are now connected
     // But might have been in a race with ASIO
