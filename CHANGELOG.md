@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 
+- Add callback for when a server accepts a connection ([PR #102](https://github.com/ponylang/lori/pull/102))
 
 ### Changed
 
