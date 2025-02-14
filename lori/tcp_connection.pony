@@ -52,6 +52,15 @@ class TCPConnection
       PonyAsio.set_writeable(_event)
     end
     _writeable = true
+
+    match _enclosing
+    | let s: TCPServerActor ref =>
+      s._on_accepted()
+    else
+      // TODO blow up here
+      None
+    end
+
     _readable = true
     // Queue up reads as we are now connected
     // But might have been in a race with ASIO
