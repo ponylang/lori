@@ -62,15 +62,17 @@ class TCPConnection
     | let s: ServerLifecycleEventReceiver ref =>
       s.on_started()
     else
-      // TODO blow up here
-      None
+      _Unreachable()
     end
 
     _readable = true
     // Queue up reads as we are now connected
     // But might have been in a race with ASIO
-    _iocp_read()
-    enclosing._read_again()
+    ifdef windows then
+      _iocp_read()
+    else
+      enclosing._read_again()
+    end
 
   new none() =>
     """
@@ -92,8 +94,7 @@ class TCPConnection
         error
       end
     else
-      // TODO blow up here
-      None
+      _Unreachable()
     end
 
   fun ref close() =>
@@ -165,8 +166,7 @@ class TCPConnection
         _send_final(seq)
       end
     else
-      // TODO blow up here
-      None
+      _Unreachable()
     end
 
   fun ref _send_final(data: ByteSeq) =>
@@ -218,8 +218,7 @@ class TCPConnection
         _release_backpressure()
       end
     else
-      // TODO unreachable
-      None
+      _Unreachable()
     end
 
   fun ref _write_completed(len: U32) =>
@@ -237,8 +236,7 @@ class TCPConnection
       // TODO we have no way to report if a write was successful or not
       None
     else
-      // TODO unreachable
-      None
+      _Unreachable()
     end
 
   // TODO should this be private? Probably.
@@ -275,8 +273,7 @@ class TCPConnection
                 e._read_again()
                 return
               else
-                // TODO blow up
-                None
+                _Unreachable()
               end
             end
 
@@ -300,13 +297,11 @@ class TCPConnection
           _shutdown_peer = true
           hard_close()
         end
-      | None =>
-        // TODO: SHOULD WE BLOW UP WITH SOME SORT OF UNREACHABLE HERE?
-        None
+      else
+        _Unreachable()
       end
     else
-      // TODO unreachable
-      None
+      _Unreachable()
     end
 
   fun ref _iocp_read() =>
@@ -319,8 +314,7 @@ class TCPConnection
         close()
       end
     else
-      // TODO unreachable
-      None
+      _Unreachable()
     end
 
   fun ref _read_completed(len: U32) =>
@@ -363,8 +357,7 @@ class TCPConnection
         _iocp_read()
       end
     else
-      // TODO unreachable
-      None
+      _Unreachable()
     end
 
   fun _there_is_buffered_read_data(): Bool =>
@@ -385,9 +378,8 @@ class TCPConnection
         throttled()
         s.on_throttled()
       end
-    | None =>
-      // TODO: Blow up here!
-      None
+    else
+      _Unreachable()
     end
 
   fun ref _release_backpressure() =>
@@ -397,9 +389,8 @@ class TCPConnection
         _throttled = false
         s.on_unthrottled()
       end
-    | None =>
-      // TODO: blow up here
-      None
+    else
+      _Unreachable()
     end
 
   fun ref throttled() =>

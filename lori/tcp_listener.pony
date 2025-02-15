@@ -39,9 +39,8 @@ class TCPListener
           e.on_closed()
         end
       end
-    | None =>
-      // TODO: blow up here, deal with this
-      None
+    else
+      _Unreachable()
     end
 
   fun ref event_notify(event: AsioEventID, flags: U32, arg: U32) =>
@@ -116,7 +115,6 @@ class TCPListener
           end
         end
       end
-    | None =>
-      // TODO: blow up here!
-      None
+    else
+      _Unreachable()
     end
