@@ -11,7 +11,7 @@ class TCPConnection
 
   var _fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
-  let _callback_receiver: (ClientLifecycleEventReceiver ref | ServerLifecycleEventReceiver ref | None)
+  let _lifecycle_event_receiver: (ClientLifecycleEventReceiver ref | ServerLifecycleEventReceiver ref | None)
   let _enclosing: (TCPConnectionActor ref| None)
   let _pending: List[(ByteSeq, USize)] = _pending.create()
   var _read_buffer: Array[U8] iso = recover Array[U8] end
@@ -24,10 +24,10 @@ class TCPConnection
     port: String,
     from: String,
     enclosing: TCPConnectionActor ref,
-    cbreceiver: ClientLifecycleEventReceiver ref)
+    ler: ClientLifecycleEventReceiver ref)
   =>
     // TODO: handle happy eyeballs here - connect count
-    _callback_receiver = cbreceiver
+    _lifecycle_event_receiver = ler
     _enclosing = enclosing
 
     let asio_flags = ifdef windows then
@@ -42,10 +42,10 @@ class TCPConnection
   new server(auth: TCPServerAuth,
     fd': U32,
     enclosing: TCPConnectionActor ref,
-    cbreceiver: ServerLifecycleEventReceiver ref)
+    ler: ServerLifecycleEventReceiver ref)
   =>
     _fd = fd'
-    _callback_receiver = cbreceiver
+    _lifecycle_event_receiver = ler
     _enclosing = enclosing
 
     _resize_read_buffer_if_needed()
@@ -58,7 +58,7 @@ class TCPConnection
     end
     _writeable = true
 
-    match _callback_receiver
+    match _lifecycle_event_receiver
     | let s: ServerLifecycleEventReceiver ref =>
       s.on_started()
     else
@@ -77,10 +77,10 @@ class TCPConnection
     For initializing an empty variable
     """
     _enclosing = None
-    _callback_receiver = None
+    _lifecycle_event_receiver = None
 
   fun ref expect(qty: USize) ? =>
-    match _callback_receiver
+    match _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver =>
       let final_qty = s.on_expect_set(qty)
       if final_qty <= _read_buffer_size then
@@ -145,7 +145,7 @@ class TCPConnection
     PonyTCP.close(_fd)
     _fd = -1
 
-    match _callback_receiver
+    match _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
       s.on_closed()
     end
@@ -158,7 +158,7 @@ class TCPConnection
 
   fun ref send(data: ByteSeq) =>
     // TODO: should we be checking if we are open here?
-    match _callback_receiver
+    match _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
       match s.on_send(data)
       | let seq: ByteSeq =>
@@ -246,7 +246,7 @@ class TCPConnection
   // want to hide all of this.
   fun ref read() =>
     ifdef posix then
-      match _callback_receiver
+      match _lifecycle_event_receiver
       | let s: EitherLifecycleEventReceiver ref =>
         try
           var total_bytes_read: USize = 0
@@ -329,7 +329,7 @@ class TCPConnection
     available.
     """
     ifdef windows then
-      match _callback_receiver
+      match _lifecycle_event_receiver
       | let s: EitherLifecycleEventReceiver ref =>
         if len == 0 then
           // The socket has been closed from the other side, or a hard close has
@@ -379,7 +379,7 @@ class TCPConnection
     end
 
   fun ref _apply_backpressure() =>
-    match _callback_receiver
+    match _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver =>
       if not _throttled then
         throttled()
@@ -391,7 +391,7 @@ class TCPConnection
     end
 
   fun ref _release_backpressure() =>
-    match _callback_receiver
+    match _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver =>
       if _throttled then
         _throttled = false
@@ -446,7 +446,7 @@ class TCPConnection
         let fd = PonyAsio.event_fd(event)
         if not _connected and not _closed then
           // We don't have a connection yet so we are a client
-          match _callback_receiver
+          match _lifecycle_event_receiver
           | let c: ClientLifecycleEventReceiver ref =>
             if _is_socket_connected(fd) then
               _event = event
