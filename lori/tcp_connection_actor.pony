@@ -1,49 +1,5 @@
-trait tag TCPClientActor is TCPConnectionActor
-  fun ref _on_connected() =>
-    """
-    Called when a connection is opened
-    """
-    None
-
-  fun ref _on_connection_failure() =>
-    """
-    Called when a connection fails to open
-    """
-    None
-
-trait tag TCPServerActor is TCPConnectionActor
-  fun ref _on_accepted() =>
-    """
-    Called when a connection is accepted
-    """
-    None
-
 trait tag TCPConnectionActor is AsioEventNotify
   fun ref _connection(): TCPConnection
-
-  fun ref _on_closed() =>
-    """
-    Called when the connection is closed
-    """
-    None
-
-  fun ref _on_received(data: Array[U8] iso) =>
-    """
-    Called each time data is received on this connection
-    """
-    None
-
-  fun ref _on_throttled() =>
-    """
-    Called when we start experiencing backpressure
-    """
-    None
-
-  fun ref _on_unthrottled() =>
-    """
-    Called when backpressure is released
-    """
-    None
 
   be dispose() =>
     """

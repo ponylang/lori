@@ -33,22 +33,25 @@ class \nodoc\ iso _OutgoingFails is UnitTest
 
     h.long_test(5_000_000_000)
 
-actor \nodoc\ _TestOutgoingFailure is TCPClientActor
+actor \nodoc\ _TestOutgoingFailure is (TCPConnectionActor & ClientLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _h: TestHelper
 
   new create(auth: TCPConnectAuth, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "3245", "", this)
+    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "3245", "", this, this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_connected() =>
+  fun ref _next_lifecycle_event_receiver(): (ClientLifecycleEventReceiver | None) =>
+    None
+
+  fun ref on_connected() =>
     _h.fail("on_connected for a connection that should have failed")
     _h.complete(false)
 
-  fun ref _on_connection_failure() =>
+  fun ref on_connection_failure() =>
     _h.complete(true)
 
 class \nodoc\ iso _PingPong is UnitTest
@@ -66,7 +69,7 @@ class \nodoc\ iso _PingPong is UnitTest
 
     h.long_test(5_000_000_000)
 
-actor \nodoc\ _TestPinger is TCPClientActor
+actor \nodoc\ _TestPinger is (TCPConnectionActor & ClientLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   var _pings_to_send: I32
   let _h: TestHelper
@@ -77,19 +80,22 @@ actor \nodoc\ _TestPinger is TCPClientActor
   =>
     _pings_to_send = pings_to_send
     _h = h
-    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "7664", "", this)
+    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "7664", "", this, this)
     try _tcp_connection.expect(4)? end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_connected() =>
+  fun ref _next_lifecycle_event_receiver(): (ClientLifecycleEventReceiver | None) =>
+    None
+
+  fun ref on_connected() =>
     if _pings_to_send > 0 then
       _tcp_connection.send("Ping")
       _pings_to_send = _pings_to_send - 1
     end
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref on_received(data: Array[U8] iso) =>
     if _pings_to_send > 0 then
       _tcp_connection.send("Ping")
       _pings_to_send = _pings_to_send - 1
@@ -99,7 +105,7 @@ actor \nodoc\ _TestPinger is TCPClientActor
       _h.fail("Too many pongs received")
     end
 
-actor \nodoc\ _TestPonger is TCPServerActor
+actor \nodoc\ _TestPonger is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   var _pings_to_receive: I32
   let _h: TestHelper
@@ -111,13 +117,16 @@ actor \nodoc\ _TestPonger is TCPServerActor
   =>
     _pings_to_receive = pings_to_receive
     _h = h
-    _tcp_connection = TCPConnection.server(auth, fd, this)
+    _tcp_connection = TCPConnection.server(auth, fd, this, this)
     try _tcp_connection.expect(4)? end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _next_lifecycle_event_receiver(): (ServerLifecycleEventReceiver | None) =>
+    None
+
+  fun ref on_received(data: Array[U8] iso) =>
     if _pings_to_receive > 0 then
       _tcp_connection.send("Pong")
       _pings_to_receive = _pings_to_receive - 1
@@ -149,7 +158,7 @@ actor \nodoc\ _TestPongerListener is TCPListenerActor
   fun ref _on_accept(fd: U32): _TestPonger =>
     _TestPonger(_server_auth, fd, _pings_to_receive, _h)
 
-  fun ref _on_closed() =>
+  fun ref on_closed() =>
     try
       (_pinger as _TestPinger).dispose()
     end
@@ -177,22 +186,25 @@ class \nodoc\ iso _TestBasicExpect is UnitTest
 
     h.long_test(2_000_000_000)
 
-actor \nodoc\ _TestBasicExpectClient is TCPClientActor
+actor \nodoc\ _TestBasicExpectClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _h: TestHelper
 
   new create(auth: TCPConnectAuth, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "9728", "", this)
+    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "9728", "", this, this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_connected() =>
+  fun ref _next_lifecycle_event_receiver(): (ClientLifecycleEventReceiver | None) =>
+    None
+
+  fun ref on_connected() =>
     _h.complete_action("client connected")
     _tcp_connection.send("hi there, how are you???")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref on_received(data: Array[U8] iso) =>
     _h.fail("Client shouldn't get data")
 
 actor \nodoc\ _TestBasicExpectListener is TCPListenerActor
@@ -217,7 +229,7 @@ actor \nodoc\ _TestBasicExpectListener is TCPListenerActor
   fun ref _on_accept(fd: U32): _TestBasicExpectServer =>
     _TestBasicExpectServer(_server_auth, fd, _h)
 
-  fun ref _on_closed() =>
+  fun ref on_closed() =>
     try (_client as _TestBasicExpectClient).dispose() end
 
   fun ref _on_listening() =>
@@ -227,20 +239,23 @@ actor \nodoc\ _TestBasicExpectListener is TCPListenerActor
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestBasicExpectListener")
 
-actor \nodoc\ _TestBasicExpectServer is TCPServerActor
+actor \nodoc\ _TestBasicExpectServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   let _h: TestHelper
   var _tcp_connection: TCPConnection = TCPConnection.none()
   var _received_count: U8 = 0
 
   new create(auth: TCPServerAuth, fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(auth, fd, this)
+    _tcp_connection = TCPConnection.server(auth, fd, this, this)
     try _tcp_connection.expect(4)? end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _next_lifecycle_event_receiver(): (ServerLifecycleEventReceiver | None) =>
+    None
+
+  fun ref on_received(data: Array[U8] iso) =>
     _received_count = _received_count + 1
 
     if _received_count == 1 then
@@ -298,11 +313,14 @@ actor \nodoc\ _TestCanListenListener is TCPListenerActor
   fun ref _listener(): TCPListener =>
     _tcp_listener
 
-actor \nodoc\ _TestDoNothingServerActor is TCPServerActor
+actor \nodoc\ _TestDoNothingServerActor is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
 
   new create(auth: TCPServerAuth, fd: U32) =>
-    _tcp_connection = TCPConnection.server(auth, fd, this)
+    _tcp_connection = TCPConnection.server(auth, fd, this, this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _next_lifecycle_event_receiver(): (ServerLifecycleEventReceiver | None) =>
+    None

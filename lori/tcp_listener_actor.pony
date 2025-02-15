@@ -1,12 +1,12 @@
 trait tag TCPListenerActor is AsioEventNotify
   fun ref _listener(): TCPListener
 
-  fun ref _on_accept(fd: U32): TCPServerActor
+  fun ref _on_accept(fd: U32): TCPConnectionActor ?
     """
     Called when a connection is accepted
     """
 
-  fun ref _on_closed() =>
+  fun ref on_closed() =>
     """
     Called after the listener is closed
     """
