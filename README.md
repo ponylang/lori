@@ -9,7 +9,7 @@ Lori is an alpha-level project. It should be relatively bug free but is undergoi
 ## Installation
 
 * Install [corral](https://github.com/ponylang/corral)
-* `corral add github.com/seantallen-org/lori.git --version 0.5.0`
+* `corral add github.com/ponylang/lori.git --version 0.5.1`
 * `corral fetch` to fetch your dependencies
 * `use "lori"` to include this package
 * `corral run -- ponyc` to compile your application
