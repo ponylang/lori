@@ -1,6 +1,6 @@
 use "pony_test"
 
-actor Main is TestList
+actor \nodoc\ Main is TestList
   new create(env: Env) =>
     PonyTest(env, this)
 
@@ -20,7 +20,7 @@ actor Main is TestList
       test(_TestBasicExpect)
     end
 
-class iso _OutgoingFails is UnitTest
+class \nodoc\ iso _OutgoingFails is UnitTest
   """
   Test that we get a failure callback when an outgoing connection fails
   """
@@ -33,7 +33,7 @@ class iso _OutgoingFails is UnitTest
 
     h.long_test(5_000_000_000)
 
-actor _TestOutgoingFailure is TCPClientActor
+actor \nodoc\ _TestOutgoingFailure is TCPClientActor
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _h: TestHelper
 
@@ -51,7 +51,7 @@ actor _TestOutgoingFailure is TCPClientActor
   fun ref _on_connection_failure() =>
     _h.complete(true)
 
-class iso _PingPong is UnitTest
+class \nodoc\ iso _PingPong is UnitTest
   """
   Test sending and receiving via a simple Ping-Pong application
   """
@@ -66,7 +66,7 @@ class iso _PingPong is UnitTest
 
     h.long_test(5_000_000_000)
 
-actor _TestPinger is TCPClientActor
+actor \nodoc\ _TestPinger is TCPClientActor
   var _tcp_connection: TCPConnection = TCPConnection.none()
   var _pings_to_send: I32
   let _h: TestHelper
@@ -99,7 +99,7 @@ actor _TestPinger is TCPClientActor
       _h.fail("Too many pongs received")
     end
 
-actor _TestPonger is TCPServerActor
+actor \nodoc\ _TestPonger is TCPServerActor
   var _tcp_connection: TCPConnection = TCPConnection.none()
   var _pings_to_receive: I32
   let _h: TestHelper
@@ -127,7 +127,7 @@ actor _TestPonger is TCPServerActor
       _h.fail("Too many pings received")
     end
 
-actor _TestPongerListener is TCPListenerActor
+actor \nodoc\ _TestPongerListener is TCPListenerActor
   var _tcp_listener: TCPListener = TCPListener.none()
   var _pings_to_receive: I32
   let _h: TestHelper
@@ -161,7 +161,7 @@ actor _TestPongerListener is TCPListenerActor
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestPongerListener")
 
-class iso _TestBasicExpect is UnitTest
+class \nodoc\ iso _TestBasicExpect is UnitTest
   fun name(): String => "TestBasicExpect"
 
   fun apply(h: TestHelper) =>
@@ -177,7 +177,7 @@ class iso _TestBasicExpect is UnitTest
 
     h.long_test(2_000_000_000)
 
-actor _TestBasicExpectClient is TCPClientActor
+actor \nodoc\ _TestBasicExpectClient is TCPClientActor
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _h: TestHelper
 
@@ -195,7 +195,7 @@ actor _TestBasicExpectClient is TCPClientActor
   fun ref _on_received(data: Array[U8] iso) =>
     _h.fail("Client shouldn't get data")
 
-actor _TestBasicExpectListener is TCPListenerActor
+actor \nodoc\ _TestBasicExpectListener is TCPListenerActor
   let _h: TestHelper
   var _tcp_listener: TCPListener = TCPListener.none()
   let _server_auth: TCPServerAuth
@@ -227,7 +227,7 @@ actor _TestBasicExpectListener is TCPListenerActor
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestBasicExpectListener")
 
-actor _TestBasicExpectServer is TCPServerActor
+actor \nodoc\ _TestBasicExpectServer is TCPServerActor
   let _h: TestHelper
   var _tcp_connection: TCPConnection = TCPConnection.none()
   var _received_count: U8 = 0
@@ -259,7 +259,7 @@ actor _TestBasicExpectServer is TCPServerActor
       _tcp_connection.close()
     end
 
-class iso _CanListen is UnitTest
+class \nodoc\ iso _CanListen is UnitTest
   """
   Test that we can listen on a socket for incoming connections and that the
   `_on_listening` callback is correctly called.
@@ -273,7 +273,7 @@ class iso _CanListen is UnitTest
 
     h.long_test(5_000_000_000)
 
-actor _TestCanListenListener is TCPListenerActor
+actor \nodoc\ _TestCanListenListener is TCPListenerActor
   var _tcp_listener: TCPListener = TCPListener.none()
   let _h: TestHelper
   let _server_auth: TCPServerAuth
@@ -298,7 +298,7 @@ actor _TestCanListenListener is TCPListenerActor
   fun ref _listener(): TCPListener =>
     _tcp_listener
 
-actor _TestDoNothingServerActor is TCPServerActor
+actor \nodoc\ _TestDoNothingServerActor is TCPServerActor
   var _tcp_connection: TCPConnection = TCPConnection.none()
 
   new create(auth: TCPServerAuth, fd: U32) =>
