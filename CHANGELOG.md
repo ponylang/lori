@@ -16,7 +16,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Changed
 
-- An SSL libary now required to build Lori ([PR #105](https://github.com/ponylang/lori/pull/105))
+- An SSL library now required to build Lori ([PR #105](https://github.com/ponylang/lori/pull/105))
 - Several breaking API changes introduced ([PR #105](https://github.com/ponylang/lori/pull/105))
 
 ## [0.5.1] - 2025-02-13

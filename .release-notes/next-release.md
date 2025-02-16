@@ -4,7 +4,7 @@ We've added SSL support to Lori. The included support leverages the [ponylang/ne
 
 Two examples are available in the examples directory. One is a simple echo server that uses SSL and the other an SSL enabled version of our existing "infinite ping-pong" example.
 
-## An SSL libary now required to build Lori
+## An SSL library now required to build Lori
 
 With the addition of SSL support, the an SSL library is now a required dependency to build Lori. Ponylang projects support the old OpenSSL 0.9.x API series (now primarily used by LibreSSL) and the newer OpenSSL 1.1.x and 3.x API series.
 
