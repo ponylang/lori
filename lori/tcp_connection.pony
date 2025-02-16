@@ -11,7 +11,8 @@ class TCPConnection
 
   var _fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
-  let _enclosing: (TCPClientActor ref | TCPServerActor ref | None)
+  let _lifecycle_event_receiver: (ClientLifecycleEventReceiver ref | ServerLifecycleEventReceiver ref | None)
+  let _enclosing: (TCPConnectionActor ref| None)
   let _pending: List[(ByteSeq, USize)] = _pending.create()
   var _read_buffer: Array[U8] iso = recover Array[U8] end
   var _bytes_in_read_buffer: USize = 0
@@ -22,9 +23,11 @@ class TCPConnection
     host: String,
     port: String,
     from: String,
-    enclosing: TCPClientActor ref)
+    enclosing: TCPConnectionActor ref,
+    ler: ClientLifecycleEventReceiver ref)
   =>
     // TODO: handle happy eyeballs here - connect count
+    _lifecycle_event_receiver = ler
     _enclosing = enclosing
 
     let asio_flags = ifdef windows then
@@ -38,9 +41,11 @@ class TCPConnection
 
   new server(auth: TCPServerAuth,
     fd': U32,
-    enclosing: TCPServerActor ref)
+    enclosing: TCPConnectionActor ref,
+    ler: ServerLifecycleEventReceiver ref)
   =>
     _fd = fd'
+    _lifecycle_event_receiver = ler
     _enclosing = enclosing
 
     _resize_read_buffer_if_needed()
@@ -53,34 +58,43 @@ class TCPConnection
     end
     _writeable = true
 
-    match _enclosing
-    | let s: TCPServerActor ref =>
-      s._on_accepted()
+    match _lifecycle_event_receiver
+    | let s: ServerLifecycleEventReceiver ref =>
+      s.on_started()
     else
-      // TODO blow up here
-      None
+      _Unreachable()
     end
 
     _readable = true
     // Queue up reads as we are now connected
     // But might have been in a race with ASIO
-    _iocp_read()
-    enclosing._read_again()
+    ifdef windows then
+      _iocp_read()
+    else
+      enclosing._read_again()
+    end
 
   new none() =>
     """
     For initializing an empty variable
     """
     _enclosing = None
+    _lifecycle_event_receiver = None
 
   fun ref expect(qty: USize) ? =>
-    if qty <= _read_buffer_size then
-      _expect = qty
+    match _lifecycle_event_receiver
+    | let s: EitherLifecycleEventReceiver =>
+      let final_qty = s.on_expect_set(qty)
+      if final_qty <= _read_buffer_size then
+        _expect = final_qty
+      else
+        // saying you want a chunk larger than the max size would result
+        // in a livelock of never being able to read it as we won't allow
+        // you to surpass the max buffer size
+        error
+      end
     else
-      // saying you want a chunk larger than the max size would result
-      // in a livelock of never being able to read it as we won't allow
-      // you to surpass the max buffer size
-      error
+      _Unreachable()
     end
 
   fun ref close() =>
@@ -132,9 +146,9 @@ class TCPConnection
     PonyTCP.close(_fd)
     _fd = -1
 
-    match _enclosing
-    | let s: TCPConnectionActor ref =>
-      s._on_closed()
+    match _lifecycle_event_receiver
+    | let s: EitherLifecycleEventReceiver ref =>
+      s.on_closed()
     end
 
   fun is_open(): Bool =>
@@ -144,6 +158,18 @@ class TCPConnection
     _closed
 
   fun ref send(data: ByteSeq) =>
+    // TODO: should we be checking if we are open here?
+    match _lifecycle_event_receiver
+    | let s: EitherLifecycleEventReceiver ref =>
+      match s.on_send(data)
+      | let seq: ByteSeq =>
+        _send_final(seq)
+      end
+    else
+      _Unreachable()
+    end
+
+  fun ref _send_final(data: ByteSeq) =>
     if (data.size() == 0) then
       return
     end
@@ -192,8 +218,7 @@ class TCPConnection
         _release_backpressure()
       end
     else
-      // TODO unreachable
-      None
+      _Unreachable()
     end
 
   fun ref _write_completed(len: U32) =>
@@ -211,8 +236,7 @@ class TCPConnection
       // TODO we have no way to report if a write was successful or not
       None
     else
-      // TODO unreachable
-      None
+      _Unreachable()
     end
 
   // TODO should this be private? Probably.
@@ -220,8 +244,8 @@ class TCPConnection
   // want to hide all of this.
   fun ref read() =>
     ifdef posix then
-      match _enclosing
-      | let s: TCPConnectionActor ref =>
+      match _lifecycle_event_receiver
+      | let s: EitherLifecycleEventReceiver ref =>
         try
           var total_bytes_read: USize = 0
 
@@ -240,12 +264,17 @@ class TCPConnection
               (let data', _read_buffer) = (consume x).chop(bytes_to_consume)
               _bytes_in_read_buffer = _bytes_in_read_buffer - bytes_to_consume
 
-              s._on_received(consume data')
+              s.on_received(consume data')
             end
 
             if total_bytes_read >= _read_buffer_size then
-              s._read_again()
-              return
+              match _enclosing
+              | let e: TCPConnectionActor ref =>
+                e._read_again()
+                return
+              else
+                _Unreachable()
+              end
             end
 
             _resize_read_buffer_if_needed()
@@ -268,13 +297,11 @@ class TCPConnection
           _shutdown_peer = true
           hard_close()
         end
-      | None =>
-        // TODO: SHOULD WE BLOW UP WITH SOME SORT OF UNREACHABLE HERE?
-        None
+      else
+        _Unreachable()
       end
     else
-      // TODO unreachable
-      None
+      _Unreachable()
     end
 
   fun ref _iocp_read() =>
@@ -287,8 +314,7 @@ class TCPConnection
         close()
       end
     else
-      // TODO unreachable
-      None
+      _Unreachable()
     end
 
   fun ref _read_completed(len: U32) =>
@@ -297,8 +323,8 @@ class TCPConnection
     available.
     """
     ifdef windows then
-      match _enclosing
-      | let s: TCPConnectionActor ref =>
+      match _lifecycle_event_receiver
+      | let s: EitherLifecycleEventReceiver ref =>
         if len == 0 then
           // The socket has been closed from the other side, or a hard close has
           // cancelled the queued read.
@@ -323,7 +349,7 @@ class TCPConnection
           (let data, _read_buffer) = (consume _read_buffer).chop(chop_at)
           _bytes_in_read_buffer = _bytes_in_read_buffer - chop_at
 
-          s._on_received(consume data)
+          s.on_received(consume data)
 
           _resize_read_buffer_if_needed()
         end
@@ -331,8 +357,7 @@ class TCPConnection
         _iocp_read()
       end
     else
-      // TODO unreachable
-      None
+      _Unreachable()
     end
 
   fun _there_is_buffered_read_data(): Bool =>
@@ -347,27 +372,25 @@ class TCPConnection
     end
 
   fun ref _apply_backpressure() =>
-    match _enclosing
-    | let s: TCPConnectionActor ref =>
+    match _lifecycle_event_receiver
+    | let s: EitherLifecycleEventReceiver =>
       if not _throttled then
         throttled()
-        s._on_throttled()
+        s.on_throttled()
       end
-    | None =>
-      // TODO: Blow up here!
-      None
+    else
+      _Unreachable()
     end
 
   fun ref _release_backpressure() =>
-    match _enclosing
-    | let s: TCPConnectionActor ref =>
+    match _lifecycle_event_receiver
+    | let s: EitherLifecycleEventReceiver =>
       if _throttled then
         _throttled = false
-        s._on_unthrottled()
+        s.on_unthrottled()
       end
-    | None =>
-      // TODO: blow up here
-      None
+    else
+      _Unreachable()
     end
 
   fun ref throttled() =>
@@ -414,15 +437,15 @@ class TCPConnection
         let fd = PonyAsio.event_fd(event)
         if not _connected and not _closed then
           // We don't have a connection yet so we are a client
-          match _enclosing
-          | let c: TCPClientActor ref =>
+          match _lifecycle_event_receiver
+          | let c: ClientLifecycleEventReceiver ref =>
             if _is_socket_connected(fd) then
               _event = event
               _fd = fd
               _connected = true
               _writeable = true
               _readable = true
-              c._on_connected()
+              c.on_connected()
               ifdef windows then
                 _iocp_read()
               else
@@ -432,7 +455,7 @@ class TCPConnection
               PonyAsio.unsubscribe(event)
               PonyTCP.close(fd)
               close()
-              c._on_connection_failure()
+              c.on_connection_failure()
             end
           end
         else

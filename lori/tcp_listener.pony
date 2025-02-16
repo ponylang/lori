@@ -36,12 +36,11 @@ class TCPListener
           PonyAsio.unsubscribe(_event)
           PonyTCP.close(_fd)
           _fd = -1
-          e._on_closed()
+          e.on_closed()
         end
       end
-    | None =>
-      // TODO: blow up here, deal with this
-      None
+    else
+      _Unreachable()
     end
 
   fun ref event_notify(event: AsioEventID, flags: U32, arg: U32) =>
@@ -86,11 +85,15 @@ class TCPListener
             return
           end
 
-          if arg > 0 then
-            e._on_accept(arg)
-          end
+          try
+            if arg > 0 then
+              e._on_accept(arg)?
+            end
 
-          PonyTCP.accept(_event)
+            PonyTCP.accept(_event)
+          else
+            PonyTCP.close(arg)
+          end
         else
           while true do
             var fd = PonyTCP.accept(_event)
@@ -103,12 +106,15 @@ class TCPListener
               // Would block. Bail out.
               return
             else
-              e._on_accept(fd)
+              try
+                e._on_accept(fd)?
+              else
+                PonyTCP.close(fd)
+              end
             end
           end
         end
       end
-    | None =>
-      // TODO: blow up here!
-      None
+    else
+      _Unreachable()
     end

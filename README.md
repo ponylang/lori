@@ -4,7 +4,7 @@ Pony TCP classes reimagined.
 
 ## Status
 
-Lori is an alpha-level project. It should be relatively bug free but is undergoing extensive changes.
+Lori is beta quality software that will change frequently. Expect breaking changes. That said, you should feel comfortable using it in your projects.
 
 ## Installation
 
@@ -13,6 +13,8 @@ Lori is an alpha-level project. It should be relatively bug free but is undergoi
 * `corral fetch` to fetch your dependencies
 * `use "lori"` to include this package
 * `corral run -- ponyc` to compile your application
+
+Note: The net_ssl transitive dependency requires a C SSL library to be installed. Please see the net_ssl installation instructions for more information.
 
 ## API Documentation
 

@@ -22,10 +22,10 @@ actor EchoServer is TCPListenerActor
   fun ref _listener(): TCPListener =>
     _tcp_listener
 
-  fun ref _on_accept(fd: U32): TCPServerActor =>
+  fun ref _on_accept(fd: U32): Echoer =>
     Echoer(_server_auth, fd, _out)
 
-  fun ref _on_closed() =>
+  fun ref on_closed() =>
     _out.print("Echo server shut down.")
 
   fun ref _on_listen_failure() =>
@@ -35,20 +35,23 @@ actor EchoServer is TCPListenerActor
   fun ref _on_listening() =>
     _out.print("Echo server started.")
 
-actor Echoer is TCPServerActor
+actor Echoer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
   new create(auth: TCPServerAuth, fd: U32, out: OutStream) =>
     _out = out
-    _tcp_connection = TCPConnection.server(auth, fd, this)
+    _tcp_connection = TCPConnection.server(auth, fd, this, this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_closed() =>
+  fun ref _next_lifecycle_event_receiver(): (ServerLifecycleEventReceiver | None) =>
+    None
+
+  fun ref on_closed() =>
     _out.print("Connection Closed")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref on_received(data: Array[U8] iso) =>
     _out.print("Data received. Echoing it back.")
     _tcp_connection.send(consume data)

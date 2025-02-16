@@ -9,10 +9,15 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 
-- Add callback for when a server accepts a connection ([PR #102](https://github.com/ponylang/lori/pull/102))
+- Add SSL support ([PR #105](https://github.com/ponylang/lori/pull/105))
+- Add callback for when a server is starting up ([PR #102](https://github.com/ponylang/lori/pull/102))
+- Add callback for when data is being sent ([PR #105](https://github.com/ponylang/lori/pull/105))
+- Add callback for when `expect` is called ([PR #105](https://github.com/ponylang/lori/pull/105))
 
 ### Changed
 
+- An SSL libary now required to build Lori ([PR #105](https://github.com/ponylang/lori/pull/105))
+- Several breaking API changes introduced ([PR #105](https://github.com/ponylang/lori/pull/105))
 
 ## [0.5.1] - 2025-02-13
 
