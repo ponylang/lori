@@ -1,4 +1,6 @@
 use "pony_test"
+use "files"
+use "net_ssl"
 
 actor \nodoc\ Main is TestList
   new create(env: Env) =>
@@ -12,11 +14,13 @@ actor \nodoc\ Main is TestList
       test(_OutgoingFails)
       test(_CanListen)
       test(_PingPong)
+      test(_SSLPingPong)
       test(_TestBasicExpect)
     else
       test(_OutgoingFails)
       test(_CanListen)
       test(_PingPong)
+      test(_SSLPingPong)
       test(_TestBasicExpect)
     end
 
@@ -61,10 +65,40 @@ class \nodoc\ iso _PingPong is UnitTest
   fun name(): String => "PingPong"
 
   fun apply(h: TestHelper) =>
+    let port = "7664"
     let pings_to_send: I32 = 100
 
     let auth = TCPListenAuth(h.env.root)
-    let listener = _TestPongerListener(auth, pings_to_send, h)
+    let listener = _TestPongerListener(port, auth, None, pings_to_send, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+class \nodoc\ iso _SSLPingPong is UnitTest
+  """
+  Test sending and receiving via a simple Ping-Pong application
+  """
+  fun name(): String => "SSLPingPong"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "1417"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(true)
+          .> set_server_verify(true)
+      end
+
+    let pings_to_send: I32 = 100
+
+    let auth = TCPListenAuth(h.env.root)
+    let listener = _TestPongerListener(port, auth, consume sslctx, pings_to_send, h)
     h.dispose_when_done(listener)
 
     h.long_test(5_000_000_000)
@@ -74,13 +108,29 @@ actor \nodoc\ _TestPinger is (TCPConnectionActor & ClientLifecycleEventReceiver)
   var _pings_to_send: I32
   let _h: TestHelper
 
-  new create(auth: TCPConnectAuth,
+  new create(port: String,
+    auth: TCPConnectAuth,
+    ssl: (SSL iso | None),
     pings_to_send: I32,
     h: TestHelper)
   =>
     _pings_to_send = pings_to_send
     _h = h
-    _tcp_connection = TCPConnection.client(auth, "127.0.0.1", "7664", "", this, this)
+
+    let receiver =
+      match consume ssl
+      | let s: SSL iso =>
+        NetSSLClientConnection(consume s, this)
+      | None =>
+        this
+      end
+
+    _tcp_connection = TCPConnection.client(auth,
+      "127.0.0.1",
+      port,
+      "",
+      this,
+      receiver)
     try _tcp_connection.expect(4)? end
 
   fun ref _connection(): TCPConnection =>
@@ -111,13 +161,23 @@ actor \nodoc\ _TestPonger is (TCPConnectionActor & ServerLifecycleEventReceiver)
   let _h: TestHelper
 
   new create(auth: TCPServerAuth,
+    ssl: (SSL iso | None),
     fd: U32,
     pings_to_receive: I32,
     h: TestHelper)
   =>
     _pings_to_receive = pings_to_receive
     _h = h
-    _tcp_connection = TCPConnection.server(auth, fd, this, this)
+
+    let receiver =
+      match consume ssl
+      | let s: SSL iso =>
+        NetSSLServerConnection(consume s, this)
+      | None =>
+        this
+      end
+
+    _tcp_connection = TCPConnection.server(auth, fd, this, receiver)
     try _tcp_connection.expect(4)? end
 
   fun ref _connection(): TCPConnection =>
@@ -137,26 +197,43 @@ actor \nodoc\ _TestPonger is (TCPConnectionActor & ServerLifecycleEventReceiver)
     end
 
 actor \nodoc\ _TestPongerListener is TCPListenerActor
+  let _port: String
+  let _sslctx: (SSLContext | None)
   var _tcp_listener: TCPListener = TCPListener.none()
   var _pings_to_receive: I32
   let _h: TestHelper
   var _pinger: (_TestPinger | None) = None
   let _server_auth: TCPServerAuth
 
-  new create(listener_auth: TCPListenAuth,
+  new create(port: String,
+    listener_auth: TCPListenAuth,
+    sslctx: (SSLContext | None),
     pings_to_receive: I32,
     h: TestHelper)
   =>
+    _port = port
+    _sslctx = consume sslctx
     _pings_to_receive = pings_to_receive
     _h = h
     _server_auth = TCPServerAuth(listener_auth)
-    _tcp_listener = TCPListener(listener_auth, "127.0.0.1", "7664", this)
+    _tcp_listener = TCPListener(listener_auth, "127.0.0.1", _port, this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
 
-  fun ref _on_accept(fd: U32): _TestPonger =>
-    _TestPonger(_server_auth, fd, _pings_to_receive, _h)
+  fun ref _on_accept(fd: U32): _TestPonger ? =>
+    try
+      match _sslctx
+      | let ctx: SSLContext =>
+        _TestPonger(_server_auth, ctx.server()?, fd, _pings_to_receive, _h)
+      | None =>
+        _TestPonger(_server_auth, None, fd, _pings_to_receive, _h)
+      end
+    else
+      _h.fail("Unable to set up incoming SSL connection")
+      _h.complete(false)
+      error
+    end
 
   fun ref on_closed() =>
     try
@@ -164,8 +241,18 @@ actor \nodoc\ _TestPongerListener is TCPListenerActor
     end
 
   fun ref _on_listening() =>
-    let auth = TCPConnectAuth(_h.env.root)
-    _pinger = _TestPinger(auth, _pings_to_receive, _h)
+    try
+      let auth = TCPConnectAuth(_h.env.root)
+      match _sslctx
+      | let ctx: SSLContext =>
+        _pinger = _TestPinger(_port, auth, ctx.client()?, _pings_to_receive, _h)
+      | None =>
+        _pinger = _TestPinger(_port, auth, None, _pings_to_receive, _h)
+      end
+    else
+      _h.fail("Unable to set up outgoing SSL connection")
+      _h.complete(false)
+    end
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestPongerListener")
