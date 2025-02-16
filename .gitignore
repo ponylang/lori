@@ -3,4 +3,6 @@ build/*
 lori1
 TAGS
 tags
-
+lock.json
+_corral/
+_repos/

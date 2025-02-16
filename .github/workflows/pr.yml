@@ -35,13 +35,13 @@ jobs:
     name: Linux
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/ponylang/shared-docker-ci-x86-64-unknown-linux-builder:release
+      image: ghcr.io/ponylang/shared-docker-ci-x86-64-unknown-linux-builder-with-libressl-3.9.2:release
     steps:
       - uses: actions/checkout@v4.1.1
       - name: config=debug
-        run: make ci config=debug
+        run: make ci config=debug ssl=0.9.0
       - name: config=release
-        run: make ci config=release
+        run: make ci config=release ssl=0.9.0
 
   macos:
     name: MacOS
@@ -53,11 +53,11 @@ jobs:
       - name: config=debug
         run: |
           export PATH=/Users/runner/.local/share/ponyup/bin/:$PATH
-          make ci config=debug
+          make ci config=debug ssl=0.9.0
       - name: config=release
         run: |
           export PATH=/Users/runner/.local/share/ponyup/bin/:$PATH
-          make ci config=release
+          make ci config=release ssl=0.9.0
 
   windows:
     name: Windows
@@ -70,6 +70,8 @@ jobs:
           Expand-Archive -Force -Path C:\ponyc.zip -DestinationPath C:\ponyc;
           Invoke-WebRequest https://dl.cloudsmith.io/public/ponylang/releases/raw/versions/latest/corral-x86-64-pc-windows-msvc.zip -OutFile C:\corral.zip;
           Expand-Archive -Force -Path C:\corral.zip -DestinationPath C:\ponyc;
+      - name: build SSL libs
+        run: .\make.ps1 -Command libs 2>&1;
       - name: config=debug
         run: |
           $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
