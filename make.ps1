@@ -30,6 +30,8 @@ else
   throw "Invalid -Config path '$Config'; must be one of (Debug, Release)."
 }
 
+$libsDir = Join-Path -Path $rootDir -ChildPath "build/libs"
+
 $ponyArgs = "--define openssl_0.9.0  --path $rootDir"
 
 function BuildTest
