@@ -1,8 +1,31 @@
 use "collections"
 use "net_ssl"
 
-interface NetSSLALPNProtocolLifecycleEventReceiver
-  fun ref on_alpn_negotiated(protocol: (String | None))
+interface NetSSLLifecycleEventReceiver
+  """
+  If you implement this interface, you will be able to get callbackes when major
+  SSL lifecycle changes happen if you are using a `NetSSLClientConnection` or
+  `NetSSLClientConnection.
+  """
+  fun ref on_alpn_negotiated(protocol: (String | None)) =>
+    """
+    Called when a final protocol is negotatiated using ALPN. Will only be
+    called if you set your connnection up using ALPN.
+    """
+    None
+
+  fun ref on_ssl_auth_failed() =>
+    """
+    Called when the SSL handshake fails due to authentication failure.
+    """
+    None
+
+  fun ref on_ssl_error() =>
+    """
+    Called when an unknown SSL error was encountered during the handshake.
+    """
+    None
+
 
 class NetSSLClientConnection is ClientLifecycleEventReceiver
   let _ssl: SSL
@@ -102,7 +125,7 @@ class NetSSLClientConnection is ClientLifecycleEventReceiver
         _lifecycle_event_receiver.on_connected()
 
         match _lifecycle_event_receiver
-        | let ler: NetSSLALPNProtocolLifecycleEventReceiver =>
+        | let ler: NetSSLLifecycleEventReceiver =>
           ler.on_alpn_negotiated(_ssl.alpn_selected())
         end
 
@@ -113,15 +136,23 @@ class NetSSLClientConnection is ClientLifecycleEventReceiver
         end
       end
     | SSLAuthFail =>
-      // TODO we probably need some indicator of failure means
       if not _closed then
+        match _lifecycle_event_receiver
+        | let ler: NetSSLLifecycleEventReceiver =>
+          ler.on_ssl_auth_failed()
+        end
+
         _lifecycle_event_receiver._connection().close()
       end
 
       return
     | SSLError =>
-      // TODO we probably need some indicator of failure means
       if not _closed then
+        match _lifecycle_event_receiver
+        | let ler: NetSSLLifecycleEventReceiver =>
+          ler.on_ssl_error()
+        end
+
         _lifecycle_event_receiver._connection().close()
       end
 
@@ -239,7 +270,7 @@ class NetSSLServerConnection is ServerLifecycleEventReceiver
         _lifecycle_event_receiver.on_started()
 
         match _lifecycle_event_receiver
-        | let ler: NetSSLALPNProtocolLifecycleEventReceiver =>
+        | let ler: NetSSLLifecycleEventReceiver =>
           ler.on_alpn_negotiated(_ssl.alpn_selected())
         end
 
@@ -250,15 +281,23 @@ class NetSSLServerConnection is ServerLifecycleEventReceiver
         end
       end
     | SSLAuthFail =>
-      // TODO we probably need some indicator of failure means
       if not _closed then
+        match _lifecycle_event_receiver
+        | let ler: NetSSLLifecycleEventReceiver =>
+          ler.on_ssl_auth_failed()
+        end
+
         _lifecycle_event_receiver._connection().close()
       end
 
       return
     | SSLError =>
-      // TODO we probably need some indicator of failure means
       if not _closed then
+        match _lifecycle_event_receiver
+        | let ler: NetSSLLifecycleEventReceiver =>
+          ler.on_ssl_error()
+        end
+
         _lifecycle_event_receiver._connection().close()
       end
 
