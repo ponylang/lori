@@ -1,6 +1,9 @@
 use "collections"
 use "net_ssl"
 
+interface NetSSLALPNProtocolLifecycleEventReceiver
+  fun ref on_alpn_negotiated(protocol: (String | None))
+
 class NetSSLClientConnection is ClientLifecycleEventReceiver
   let _ssl: SSL
   let _lifecycle_event_receiver: ClientLifecycleEventReceiver
@@ -94,13 +97,15 @@ class NetSSLClientConnection is ClientLifecycleEventReceiver
     """
     match _ssl.state()
     | SSLReady =>
-      // TODO ALPNProtocolNotify is not implemented
       if not _connected then
         _connected = true
         _lifecycle_event_receiver.on_connected()
-      end
 
-      if not _connected then
+        match _lifecycle_event_receiver
+        | let ler: NetSSLALPNProtocolLifecycleEventReceiver =>
+          ler.on_alpn_negotiated(_ssl.alpn_selected())
+        end
+
         try
           while _pending.size() > 0 do
             _ssl.write(_pending.shift()?)?
@@ -229,13 +234,15 @@ class NetSSLServerConnection is ServerLifecycleEventReceiver
     """
     match _ssl.state()
     | SSLReady =>
-      // TODO ALPNProtocolNotify is not implemented
       if not _connected then
         _connected = true
         _lifecycle_event_receiver.on_started()
-      end
 
-      if not _connected then
+        match _lifecycle_event_receiver
+        | let ler: NetSSLALPNProtocolLifecycleEventReceiver =>
+          ler.on_alpn_negotiated(_ssl.alpn_selected())
+        end
+
         try
           while _pending.size() > 0 do
             _ssl.write(_pending.shift()?)?
