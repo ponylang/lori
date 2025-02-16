@@ -4,7 +4,7 @@ Pony TCP classes reimagined.
 
 ## Status
 
-Lori is an alpha-level project. It should be relatively bug free but is undergoing extensive changes.
+Lori is beta quality software that will change frequently. Expect breaking changes. That said, you should feel comfortable using it in your projects.
 
 ## Installation
 
