@@ -73,6 +73,7 @@ jobs:
       - name: config=debug
         run: |
           $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
+          .\make.ps1 -Command libs 2>&1;
           .\make.ps1 -Command test -Config Debug 2>&1;
       - name: config=release
         run: |
