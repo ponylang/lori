@@ -48,3 +48,7 @@ We've added `local_address` and `remote_address` to the `TCPConnection` class. T
 
 The return type is the `NetAddress` class from the `net` package in the Pony standard library.
 
+## Allow setting a max connection limit
+
+`TCPListener` now takes an optional limit on the number of accepted connections to have open at a time.
+
