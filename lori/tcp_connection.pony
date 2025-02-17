@@ -12,6 +12,7 @@ class TCPConnection
 
   var _fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
+  var _spawned_by: (TCPListenerActor | None) = None
   let _lifecycle_event_receiver: (ClientLifecycleEventReceiver ref | ServerLifecycleEventReceiver ref | None)
   let _enclosing: (TCPConnectionActor ref| None)
   let _pending: List[(ByteSeq, USize)] = _pending.create()
@@ -43,10 +44,12 @@ class TCPConnection
   new server(auth: TCPServerAuth,
     fd': U32,
     enclosing: TCPConnectionActor ref,
-    ler: ServerLifecycleEventReceiver ref)
+    ler: ServerLifecycleEventReceiver ref,
+    spawned_by: TCPListenerActor)
   =>
     _fd = fd'
     _lifecycle_event_receiver = ler
+    _spawned_by = spawned_by
     _enclosing = enclosing
 
     _resize_read_buffer_if_needed()
@@ -179,6 +182,11 @@ class TCPConnection
     match _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
       s.on_closed()
+    end
+
+    match _spawned_by
+    | let spawner: TCPListenerActor =>
+      spawner._connection_closed()
     end
 
   fun is_open(): Bool =>
