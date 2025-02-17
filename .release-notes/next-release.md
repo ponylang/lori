@@ -26,6 +26,10 @@ Previously, all lifecycle callbacks were private. For example, in order to hook 
 
 We might end up changing back to private methods in the future, but for now, they are public. If [ponyc issue #4613](https://github.com/ponylang/ponyc/issues/4613) is resolved, we will likely switch back to private methods.
 
+### `TCPListener` `host` and `port` fields are now private
+
+Previously, the `host` and `port` fields of the `TCPListener` class were public. They are now private.
+
 ## Add callback for when a server is starting up
 
 We've added a callback for when a server is starting up. This callback is called after the server has accepted a connection and before the server starts processing the request. This allows you to any protocol specific setup before the server starts processing the request. For example, this would be where an SSL handshake would be done.
