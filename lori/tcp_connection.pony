@@ -9,6 +9,7 @@ class TCPConnection
   var _throttled: Bool = false
   var _readable: Bool = false
   var _writeable: Bool = false
+  var _muted: Bool = false
 
   var _fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
@@ -112,6 +113,27 @@ class TCPConnection
     PonyTCP.peername(_fd, ip)
     ip
 
+  fun ref mute() =>
+    """
+    Temporarily suspend reading off this TCPConnection until such time as
+    `unmute` is called.
+    """
+    _muted = true
+
+  fun ref unmute() =>
+    """
+    Start reading off this TCPConnection again after having been muted.
+    """
+    _muted = false
+    // Trigger a read in case we ignored any previous ASIO notifications
+    match _enclosing
+    | let e: TCPConnectionActor ref =>
+      e._read_again()
+      return
+    else
+      _Unreachable()
+    end
+
   fun ref expect(qty: USize) ? =>
     match _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver =>
@@ -129,6 +151,19 @@ class TCPConnection
     end
 
   fun ref close() =>
+    """
+    Attempt to perform a graceful shutdown. Don't accept new writes. If the
+    connection isn't muted then we won't finish closing until we get a zero
+    length read. If the connection is muted, perform a hard close and shut
+    down immediately.
+    """
+    if _muted then
+      hard_close()
+    else
+      _close()
+    end
+
+  fun ref _close() =>
     _closed = true
     _try_shutdown()
 
@@ -286,8 +321,13 @@ class TCPConnection
           var total_bytes_read: USize = 0
 
           while _readable and not _shutdown_peer do
+            // exit if muted
+            if _muted then
+              return
+            end
+
             // Handle any data already in the read buffer
-            while _there_is_buffered_read_data() do
+            while not _muted and _there_is_buffered_read_data() do
               let bytes_to_consume = if _expect == 0 then
                 // if we aren't getting in `_expect` chunks,
                 // we should grab all the bytes that are currently available
@@ -373,8 +413,7 @@ class TCPConnection
         // Handle the data
         _bytes_in_read_buffer = _bytes_in_read_buffer + len.usize()
 
-        while (_bytes_in_read_buffer >= _expect)
-          and (_bytes_in_read_buffer > 0)
+        while not _muted and _there_is_buffered_read_data()
         do
           // get data to be distributed and update `_bytes_in_read_buffer`
           let chop_at = if _expect == 0 then
