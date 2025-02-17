@@ -60,3 +60,7 @@ The return type is the `NetAddress` class from the `net` package in the Pony sta
 
 `TCPConnection` now exposes `mute` and `unmute` methods. You can use them to stop and start reading from the connection. While muted, the connection will not read any data from the underlying socket.
 
+## Listener startup bug fixed
+
+There was a bug in the lifecycle handling for `TCPListener` that could cause errors if you called certain methods from the `_on_listening()` and `_on_listen_failed()` callbacks. This has been fixed.
+
