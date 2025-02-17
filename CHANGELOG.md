@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file. This projec
 - Add callback for when data is being sent ([PR #105](https://github.com/ponylang/lori/pull/105))
 - Add callback for when `expect` is called ([PR #105](https://github.com/ponylang/lori/pull/105))
 - Add support for setting TCP keepalive options ([PR #109](https://github.com/ponylang/lori/pull/109))
+- Add ability to get local and remote names from a socket ([PR #110](https://github.com/ponylang/lori/pull/110))
 
 ### Changed
 
