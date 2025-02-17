@@ -41,7 +41,7 @@ class TCPListener
           e.on_closed()
         end
       end
-    else
+    | None =>
       _Unreachable()
     end
 
@@ -125,7 +125,7 @@ class TCPListener
           _paused = true
         end
       end
-    else
+    | None =>
       _Unreachable()
     end
 
