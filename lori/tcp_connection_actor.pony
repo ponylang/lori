@@ -14,10 +14,15 @@ trait tag TCPConnectionActor is AsioEventNotify
     """
     Resume reading
     """
-    _connection().read()
+    ifdef posix then
+      _connection().read()
+    end
 
   be _register_spawner(listener: TCPListenerActor) =>
     """
     Register the listener as the spawner of this connection
     """
     _connection().register_spawner(listener)
+
+  be _finish_initialization() =>
+    _connection().finish_initialization()

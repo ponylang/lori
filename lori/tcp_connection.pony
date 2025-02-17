@@ -61,12 +61,7 @@ class TCPConnection
     end
     _writeable = true
 
-    match _lifecycle_event_receiver
-    | let s: ServerLifecycleEventReceiver ref =>
-      s.on_started()
-    else
-      _Unreachable()
-    end
+    enclosing._finish_initialization()
 
     _readable = true
     // Queue up reads as we are now connected
@@ -125,13 +120,15 @@ class TCPConnection
     Start reading off this TCPConnection again after having been muted.
     """
     _muted = false
-    // Trigger a read in case we ignored any previous ASIO notifications
-    match _enclosing
-    | let e: TCPConnectionActor ref =>
-      e._read_again()
-      return
-    else
-      _Unreachable()
+    ifdef posix then
+      // Trigger a read in case we ignored any previous ASIO notifications
+      match _enclosing
+      | let e: TCPConnectionActor ref =>
+        e._read_again()
+        return
+      else
+        _Unreachable()
+      end
     end
 
   fun ref expect(qty: USize) ? =>
@@ -236,7 +233,7 @@ class TCPConnection
       | let seq: ByteSeq =>
         _send_final(seq)
       end
-    else
+    | None =>
       _Unreachable()
     end
 
@@ -588,4 +585,12 @@ class TCPConnection
         // so, let's let it know we were closed
         spawner._connection_closed(this)
       end
+    end
+
+  fun ref finish_initialization() =>
+    match _lifecycle_event_receiver
+    | let s: ServerLifecycleEventReceiver ref =>
+      s.on_started()
+    | None =>
+      _Unreachable()
     end
