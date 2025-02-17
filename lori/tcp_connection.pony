@@ -1,4 +1,5 @@
 use "collections"
+use net = "net"
 
 class TCPConnection
   var _connected: Bool = false
@@ -91,6 +92,24 @@ class TCPConnection
     if _connected then
       PonyTCP.keepalive(_fd, secs)
     end
+
+  fun local_address(): net.NetAddress =>
+    """
+    Return the local IP address. If this TCPConnection is closed then the
+    address returned is invalid.
+    """
+    let ip = recover net.NetAddress end
+    PonyTCP.sockname(_fd, ip)
+    ip
+
+  fun remote_address(): net.NetAddress =>
+    """
+    Return the remote IP address. If this TCPConnection is closed then the
+    address returned is invalid.
+    """
+    let ip = recover net.NetAddress end
+    PonyTCP.peername(_fd, ip)
+    ip
 
   fun ref expect(qty: USize) ? =>
     match _lifecycle_event_receiver
