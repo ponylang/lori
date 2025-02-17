@@ -81,6 +81,17 @@ class TCPConnection
     _enclosing = None
     _lifecycle_event_receiver = None
 
+  fun keepalive(secs: U32) =>
+    """
+    Sets the TCP keepalive timeout to approximately `secs` seconds. Exact
+    timing is OS dependent. If `secs` is zero, TCP keepalive is disabled. TCP
+    keepalive is disabled by default. This can only be set on a connected
+    socket.
+    """
+    if _connected then
+      PonyTCP.keepalive(_fd, secs)
+    end
+
   fun ref expect(qty: USize) ? =>
     match _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver =>

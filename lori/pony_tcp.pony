@@ -4,6 +4,7 @@ use @pony_os_connect_tcp[U32](the_actor: AsioEventNotify,
   port: Pointer[U8] tag,
   from: Pointer[U8] tag,
   asio_flags: U32)
+use @pony_os_keepalive[None](fd: U32, secs: U32)
 use @pony_os_listen_tcp[AsioEventID](the_actor: AsioEventNotify,
   host: Pointer[U8] tag,
   port: Pointer[U8] tag)
@@ -42,6 +43,9 @@ primitive PonyTCP
       port.cstring(),
       from.cstring(),
       asio_flags)
+
+  fun keepalive(fd: U32, secs: U32) =>
+    @pony_os_keepalive(fd, secs)
 
   fun receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
