@@ -20,6 +20,10 @@ We've removed the `TCPClientActor` trait. To mix-in TCP client functionality wit
 
 We've removed the `TCPServerActor` trait. To mix-in TCP server functionality with an actor, you should replaced `is TCPServerActor` with `is (TCPConnectionActor & ServerLifecycleEventReceiver)`.
 
+### `TCPListener` `host` and `port` are now private
+
+The `host` and `port` properties of `TCPListener` are now private.
+
 ### Lifecycle callbacks are now public
 
 Previously, all lifecycle callbacks were private. For example, in order to hook your actor into the a connection being closed, you implemented the `_on_closed()` method. Now, you should implement the `on_closed()` method. The only difference is the visibility of the method.

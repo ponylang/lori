@@ -3,8 +3,8 @@ use "collections"
 type MaxSpawn is (U32 | None)
 
 class TCPListener
-  let host: String
-  let port: String
+  let _host: String
+  let _port: String
   let _limit: MaxSpawn
   var _open_connections: SetIs[TCPConnection tag] = _open_connections.create()
   var _paused: Bool = false
@@ -13,12 +13,12 @@ class TCPListener
   var state: TCPConnectionState = Closed
   var _enclosing: (TCPListenerActor ref | None)
 
-  new create(auth: TCPListenAuth, host': String, port': String, enclosing: TCPListenerActor ref, limit: MaxSpawn = None) =>
-    host = host'
-    port = port'
+  new create(auth: TCPListenAuth, host: String, port: String, enclosing: TCPListenerActor ref, limit: MaxSpawn = None) =>
+    _host = host
+    _port = port
     _limit = limit
     _enclosing = enclosing
-    let event = PonyTCP.listen(enclosing, host, port)
+    let event = PonyTCP.listen(enclosing, _host, _port)
     if not event.is_null() then
       _fd = PonyAsio.event_fd(event)
       _event = event
@@ -29,8 +29,8 @@ class TCPListener
     end
 
   new none() =>
-    host = ""
-    port = ""
+    _host = ""
+    _port = ""
     _limit = None
     _enclosing = None
 
