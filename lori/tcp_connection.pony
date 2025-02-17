@@ -12,6 +12,7 @@ class TCPConnection
 
   var _fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
+  var _spawned_by: (TCPListenerActor | None) = None
   let _lifecycle_event_receiver: (ClientLifecycleEventReceiver ref | ServerLifecycleEventReceiver ref | None)
   let _enclosing: (TCPConnectionActor ref| None)
   let _pending: List[(ByteSeq, USize)] = _pending.create()
@@ -179,6 +180,11 @@ class TCPConnection
     match _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
       s.on_closed()
+    end
+
+    match _spawned_by
+    | let spawner: TCPListenerActor =>
+      spawner._connection_closed(this)
     end
 
   fun is_open(): Bool =>
@@ -484,7 +490,7 @@ class TCPConnection
             else
               PonyAsio.unsubscribe(event)
               PonyTCP.close(fd)
-              close()
+              hard_close()
               c.on_connection_failure()
             end
           end
@@ -525,4 +531,22 @@ class TCPConnection
     else
       (let errno: U32, let value: U32) = _OSSocket.get_so_error(fd)
       (errno == 0) and (value == 0)
+    end
+
+  // TODO this should be private but..
+  // https://github.com/ponylang/ponyc/issues/4613
+  fun ref register_spawner(listener: TCPListenerActor) =>
+    _spawned_by = listener
+    match _spawned_by
+    | let spawner: TCPListenerActor =>
+      if _connected then
+        // We were connected by the time the spawner was registered,
+        // so, let's let it know we were connected
+        spawner._connection_opened(this)
+      end
+      if _closed then
+        // We were closed by the time the spawner was registered,
+        // so, let's let it know we were closed
+        spawner._connection_closed(this)
+      end
     end

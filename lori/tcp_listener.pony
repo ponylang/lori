@@ -1,14 +1,22 @@
+use "collections"
+
+type MaxSpawn is (U32 | None)
+
 class TCPListener
   let host: String
   let port: String
+  let _limit: MaxSpawn
+  var _open_connections: SetIs[TCPConnection tag] = _open_connections.create()
+  var _paused: Bool = false
   var _event: AsioEventID = AsioEvent.none()
   var _fd: U32 = -1
   var state: TCPConnectionState = Closed
   var _enclosing: (TCPListenerActor ref | None)
 
-  new create(auth: TCPListenAuth, host': String, port': String, enclosing: TCPListenerActor ref) =>
+  new create(auth: TCPListenAuth, host': String, port': String, enclosing: TCPListenerActor ref, limit: MaxSpawn = None) =>
     host = host'
     port = port'
+    _limit = limit
     _enclosing = enclosing
     let event = PonyTCP.listen(enclosing, host, port)
     if not event.is_null() then
@@ -23,6 +31,7 @@ class TCPListener
   new none() =>
     host = ""
     port = ""
+    _limit = None
     _enclosing = None
 
   fun ref close() =>
@@ -58,7 +67,7 @@ class TCPListener
       state = Closed
     end
 
-  fun ref _accept(arg: U32) =>
+  fun ref _accept(arg: U32 = 0) =>
     match _enclosing
     | let e: TCPListenerActor ref =>
       match state
@@ -87,15 +96,20 @@ class TCPListener
 
           try
             if arg > 0 then
-              e._on_accept(arg)?
+              let opened = e._on_accept(arg)?
+              opened._register_spawner(e)
             end
 
-            PonyTCP.accept(_event)
+            if not _at_connection_limit() then
+              PonyTCP.accept(_event)
+            else
+              _paused = true
+            end
           else
             PonyTCP.close(arg)
           end
         else
-          while true do
+          while not _at_connection_limit() do
             var fd = PonyTCP.accept(_event)
 
             match fd
@@ -107,14 +121,39 @@ class TCPListener
               return
             else
               try
-                e._on_accept(fd)?
+                let opened = e._on_accept(fd)?
+                opened._register_spawner(e)
               else
                 PonyTCP.close(fd)
               end
             end
           end
+
+          _paused = true
         end
       end
     else
       _Unreachable()
     end
+
+  fun _at_connection_limit(): Bool =>
+    match _limit
+    | let l: U32 => _open_connections.size() >= l.usize()
+    | None => false
+    end
+
+  // TODO this should be private but...
+  // https://github.com/ponylang/ponyc/issues/4613
+  fun ref connection_opened(conn: TCPConnection tag) =>
+    _open_connections.set(conn)
+
+  // TODO this should be private but...
+  // https://github.com/ponylang/ponyc/issues/4613
+  fun ref connection_closed(conn: TCPConnection tag) =>
+    _open_connections.unset(conn)
+    if _paused and not _at_connection_limit() then
+      _paused = false
+      _accept()
+    end
+
+
