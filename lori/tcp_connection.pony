@@ -126,7 +126,7 @@ class TCPConnection
       | let e: TCPConnectionActor ref =>
         e._read_again()
         return
-      else
+      | None =>
         _Unreachable()
       end
     end
@@ -143,7 +143,7 @@ class TCPConnection
         // you to surpass the max buffer size
         error
       end
-    else
+    | None =>
       _Unreachable()
     end
 
@@ -212,11 +212,18 @@ class TCPConnection
     match _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
       s.on_closed()
+    | None =>
+      _Unreachable()
     end
 
-    match _spawned_by
-    | let spawner: TCPListenerActor =>
-      spawner._connection_closed(this)
+    match _lifecycle_event_receiver
+    | let e: ServerLifecycleEventReceiver ref =>
+      match _spawned_by
+      | let spawner: TCPListenerActor =>
+        spawner._connection_closed(this)
+      | None =>
+        _Unreachable()
+      end
     end
 
   fun is_open(): Bool =>
@@ -370,7 +377,7 @@ class TCPConnection
           _shutdown_peer = true
           hard_close()
         end
-      else
+      | None =>
         _Unreachable()
       end
     else
@@ -427,6 +434,8 @@ class TCPConnection
         end
 
         _iocp_read()
+      | None =>
+        _Unreachable()
       end
     else
       _Unreachable()
@@ -450,7 +459,7 @@ class TCPConnection
         throttled()
         s.on_throttled()
       end
-    else
+    | None =>
       _Unreachable()
     end
 
@@ -461,7 +470,7 @@ class TCPConnection
         _throttled = false
         s.on_unthrottled()
       end
-    else
+    | None =>
       _Unreachable()
     end
 
@@ -529,6 +538,8 @@ class TCPConnection
               hard_close()
               c.on_connection_failure()
             end
+          | None =>
+            _Unreachable()
           end
         else
           // There is a possibility that a non-Windows system has
@@ -585,6 +596,8 @@ class TCPConnection
         // so, let's let it know we were closed
         spawner._connection_closed(this)
       end
+    | None =>
+      _Unreachable()
     end
 
   // TODO this should be private but...
