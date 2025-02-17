@@ -18,15 +18,8 @@ class TCPListener
     _port = port
     _limit = limit
     _enclosing = enclosing
-    let event = PonyTCP.listen(enclosing, _host, _port)
-    if not event.is_null() then
-      _fd = PonyAsio.event_fd(event)
-      _event = event
-      state = Open
-      enclosing._on_listening()
-    else
-      enclosing._on_listen_failure()
-    end
+    _event = PonyTCP.listen(enclosing, _host, _port)
+    enclosing._finish_initialization()
 
   new none() =>
     _host = ""
@@ -154,6 +147,22 @@ class TCPListener
     if _paused and not _at_connection_limit() then
       _paused = false
       _accept()
+    end
+
+  // TODO this should be private but...
+  // https://github.com/ponylang/ponyc/issues/4613
+  fun ref finish_initialization() =>
+    match _enclosing
+    | let e: TCPListenerActor ref =>
+      if not _event.is_null() then
+        _fd = PonyAsio.event_fd(_event)
+        state = Open
+        e._on_listening()
+      else
+        e._on_listen_failure()
+      end
+    | None =>
+      _Unreachable()
     end
 
 

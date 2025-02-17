@@ -587,6 +587,8 @@ class TCPConnection
       end
     end
 
+  // TODO this should be private but...
+  // https://github.com/ponylang/ponyc/issues/4613
   fun ref finish_initialization() =>
     match _lifecycle_event_receiver
     | let s: ServerLifecycleEventReceiver ref =>

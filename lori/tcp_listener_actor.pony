@@ -38,3 +38,6 @@ trait tag TCPListenerActor is AsioEventNotify
 
   be _connection_closed(conn: TCPConnection tag) =>
     _listener().connection_closed(conn)
+
+  be _finish_initialization() =>
+    _listener().finish_initialization()
