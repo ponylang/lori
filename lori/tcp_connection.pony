@@ -184,8 +184,7 @@ class TCPConnection
 
     match _spawned_by
     | let spawner: TCPListenerActor =>
-      let me: TCPConnection tag = recover tag this end
-      spawner._connection_closed(me)
+      spawner._connection_closed(this)
     end
 
   fun is_open(): Bool =>
@@ -543,13 +542,11 @@ class TCPConnection
       if _connected then
         // We were connected by the time the spawner was registered,
         // so, let's let it know we were connected
-        let me: TCPConnection tag = recover tag this end
-        spawner._connection_opened(me)
+        spawner._connection_opened(this)
       end
       if _closed then
         // We were closed by the time the spawner was registered,
         // so, let's let it know we were closed
-        let me: TCPConnection tag = recover tag this end
-        spawner._connection_closed(me)
+        spawner._connection_closed(this)
       end
     end
