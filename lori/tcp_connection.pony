@@ -44,12 +44,10 @@ class TCPConnection
   new server(auth: TCPServerAuth,
     fd': U32,
     enclosing: TCPConnectionActor ref,
-    ler: ServerLifecycleEventReceiver ref,
-    spawned_by: TCPListenerActor)
+    ler: ServerLifecycleEventReceiver ref)
   =>
     _fd = fd'
     _lifecycle_event_receiver = ler
-    _spawned_by = spawned_by
     _enclosing = enclosing
 
     _resize_read_buffer_if_needed()
@@ -186,7 +184,8 @@ class TCPConnection
 
     match _spawned_by
     | let spawner: TCPListenerActor =>
-      spawner._connection_closed()
+      let me: TCPConnection tag = recover tag this end
+      spawner._connection_closed(me)
     end
 
   fun is_open(): Bool =>
@@ -533,4 +532,24 @@ class TCPConnection
     else
       (let errno: U32, let value: U32) = _OSSocket.get_so_error(fd)
       (errno == 0) and (value == 0)
+    end
+
+  // TODO this should be private but..
+  // https://github.com/ponylang/ponyc/issues/4613
+  fun ref register_spawner(listener: TCPListenerActor) =>
+    _spawned_by = listener
+    match _spawned_by
+    | let spawner: TCPListenerActor =>
+      if _connected then
+        // We were connected by the time the spawner was registered,
+        // so, let's let it know we were connected
+        let me: TCPConnection tag = recover tag this end
+        spawner._connection_opened(me)
+      end
+      if _closed then
+        // We were closed by the time the spawner was registered,
+        // so, let's let it know we were closed
+        let me: TCPConnection tag = recover tag this end
+        spawner._connection_closed(me)
+      end
     end

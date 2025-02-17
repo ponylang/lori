@@ -1,10 +1,12 @@
+use "collections"
+
 type MaxSpawn is (U32 | None)
 
 class TCPListener
   let host: String
   let port: String
   let _limit: MaxSpawn
-  var _open_connections: U32 = 0
+  var _open_connections: SetIs[TCPConnection tag] = _open_connections.create()
   var _paused: Bool = false
   var _event: AsioEventID = AsioEvent.none()
   var _fd: U32 = -1
@@ -29,6 +31,7 @@ class TCPListener
   new none() =>
     host = ""
     port = ""
+    _limit = None
     _enclosing = None
 
   fun ref close() =>
@@ -93,8 +96,8 @@ class TCPListener
 
           try
             if arg > 0 then
-              e._on_accept(arg)?
-              _open_connections = _open_connections + 1
+              let opened = e._on_accept(arg)?
+              opened._register_spawner(e)
             end
 
             if not _at_connection_limit() then
@@ -118,8 +121,8 @@ class TCPListener
               return
             else
               try
-                e._on_accept(fd)?
-                _open_connections = _open_connections + 1
+                let opened = e._on_accept(fd)?
+                opened._register_spawner(e)
               else
                 PonyTCP.close(fd)
               end
@@ -135,15 +138,22 @@ class TCPListener
 
   fun _at_connection_limit(): Bool =>
     match _limit
-    | let l: U32 => _open_connections >= l
+    | let l: U32 => _open_connections.size() >= l.usize()
     | None => false
     end
 
   // TODO this should be private but...
   // https://github.com/ponylang/ponyc/issues/4613
-  fun ref connection_closed() =>
-    _open_connections = _open_connections - 1
+  fun ref connection_opened(conn: TCPConnection tag) =>
+    _open_connections.set(conn)
+
+  // TODO this should be private but...
+  // https://github.com/ponylang/ponyc/issues/4613
+  fun ref connection_closed(conn: TCPConnection tag) =>
+    _open_connections.unset(conn)
     if _paused and not _at_connection_limit() then
       _paused = false
       _accept()
     end
+
+
