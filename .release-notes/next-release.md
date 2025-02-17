@@ -42,3 +42,9 @@ As part of adding SSL support, we've added the `on_expect_set` callback that is 
 
 We've added the method `keepalive` to `TCPConnection`. This method allows you to set the keepalive for the underlying socket.
 
+## Add ability to get local and remote names from a socket
+
+We've added `local_address` and `remote_address` to the `TCPConnection` class. These properties return the local and remote addresses of the socket, respectively.
+
+The return type is the `NetAddress` class from the `net` package in the Pony standard library.
+
