@@ -365,7 +365,9 @@ class TCPConnection
 
             if bytes_read == 0 then
               // would block. try again later
-              _mark_unreadable()
+              _readable = false
+              PonyAsio.set_unreadable(_event)
+              PonyAsio.resubscribe_read(_event)
               return
             end
 
@@ -456,7 +458,14 @@ class TCPConnection
     match _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver =>
       if not _throttled then
-        throttled()
+        _throttled = true
+        // throttled means we are also unwriteable
+        // being unthrottled doesn't however mean we are writable
+        _writeable = false
+        PonyAsio.set_unwriteable(_event)
+        ifdef not windows then
+          PonyAsio.resubscribe_write(_event)
+        end
         s.on_throttled()
       end
     | None =>
@@ -472,16 +481,6 @@ class TCPConnection
       end
     | None =>
       _Unreachable()
-    end
-
-  fun ref throttled() =>
-    _throttled = true
-    // throttled means we are also unwriteable
-    // being unthrottled doesn't however mean we are writable
-    _writeable = false
-    PonyAsio.set_unwriteable(_event)
-    ifdef not windows then
-      PonyAsio.resubscribe_write(_event)
     end
 
   fun has_pending_writes(): Bool =>
@@ -559,16 +558,6 @@ class TCPConnection
           PonyAsio.destroy(event)
         end
       end
-    end
-
-  fun ref _mark_unreadable() =>
-    _readable = false
-    PonyAsio.set_unreadable(_event)
-    // TODO: should be able to switch from one-shot to edge-triggered without
-    // changing this. need a switch based on flags that we do not have at
-    // the moment
-    ifdef not windows then
-      PonyAsio.resubscribe_read(_event)
     end
 
   fun _is_socket_connected(fd: U32): Bool =>
