@@ -38,3 +38,7 @@ As part of adding SSL support, we've added the `on_send` callback that can be us
 
 As part of adding SSL support, we've added the `on_expect_set` callback that is called when `expect` is called.
 
+## Add ability to set TCP keepalive
+
+We've added the method `keepalive` to `TCPConnection`. This method allows you to set the keepalive for the underlying socket.
+
