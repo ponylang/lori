@@ -56,3 +56,7 @@ The return type is the `NetAddress` class from the `net` package in the Pony sta
 
 `TCPListener` now takes an optional limit on the number of accepted connections to have open at a time.
 
+## Add ability to mute and unmute a TCP connection
+
+`TCPConnection` now exposes `mute` and `unmute` methods. You can use them to stop and start reading from the connection. While muted, the connection will not read any data from the underlying socket.
+
