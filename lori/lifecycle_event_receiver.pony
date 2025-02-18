@@ -1,6 +1,5 @@
 // TODO: These should be private but... public for now.
 // https://github.com/ponylang/ponyc/issues/4613
-
 trait ServerLifecycleEventReceiver
   fun ref _connection(): TCPConnection
 
@@ -104,6 +103,7 @@ trait ServerLifecycleEventReceiver
 
 trait ClientLifecycleEventReceiver
   fun ref _connection(): TCPConnection
+
   fun ref _next_lifecycle_event_receiver(): (ClientLifecycleEventReceiver | None)
     """
     If the implementing receiver is wrapping another receiver, return a
