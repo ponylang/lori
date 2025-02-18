@@ -64,3 +64,10 @@ The return type is the `NetAddress` class from the `net` package in the Pony sta
 
 There was a bug in the lifecycle handling for `TCPListener` that could cause errors if you called certain methods from the `_on_listening()` and `_on_listen_failed()` callbacks. This has been fixed.
 
+## Remove `TCPConnectionState`
+
+We've removed the TCPConnectionState union type and the associated primitives `Open` and `Closed`. They are no longer used.
+
+## Make `TCPListener.state` private
+
+Previously, for reasons we don't remember, the `state` property of `TCPListener` was public. It is now private.
