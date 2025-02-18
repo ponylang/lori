@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file. This projec
 - Add ability to get local and remote names from a socket ([PR #110](https://github.com/ponylang/lori/pull/110))
 - Allow setting a max connection limit ([PR #113](https://github.com/ponylang/lori/pull/113))
 - Add mute and unmute functionality ([PR #117](https://github.com/ponylang/lori/pull/117))
+- Implement Happy Eyeballs ([PR #125](https://github.com/ponylang/lori/pull/125))
 
 ### Changed
 
