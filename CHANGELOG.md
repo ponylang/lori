@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file. This projec
 ### Fixed
 
 - Fix bug in TCPListener ([PR #118](https://github.com/ponylang/lori/pull/118))
+- Send pending writes on client connect ([PR #126](https://github.com/ponylang/lori/pull/126))
 
 ### Added
 
