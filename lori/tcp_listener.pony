@@ -10,7 +10,7 @@ class TCPListener
   var _paused: Bool = false
   var _event: AsioEventID = AsioEvent.none()
   var _fd: U32 = -1
-  var state: TCPConnectionState = Closed
+  var _listening: Bool = false
   var _enclosing: (TCPListenerActor ref | None)
 
   new create(auth: TCPListenAuth, host: String, port: String, enclosing: TCPListenerActor ref, limit: MaxSpawn = None) =>
@@ -31,8 +31,8 @@ class TCPListener
     match _enclosing
     | let e: TCPListenerActor ref =>
       // TODO: when in debug mode we should blow up if listener is closed
-      if state is Open then
-        state = Closed
+      if _listening then
+        _listening = false
 
         if not _event.is_null() then
           PonyAsio.unsubscribe(_event)
@@ -57,29 +57,13 @@ class TCPListener
     if AsioEvent.disposable(flags) then
       PonyAsio.destroy(_event)
       _event = AsioEvent.none()
-      state = Closed
+      _listening = false
     end
 
   fun ref _accept(arg: U32 = 0) =>
     match _enclosing
     | let e: TCPListenerActor ref =>
-      match state
-      | Closed =>
-        // It's possible that after closing, we got an event for a connection
-        // attempt. If that is the case or the listener is otherwise not open,
-        // return and do not start a new connection
-        ifdef windows then
-          if arg == -1 then
-            PonyAsio.unsubscribe(_event)
-            return
-          end
-
-          if arg > 0 then
-            PonyTCP.close(arg)
-          end
-        end
-        return
-      | Open =>
+      if _listening then
         ifdef windows then
           // Unsubscribe if we get an invalid socket in an event
           if arg == -1 then
@@ -124,6 +108,21 @@ class TCPListener
 
           _paused = true
         end
+      else
+        // It's possible that after closing, we got an event for a connection
+        // attempt. If that is the case or the listener is otherwise not open,
+        // return and do not start a new connection
+        ifdef windows then
+          if arg == -1 then
+            PonyAsio.unsubscribe(_event)
+            return
+          end
+
+          if arg > 0 then
+            PonyTCP.close(arg)
+          end
+        end
+        return
       end
     | None =>
       _Unreachable()
@@ -156,7 +155,7 @@ class TCPListener
     | let e: TCPListenerActor ref =>
       if not _event.is_null() then
         _fd = PonyAsio.event_fd(_event)
-        state = Open
+        _listening = true
         e._on_listening()
       else
         e._on_listen_failure()
