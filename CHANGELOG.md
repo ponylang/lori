@@ -26,6 +26,7 @@ All notable changes to this project will be documented in this file. This projec
 - Several breaking API changes introduced ([PR #115](https://github.com/ponylang/lori/pull/115))
 - Remove `TCPConnectionState` ([PR #121](https://github.com/ponylang/lori/pull/121))
 - Make `TCPListener.state` private ([PR #121](https://github.com/ponylang/lori/pull/121))
+- Make `TCPConnection.pending_writes` private ([PR #122](https://github.com/ponylang/lori/pull/122))
 
 ## [0.5.1] - 2025-02-13
 
