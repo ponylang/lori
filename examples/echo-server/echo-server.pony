@@ -25,7 +25,7 @@ actor EchoServer is TCPListenerActor
   fun ref _on_accept(fd: U32): Echoer =>
     Echoer(_server_auth, fd, _out)
 
-  fun ref on_closed() =>
+  fun ref _on_closed() =>
     _out.print("Echo server shut down.")
 
   fun ref _on_listen_failure() =>
