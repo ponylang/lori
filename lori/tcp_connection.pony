@@ -160,32 +160,6 @@ class TCPConnection
       _close()
     end
 
-  fun ref _close() =>
-    _closed = true
-    _try_shutdown()
-
-  fun ref _try_shutdown() =>
-    """
-    If we have closed and we have no remaining writes or pending connections,
-    then shutdown.
-    """
-    if not _closed then
-      return
-    end
-
-    if not _shutdown then
-      _shutdown = true
-      if _connected then
-        PonyTCP.shutdown(_fd)
-      else
-        _shutdown_peer = true
-      end
-    end
-
-    if _connected and _shutdown and _shutdown_peer then
-      hard_close()
-    end
-
   fun ref hard_close() =>
     """
     When an error happens, do a non-graceful close.
@@ -242,6 +216,32 @@ class TCPConnection
       end
     | None =>
       _Unreachable()
+    end
+
+  fun ref _close() =>
+    _closed = true
+    _try_shutdown()
+
+  fun ref _try_shutdown() =>
+    """
+    If we have closed and we have no remaining writes or pending connections,
+    then shutdown.
+    """
+    if not _closed then
+      return
+    end
+
+    if not _shutdown then
+      _shutdown = true
+      if _connected then
+        PonyTCP.shutdown(_fd)
+      else
+        _shutdown_peer = true
+      end
+    end
+
+    if _connected and _shutdown and _shutdown_peer then
+      hard_close()
     end
 
   fun ref _send_final(data: ByteSeq) =>
@@ -314,9 +314,8 @@ class TCPConnection
       _Unreachable()
     end
 
-  // TODO should this be private? Probably.
-  // There's no equiv to this on Windows with IOCP so we probably
-  // want to hide all of this.
+  // TODO this should be private but...
+  // https://github.com/ponylang/ponyc/issues/4613
   fun ref read() =>
     ifdef posix then
       match _lifecycle_event_receiver
