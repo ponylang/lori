@@ -114,6 +114,21 @@ trait ClientLifecycleEventReceiver
     another and doesn't implement a method.
     """
 
+  fun ref on_connecting(inflight_connections: U32) =>
+    """
+    Called if name resolution succeeded for a TCPConnection and we are now
+    waiting for a connection to the server to succeed. The count is the number
+    of connections we're trying. This callback will be called each time the
+    count changes, until a connection is made or on_connection_failure() is
+    called.
+    """
+    match _next_lifecycle_event_receiver()
+    | let r: ClientLifecycleEventReceiver =>
+      r.on_connecting(inflight_connections)
+    | None =>
+      None
+    end
+
   fun ref on_connected() =>
     """
     Called when a connection is opened
