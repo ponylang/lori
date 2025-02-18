@@ -26,7 +26,6 @@ interface NetSSLLifecycleEventReceiver
     """
     None
 
-
 class NetSSLClientConnection is ClientLifecycleEventReceiver
   let _ssl: SSL
   let _lifecycle_event_receiver: ClientLifecycleEventReceiver
