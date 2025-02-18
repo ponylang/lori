@@ -81,3 +81,7 @@ This method is not intended to be called by users of the library, so it should b
 
 Any listener's that you've implemented that implemented `on_closed` need to be updated to override `_on_closed` instead. Failing to do so will result in programs that hang.
 
+## Implement Happy Eyeballs
+
+We have implemented [Happy Eyeballs](https://en.wikipedia.org/wiki/Happy_Eyeballs) in the client. This will help in reducing the latency in establishing a connection to the server.
+
