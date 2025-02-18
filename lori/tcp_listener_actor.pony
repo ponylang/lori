@@ -6,7 +6,7 @@ trait tag TCPListenerActor is AsioEventNotify
     Called when a connection is accepted
     """
 
-  fun ref on_closed() =>
+  fun ref _on_closed() =>
     """
     Called after the listener is closed
     """

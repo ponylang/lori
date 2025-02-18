@@ -235,7 +235,7 @@ actor \nodoc\ _TestPongerListener is TCPListenerActor
       error
     end
 
-  fun ref on_closed() =>
+  fun ref _on_closed() =>
     try
       (_pinger as _TestPinger).dispose()
     end
@@ -316,7 +316,7 @@ actor \nodoc\ _TestBasicExpectListener is TCPListenerActor
   fun ref _on_accept(fd: U32): _TestBasicExpectServer =>
     _TestBasicExpectServer(_server_auth, fd, _h)
 
-  fun ref on_closed() =>
+  fun ref _on_closed() =>
     try (_client as _TestBasicExpectClient).dispose() end
 
   fun ref _on_listening() =>

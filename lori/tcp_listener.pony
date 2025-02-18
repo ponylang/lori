@@ -38,7 +38,7 @@ class TCPListener
           PonyAsio.unsubscribe(_event)
           PonyTCP.close(_fd)
           _fd = -1
-          e.on_closed()
+          e._on_closed()
         end
       end
     | None =>
