@@ -268,7 +268,7 @@ class TCPConnection
     This is POSIX only.
     """
     ifdef posix then
-      while _writeable and has_pending_writes() do
+      while _writeable and _has_pending_writes() do
         try
           let node = _pending.head()?
           (let data, let offset) = node()?
@@ -288,7 +288,7 @@ class TCPConnection
         end
       end
 
-      if not has_pending_writes() then
+      if not _has_pending_writes() then
         // all pending data was sent
         _release_backpressure()
       end
@@ -482,7 +482,7 @@ class TCPConnection
       _Unreachable()
     end
 
-  fun has_pending_writes(): Bool =>
+  fun _has_pending_writes(): Bool =>
     _pending.size() != 0
 
   // TODO this should be private but...
