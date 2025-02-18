@@ -71,3 +71,7 @@ We've removed the TCPConnectionState union type and the associated primitives `O
 ## Make `TCPListener.state` private
 
 Previously, for reasons we don't remember, the `state` property of `TCPListener` was public. It is now private.
+## Make `TCPConnection.pending_writes` private
+
+The `pending_writes` property of `TCPConnection` is now private.
+
