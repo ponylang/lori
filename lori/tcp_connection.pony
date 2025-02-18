@@ -10,6 +10,8 @@ class TCPConnection
   var _readable: Bool = false
   var _writeable: Bool = false
   var _muted: Bool = false
+  // Happy Eyeballs
+  var _inflight_connections: U32 = 0
 
   var _fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
@@ -40,7 +42,7 @@ class TCPConnection
     end
 
     _resize_read_buffer_if_needed()
-    PonyTCP.connect(enclosing, host, port, from, asio_flags)
+    _inflight_connections = PonyTCP.connect(enclosing, host, port, from, asio_flags)
 
   new server(auth: TCPServerAuth,
     fd': U32,
@@ -231,7 +233,7 @@ class TCPConnection
       return
     end
 
-    if not _shutdown then
+    if not _shutdown and (_inflight_connections == 0) then
       _shutdown = true
       if _connected then
         PonyTCP.shutdown(_fd)
@@ -516,6 +518,8 @@ class TCPConnection
     else
       if AsioEvent.writeable(flags) then
         let fd = PonyAsio.event_fd(event)
+        _inflight_connections = _inflight_connections - 1
+
         if not _connected and not _closed then
           // We don't have a connection yet so we are a client
           match _lifecycle_event_receiver
@@ -536,7 +540,7 @@ class TCPConnection
               PonyAsio.unsubscribe(event)
               PonyTCP.close(fd)
               hard_close()
-              c.on_connection_failure()
+              _connecting_callback()
             end
           | None =>
             _Unreachable()
@@ -559,6 +563,21 @@ class TCPConnection
           PonyAsio.destroy(event)
         end
       end
+    end
+
+  fun ref _connecting_callback() =>
+    match _lifecycle_event_receiver
+    | let c: ClientLifecycleEventReceiver ref =>
+      if _inflight_connections > 0 then
+        c.on_connecting(_inflight_connections)
+      else
+        c.on_connection_failure()
+        hard_close()
+      end
+    | let s: ServerLifecycleEventReceiver ref =>
+      _Unreachable()
+    | None =>
+      _Unreachable()
     end
 
   fun _is_socket_connected(fd: U32): Bool =>
@@ -596,6 +615,8 @@ class TCPConnection
     match _lifecycle_event_receiver
     | let s: ServerLifecycleEventReceiver ref =>
       s.on_started()
+    | let c: ClientLifecycleEventReceiver ref =>
+      _connecting_callback()
     | None =>
       _Unreachable()
     end
