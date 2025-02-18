@@ -45,6 +45,8 @@ class TCPListener
       _Unreachable()
     end
 
+  // TODO this should be private but...
+  // https://github.com/ponylang/ponyc/issues/4613
   fun ref event_notify(event: AsioEventID, flags: U32, arg: U32) =>
     if event isnt _event then
       return
