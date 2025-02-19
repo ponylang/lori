@@ -1,0 +1,103 @@
+name: Stress tests
+
+on:
+  schedule:
+    - cron: "30 6 * * *"
+
+permissions:
+  packages: read
+
+jobs:
+  x86_64-linux:
+    runs-on: ubuntu-latest
+
+    name: Linux
+    container:
+      image: ghcr.io/ponylang/shared-docker-ci-x86-64-unknown-linux-builder-with-libressl-3.9.2:latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.1.1
+      - name: Build
+        run: make stress-tests config=debug ssl=0.9.0
+      - name: Run
+        run: build/debug/open-close 10000000
+      - name: Send alert on failure
+        if: ${{ failure() }}
+        uses: zulip/github-actions-zulip/send-message@e4c8f27c732ba9bd98ac6be0583096dea82feea5
+        with:
+          api-key: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_API_KEY }}
+          email: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_EMAIL }}
+          organization-url: 'https://ponylang.zulipchat.com/'
+          to: notifications
+          type: stream
+          topic: ${{ github.repository }} scheduled job failure
+          content: ${{ github.server_url}}/${{ github.repository }}/actions/runs/${{ github.run_id }} failed.
+
+  macos:
+    runs-on: macos-14
+
+    name: MacOS
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.1.1
+      - name: Install pony tools
+        run: bash .ci-scripts/macOS-install-nightly-pony-tools.bash
+      - name: Configure networking
+        run: bash .ci-scripts/macOS-configure-networking.bash
+      - name: Build
+        run: |
+          export PATH=/Users/runner/.local/share/ponyup/bin/:$PATH
+          make ci config=debug ssl=0.9.0
+      - name: Run
+        run: build/debug/open-close 2500000
+      - name: Send alert on failure
+        if: ${{ failure() }}
+        uses: zulip/github-actions-zulip/send-message@e4c8f27c732ba9bd98ac6be0583096dea82feea5
+        with:
+          api-key: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_API_KEY }}
+          email: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_EMAIL }}
+          organization-url: 'https://ponylang.zulipchat.com/'
+          to: notifications
+          type: stream
+          topic: ${{ github.repository }} scheduled job failure
+          content: ${{ github.server_url}}/${{ github.repository }}/actions/runs/${{ github.run_id }} failed.
+
+  windows:
+    runs-on: windows-2025
+
+    name: Windows
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.1.1
+      - name: Tune Windows Networking
+        run: .ci-scripts\windows-configure-networking.ps1
+      - name: Install Pony tools
+        run: .ci-scripts\windows-install-pony-tools.ps1 nightlies
+      - name: Cache SSL libs
+        id: restore-libs
+        uses: actions/cache@v4
+        with:
+          path: build/libs
+          key: libs-windows-2025-${{ hashFiles('make.ps1') }}
+      - name: Build SSL libs
+        if: steps.restore-libs.outputs.cache-hit != 'true'
+        run: .\make.ps1 -Command libs  2>&1;
+      - name: Build
+        run: |
+          $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
+          .\make.ps1 -Command stress-tests -Config Debug 2>&1;
+      - name: Run
+        run: |
+          $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
+          .\build\debug\open-close 1000
+      - name: Send alert on failure
+        if: ${{ failure() }}
+        uses: zulip/github-actions-zulip/send-message@e4c8f27c732ba9bd98ac6be0583096dea82feea5
+        with:
+          api-key: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_API_KEY }}
+          email: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_EMAIL }}
+          organization-url: 'https://ponylang.zulipchat.com/'
+          to: notifications
+          type: stream
+          topic: ${{ github.repository }} scheduled job failure
+          content: ${{ github.server_url}}/${{ github.repository }}/actions/runs/${{ github.run_id }} failed.
