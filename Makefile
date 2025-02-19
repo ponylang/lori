@@ -1,4 +1,6 @@
 config ?= release
+static ?= false
+linker ?=
 
 PACKAGE := lori
 GET_DEPENDENCIES_WITH := corral fetch
@@ -9,6 +11,7 @@ COMPILE_WITH := corral run -- $(PONYC)
 BUILD_DIR ?= build/$(config)
 SRC_DIR ?= $(PACKAGE)
 EXAMPLES_DIR := examples
+STRESS_TESTS_DIR := stress-tests
 tests_binary := $(BUILD_DIR)/lori
 docs_dir := build/$(PACKAGE)-docs
 
@@ -24,6 +27,20 @@ else
 	PONYC = $(COMPILE_WITH) --debug
 endif
 
+ifdef static
+	ifeq (,$(filter $(static),true false))
+		$(error "static must be true or false)
+	endif
+endif
+
+ifeq ($(static),true)
+	LINKER += --static
+endif
+
+ifneq ($(linker),)
+	LINKER += --link-ldcmd=$(linker)
+endif
+
 ifeq (,$(filter $(MAKECMDGOALS),clean docs realclean TAGS))
   ifeq ($(ssl), 3.0.x)
           SSL = -Dopenssl_3.0.x
@@ -36,16 +53,19 @@ ifeq (,$(filter $(MAKECMDGOALS),clean docs realclean TAGS))
   endif
 endif
 
-PONYC := $(PONYC) $(SSL)
+PONYC := $(PONYC) $(SSL) $(LINKER)
 
 SOURCE_FILES := $(shell find $(SRC_DIR) -name *.pony)
 EXAMPLES := $(notdir $(shell find $(EXAMPLES_DIR)/* -type d))
 EXAMPLES_SOURCE_FILES := $(shell find $(EXAMPLES_DIR) -name *.pony)
 EXAMPLES_BINARIES := $(addprefix $(BUILD_DIR)/,$(EXAMPLES))
+STRESS_TESTS := $(notdir $(shell find $(STRESS_TESTS_DIR)/* -type d))
+STRESS_TESTS_SOURCE_FILES := $(shell find $(STRESS_TESTS_DIR) -name *.pony)
+STRESS_TESTS_BINARIES := $(addprefix $(BUILD_DIR)/,$(STRESS_TESTS))
 
 test: unit-tests
 
-ci: unit-tests examples
+ci: unit-tests examples stress-tests
 
 unit-tests: $(tests_binary)
 	$^ --exclude=integration
@@ -57,6 +77,11 @@ examples: $(EXAMPLES_BINARIES)
 
 $(EXAMPLES_BINARIES): $(BUILD_DIR)/%: $(SOURCE_FILES) $(EXAMPLES_SOURCE_FILES) | $(BUILD_DIR) dependencies
 	$(PONYC) -o $(BUILD_DIR) $(EXAMPLES_DIR)/$*
+
+stress-tests: $(STRESS_TESTS_BINARIES)
+
+$(STRESS_TESTS_BINARIES): $(BUILD_DIR)/%: $(SOURCE_FILES) $(STRESS_TESTS_SOURCE_FILES) | $(BUILD_DIR) dependencies
+	$(PONYC) -o $(BUILD_DIR) $(STRESS_TESTS_DIR)/$*
 
 clean:
 	$(CLEAN_DEPENDENCIES_WITH)
