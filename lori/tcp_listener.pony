@@ -18,7 +18,6 @@ class TCPListener
     _port = port
     _limit = limit
     _enclosing = enclosing
-    _event = PonyTCP.listen(enclosing, _host, _port)
     enclosing._finish_initialization()
 
   new none() =>
@@ -155,6 +154,7 @@ class TCPListener
   fun ref finish_initialization() =>
     match _enclosing
     | let e: TCPListenerActor ref =>
+      _event = PonyTCP.listen(e, _host, _port)
       if not _event.is_null() then
         _fd = PonyAsio.event_fd(_event)
         _listening = true
