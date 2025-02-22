@@ -157,7 +157,7 @@ actor ClientSpawner
 
   be start(listener: Listener) =>
     if not _started then
-      _logger.log("Starting client spawner.")
+      _logger(ll.Info) and _logger.log("Starting client spawner.")
       _started = true
       _listener = listener
       _spawn()
