@@ -106,6 +106,108 @@ function BuildLibs
   }
 }
 
+function BuildExamples
+{
+    $examplesDir = Join-Path -Path $rootDir -ChildPath "examples"
+
+    # Get all subdirectories in examples folder
+    $examples = Get-ChildItem -Path $examplesDir -Directory
+
+    foreach ($example in $examples) {
+        $exampleName = $example.Name
+        $exampleTarget = "$exampleName.exe"
+        $exampleFile = Join-Path -Path $buildDir -ChildPath $exampleTarget
+
+        Write-Host "Building example: $exampleName"
+
+        # Check if we need to rebuild
+        $needsRebuild = $false
+        if (-not (Test-Path $exampleFile)) {
+            $needsRebuild = $true
+        } else {
+            $exampleTimestamp = (Get-ChildItem -Path $exampleFile).LastWriteTimeUtc
+
+            # Check source files in both src and example directories
+            Get-ChildItem -Path $srcDir -Include "*.pony" -Recurse | ForEach-Object {
+                if ($exampleTimestamp -lt $_.LastWriteTimeUtc) {
+                    $needsRebuild = $true
+                }
+            }
+
+            Get-ChildItem -Path $example.FullName -Include "*.pony" -Recurse | ForEach-Object {
+                if ($exampleTimestamp -lt $_.LastWriteTimeUtc) {
+                    $needsRebuild = $true
+                }
+            }
+        }
+
+        if ($needsRebuild) {
+            Write-Host "corral fetch"
+            $output = (corral fetch)
+            $output | ForEach-Object { Write-Host $_ }
+            if ($LastExitCode -ne 0) { throw "Error during corral fetch" }
+
+            Write-Host "corral run -- ponyc $configFlag $ponyArgs --output `"$buildDir`" `"$($example.FullName)`""
+            $output = (corral run -- ponyc $configFlag $ponyArgs --output "$buildDir" "$($example.FullName)")
+            $output | ForEach-Object { Write-Host $_ }
+            if ($LastExitCode -ne 0) { throw "Error building example $exampleName" }
+        } else {
+            Write-Host "$exampleTarget is up to date"
+        }
+    }
+}
+
+function BuildStressTests
+{
+    $stressTestsDir = Join-Path -Path $rootDir -ChildPath "stress-tests"
+
+    # Get all subdirectories in stress-tests folder
+    $stressTests = Get-ChildItem -Path $stressTestsDir -Directory
+
+    foreach ($test in $stressTests) {
+        $testName = $test.Name
+        $testTarget = "$testName.exe"
+        $testFile = Join-Path -Path $buildDir -ChildPath $testTarget
+
+        Write-Host "Building stress test: $testName"
+
+        # Check if we need to rebuild
+        $needsRebuild = $false
+        if (-not (Test-Path $testFile)) {
+            $needsRebuild = $true
+        } else {
+            $testTimestamp = (Get-ChildItem -Path $testFile).LastWriteTimeUtc
+
+            # Check source files in both src and stress-test directories
+            Get-ChildItem -Path $srcDir -Include "*.pony" -Recurse | ForEach-Object {
+                if ($testTimestamp -lt $_.LastWriteTimeUtc) {
+                    $needsRebuild = $true
+                }
+            }
+
+            Get-ChildItem -Path $test.FullName -Include "*.pony" -Recurse | ForEach-Object {
+                if ($testTimestamp -lt $_.LastWriteTimeUtc) {
+                    $needsRebuild = $true
+                }
+            }
+        }
+
+        if ($needsRebuild) {
+            Write-Host "corral fetch"
+            $output = (corral fetch)
+            $output | ForEach-Object { Write-Host $_ }
+            if ($LastExitCode -ne 0) { throw "Error during corral fetch" }
+
+            Write-Host "corral run -- ponyc $configFlag $ponyArgs --output `"$buildDir`" `"$($test.FullName)`""
+            $output = (corral run -- ponyc $configFlag $ponyArgs --output "$buildDir" "$($test.FullName)")
+            $output | ForEach-Object { Write-Host $_ }
+            if ($LastExitCode -ne 0) { throw "Error building stress test $testName" }
+        } else {
+            Write-Host "$testTarget is up to date"
+        }
+    }
+}
+
 switch ($Command.ToLower())
 {
   "libs"
@@ -127,8 +229,28 @@ switch ($Command.ToLower())
     break
   }
 
+  "examples"
+  {
+      if (-not (Test-Path $buildDir))
+      {
+          mkdir "$buildDir"
+      }
+      BuildExamples
+      break
+  }
+
+  "stress-tests"
+  {
+      if (-not (Test-Path $buildDir))
+      {
+          mkdir "$buildDir"
+      }
+      BuildStressTests
+      break
+  }
+
   default
   {
-    throw "Unknown command '$Command'; must be one of (libs, test)."
+      throw "Unknown command '$Command'; must be one of (libs, test, examples)."
   }
 }

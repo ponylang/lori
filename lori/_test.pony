@@ -38,7 +38,7 @@ actor \nodoc\ _TestOutgoingFailure is (TCPConnectionActor & ClientLifecycleEvent
     _h = h
     _tcp_connection = TCPConnection.client(
       TCPConnectAuth(_h.env.root),
-      "127.0.0.1",
+      "localhost",
       "3245",
       "",
       this,
@@ -123,7 +123,7 @@ actor \nodoc\ _TestPinger is (TCPConnectionActor & ClientLifecycleEventReceiver)
 
     _tcp_connection = TCPConnection.client(
       TCPConnectAuth(h.env.root),
-      "127.0.0.1",
+      "localhost",
       port,
       "",
       this,
@@ -215,7 +215,7 @@ actor \nodoc\ _TestPongerListener is TCPListenerActor
     _h = h
     _tcp_listener = TCPListener(
       TCPListenAuth(_h.env.root),
-      "127.0.0.1",
+      "localhost",
       _port,
       this)
 
@@ -282,7 +282,7 @@ actor \nodoc\ _TestBasicExpectClient is (TCPConnectionActor & ClientLifecycleEve
     _h = h
     _tcp_connection = TCPConnection.client(
       TCPConnectAuth(_h.env.root),
-      "127.0.0.1",
+      "localhost",
       "9728",
       "",
       this,
@@ -310,7 +310,7 @@ actor \nodoc\ _TestBasicExpectListener is TCPListenerActor
     _h = h
     _tcp_listener = TCPListener(
       TCPListenAuth(_h.env.root),
-      "127.0.0.1",
+      "localhost",
       "9728",
       this)
 
@@ -390,7 +390,7 @@ actor \nodoc\ _TestCanListenListener is TCPListenerActor
     _h = h
     _tcp_listener = TCPListener(
       TCPListenAuth(_h.env.root),
-      "127.0.0.1",
+      "localhost",
       "5786",
       this)
 
@@ -468,7 +468,7 @@ actor \nodoc\ _TestMuteListener is TCPListenerActor
     _h = h
     _tcp_listener = TCPListener(
       TCPListenAuth(_h.env.root),
-      "127.0.0.1",
+      "localhost",
       "6666",
       this)
 
@@ -504,7 +504,7 @@ actor \nodoc\ _TestMuteClient
     _h = h
     _tcp_connection = TCPConnection.client(
       TCPConnectAuth(_h.env.root),
-      "127.0.0.1",
+      "localhost",
       "6666",
       "",
       this,
@@ -597,7 +597,7 @@ actor \nodoc\ _TestUnmuteListener is TCPListenerActor
     _h = h
     _tcp_listener = TCPListener(
       TCPListenAuth(_h.env.root),
-      "127.0.0.1",
+      "localhost",
       "6767",
       this)
 
@@ -633,7 +633,7 @@ actor \nodoc\ _TestUnmuteClient
     _h = h
     _tcp_connection = TCPConnection.client(
       TCPConnectAuth(_h.env.root),
-      "127.0.0.1",
+      "localhost",
       "6767",
       "",
       this,

@@ -15,7 +15,7 @@ permissions:
 jobs:
   windows:
     name: Windows
-    runs-on: windows-2022
+    runs-on: windows-2025
     steps:
       - uses: actions/checkout@v4.1.1
       - name: cache SSL libs
@@ -23,7 +23,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/libs
-          key: libs-windows-2022-${{ hashFiles('make.ps1') }}
+          key: libs-windows-2025-${{ hashFiles('make.ps1') }}
       - name: build SSL libs
         if: steps.restore-libs.outputs.cache-hit != 'true'
         run: .\make.ps1 -Command libs  2>&1;

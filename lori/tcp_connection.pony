@@ -24,6 +24,11 @@ class TCPConnection
   var _read_buffer_size: USize = 16384
   var _expect: USize = 0
 
+  // client startup state
+  var _host: String = ""
+  var _port: String = ""
+  var _from: String = ""
+
   new client(auth: TCPConnectAuth,
     host: String,
     port: String,
@@ -31,18 +36,14 @@ class TCPConnection
     enclosing: TCPConnectionActor ref,
     ler: ClientLifecycleEventReceiver ref)
   =>
-    // TODO: handle happy eyeballs here - connect count
     _lifecycle_event_receiver = ler
     _enclosing = enclosing
-
-    let asio_flags = ifdef windows then
-      AsioEvent.read_write()
-    else
-      AsioEvent.read_write_oneshot()
-    end
-
+    _host = host
+    _port = port
+    _from = from
     _resize_read_buffer_if_needed()
-    _inflight_connections = PonyTCP.connect(enclosing, host, port, from, asio_flags)
+
+    enclosing._finish_initialization()
 
   new server(auth: TCPServerAuth,
     fd': U32,
@@ -54,30 +55,10 @@ class TCPConnection
     _enclosing = enclosing
 
     _resize_read_buffer_if_needed()
-    _event = PonyAsio.create_event(enclosing, _fd)
-    // TODO should we be opening here? Perhaps that waits for the event
-
-    _connected = true
-    ifdef not windows then
-      PonyAsio.set_writeable(_event)
-    end
-    _writeable = true
 
     enclosing._finish_initialization()
 
-    _readable = true
-    // Queue up reads as we are now connected
-    // But might have been in a race with ASIO
-    ifdef windows then
-      _iocp_read()
-    else
-      enclosing._read_again()
-    end
-
   new none() =>
-    """
-    For initializing an empty variable
-    """
     _enclosing = None
     _lifecycle_event_receiver = None
 
@@ -198,7 +179,9 @@ class TCPConnection
       | let spawner: TCPListenerActor =>
         spawner._connection_closed(this)
       | None =>
-        _Unreachable()
+        // It is possible that we didn't yet receive the message giving us
+        // our spawner. Do nothing in that case.
+        None
       end
     end
 
@@ -618,9 +601,52 @@ class TCPConnection
   fun ref finish_initialization() =>
     match _lifecycle_event_receiver
     | let s: ServerLifecycleEventReceiver ref =>
-      s.on_started()
+      _complete_server_initialization(s)
     | let c: ClientLifecycleEventReceiver ref =>
+      _complete_client_initialization(c)
+    | None =>
+      _Unreachable()
+    end
+
+  fun ref _complete_client_initialization(
+    s: ClientLifecycleEventReceiver ref)
+  =>
+    match _enclosing
+    | let e: TCPConnectionActor ref =>
+      let asio_flags = ifdef windows then
+        AsioEvent.read_write()
+      else
+        AsioEvent.read_write_oneshot()
+      end
+
+      _inflight_connections = PonyTCP.connect(e, _host, _port, _from, asio_flags)
       _connecting_callback()
+    | None =>
+      _Unreachable()
+    end
+
+  fun ref _complete_server_initialization(
+    s: ServerLifecycleEventReceiver ref)
+  =>
+    match _enclosing
+    | let e: TCPConnectionActor ref =>
+      _event = PonyAsio.create_event(e, _fd)
+      _connected = true
+      ifdef not windows then
+        PonyAsio.set_writeable(_event)
+      end
+      _writeable = true
+
+      s.on_started()
+
+      _readable = true
+      // Queue up reads as we are now connected
+      // But might have been in a race with ASIO
+      ifdef windows then
+        _iocp_read()
+      else
+        e._read_again()
+      end
     | None =>
       _Unreachable()
     end
