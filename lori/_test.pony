@@ -47,7 +47,7 @@ actor \nodoc\ _TestOutgoingFailure is (TCPConnectionActor & ClientLifecycleEvent
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _next_lifecycle_event_receiver(): (ClientLifecycleEventReceiver | None) =>
+  fun ref _next_lifecycle_event_receiver(): None =>
     None
 
   fun ref on_connected() =>
@@ -133,7 +133,7 @@ actor \nodoc\ _TestPinger is (TCPConnectionActor & ClientLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _next_lifecycle_event_receiver(): (ClientLifecycleEventReceiver | None) =>
+  fun ref _next_lifecycle_event_receiver(): None =>
     None
 
   fun ref on_connected() =>
@@ -183,7 +183,7 @@ actor \nodoc\ _TestPonger is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _next_lifecycle_event_receiver(): (ServerLifecycleEventReceiver | None) =>
+  fun ref _next_lifecycle_event_receiver(): None =>
     None
 
   fun ref on_received(data: Array[U8] iso) =>
@@ -291,7 +291,7 @@ actor \nodoc\ _TestBasicExpectClient is (TCPConnectionActor & ClientLifecycleEve
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _next_lifecycle_event_receiver(): (ClientLifecycleEventReceiver | None) =>
+  fun ref _next_lifecycle_event_receiver(): None =>
     None
 
   fun ref on_connected() =>
@@ -347,7 +347,7 @@ actor \nodoc\ _TestBasicExpectServer is (TCPConnectionActor & ServerLifecycleEve
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _next_lifecycle_event_receiver(): (ServerLifecycleEventReceiver | None) =>
+  fun ref _next_lifecycle_event_receiver(): None =>
     None
 
   fun ref on_received(data: Array[U8] iso) =>
@@ -422,7 +422,7 @@ actor \nodoc\ _TestDoNothingServerActor is (TCPConnectionActor & ServerLifecycle
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _next_lifecycle_event_receiver(): (ServerLifecycleEventReceiver | None) =>
+  fun ref _next_lifecycle_event_receiver(): None =>
     None
 
  class \nodoc\ iso _TestMute is UnitTest
@@ -513,7 +513,7 @@ actor \nodoc\ _TestMuteClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _next_lifecycle_event_receiver(): (ClientLifecycleEventReceiver | None) =>
+  fun ref _next_lifecycle_event_receiver(): None =>
     None
 
   fun ref on_connected() =>
@@ -542,7 +542,7 @@ actor \nodoc\ _TestMuteServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _next_lifecycle_event_receiver(): (ServerLifecycleEventReceiver | None) =>
+  fun ref _next_lifecycle_event_receiver(): None =>
     None
 
   fun ref on_started() =>
@@ -642,7 +642,7 @@ actor \nodoc\ _TestUnmuteClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _next_lifecycle_event_receiver(): (ClientLifecycleEventReceiver | None) =>
+  fun ref _next_lifecycle_event_receiver(): None =>
     None
 
   fun ref on_connected() =>
@@ -671,7 +671,7 @@ actor \nodoc\ _TestUnmuteServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _next_lifecycle_event_receiver(): (ServerLifecycleEventReceiver | None) =>
+  fun ref _next_lifecycle_event_receiver(): None =>
     None
 
   fun ref on_started() =>
