@@ -81,7 +81,7 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _next_lifecycle_event_receiver(): (ServerLifecycleEventReceiver | None) =>
+  fun ref _next_lifecycle_event_receiver(): None =>
     None
 
   fun ref on_received(data: Array[U8] iso) =>
@@ -106,7 +106,7 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _next_lifecycle_event_receiver(): (ClientLifecycleEventReceiver | None) =>
+  fun ref _next_lifecycle_event_receiver(): None =>
     None
 
   fun ref on_connected() =>

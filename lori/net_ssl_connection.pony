@@ -43,7 +43,7 @@ class NetSSLClientConnection is ClientLifecycleEventReceiver
   fun ref _connection(): TCPConnection =>
     _lifecycle_event_receiver._connection()
 
-  fun ref _next_lifecycle_event_receiver(): (ClientLifecycleEventReceiver | None) =>
+  fun ref _next_lifecycle_event_receiver(): ClientLifecycleEventReceiver =>
     _lifecycle_event_receiver
 
   fun ref on_connected() =>
@@ -190,7 +190,7 @@ class NetSSLServerConnection is ServerLifecycleEventReceiver
   fun ref _connection(): TCPConnection =>
     _lifecycle_event_receiver._connection()
 
-  fun ref _next_lifecycle_event_receiver(): (ServerLifecycleEventReceiver | None) =>
+  fun ref _next_lifecycle_event_receiver(): ServerLifecycleEventReceiver =>
     _lifecycle_event_receiver
 
   fun ref on_started() =>
