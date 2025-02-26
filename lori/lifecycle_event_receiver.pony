@@ -1,5 +1,3 @@
-// TODO: These should be private but... public for now.
-// https://github.com/ponylang/ponyc/issues/4613
 trait ServerLifecycleEventReceiver
   fun ref _connection(): TCPConnection
 
@@ -13,7 +11,7 @@ trait ServerLifecycleEventReceiver
     another and doesn't implement a method.
     """
 
-  fun ref on_started() =>
+  fun ref _on_started() =>
     """
     Called when a server is started.
 
@@ -22,23 +20,23 @@ trait ServerLifecycleEventReceiver
     """
     match _next_lifecycle_event_receiver()
     | let r: ServerLifecycleEventReceiver =>
-      r.on_started()
+      r._on_started()
     | None =>
       None
     end
 
-  fun ref on_closed() =>
+  fun ref _on_closed() =>
     """
     Called when the connection is closed
     """
     match _next_lifecycle_event_receiver()
     | let r: ServerLifecycleEventReceiver =>
-      r.on_closed()
+      r._on_closed()
     | None =>
       None
     end
 
-  fun ref on_expect_set(qty: USize): USize =>
+  fun ref _on_expect_set(qty: USize): USize =>
     """
     Called when setting the expect amount on the connection.
 
@@ -48,23 +46,23 @@ trait ServerLifecycleEventReceiver
     """
     match _next_lifecycle_event_receiver()
     | let r: ServerLifecycleEventReceiver =>
-      r.on_expect_set(qty)
+      r._on_expect_set(qty)
     | None =>
       qty
     end
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
     """
     Called each time data is received on this connection
     """
     match _next_lifecycle_event_receiver()
     | let r: ServerLifecycleEventReceiver =>
-      r.on_received(consume data)
+      r._on_received(consume data)
     | None =>
       None
     end
 
-  fun ref on_send(data: ByteSeq): (ByteSeq | None) =>
+  fun ref _on_send(data: ByteSeq): (ByteSeq | None) =>
     """
     Called when data is about to be sent on this connection.
     This allows for protocols like SSL to hook in and modify the outgoing
@@ -74,29 +72,29 @@ trait ServerLifecycleEventReceiver
     """
     match _next_lifecycle_event_receiver()
     | let r: ServerLifecycleEventReceiver =>
-      r.on_send(data)
+      r._on_send(data)
     | None =>
       data
     end
 
-  fun ref on_throttled() =>
+  fun ref _on_throttled() =>
     """
     Called when we start experiencing backpressure
     """
     match _next_lifecycle_event_receiver()
     | let r: ServerLifecycleEventReceiver =>
-      r.on_throttled()
+      r._on_throttled()
     | None =>
       None
     end
 
-  fun ref on_unthrottled() =>
+  fun ref _on_unthrottled() =>
     """
     Called when backpressure is released
     """
     match _next_lifecycle_event_receiver()
     | let r: ServerLifecycleEventReceiver =>
-      r.on_unthrottled()
+      r._on_unthrottled()
     | None =>
       None
     end
@@ -114,55 +112,55 @@ trait ClientLifecycleEventReceiver
     another and doesn't implement a method.
     """
 
-  fun ref on_connecting(inflight_connections: U32) =>
+  fun ref _on_connecting(inflight_connections: U32) =>
     """
     Called if name resolution succeeded for a TCPConnection and we are now
     waiting for a connection to the server to succeed. The count is the number
     of connections we're trying. This callback will be called each time the
-    count changes, until a connection is made or on_connection_failure() is
+    count changes, until a connection is made or _on_connection_failure() is
     called.
     """
     match _next_lifecycle_event_receiver()
     | let r: ClientLifecycleEventReceiver =>
-      r.on_connecting(inflight_connections)
+      r._on_connecting(inflight_connections)
     | None =>
       None
     end
 
-  fun ref on_connected() =>
+  fun ref _on_connected() =>
     """
     Called when a connection is opened
     """
     match _next_lifecycle_event_receiver()
     | let r: ClientLifecycleEventReceiver =>
-      r.on_connected()
+      r._on_connected()
     | None =>
       None
     end
 
-  fun ref on_connection_failure() =>
+  fun ref _on_connection_failure() =>
     """
     Called when a connection fails to open
     """
     match _next_lifecycle_event_receiver()
     | let r: ClientLifecycleEventReceiver =>
-      r.on_connection_failure()
+      r._on_connection_failure()
     | None =>
       None
     end
 
-  fun ref on_closed() =>
+  fun ref _on_closed() =>
     """
     Called when the connection is closed
     """
     match _next_lifecycle_event_receiver()
     | let r: ClientLifecycleEventReceiver =>
-      r.on_closed()
+      r._on_closed()
     | None =>
       None
     end
 
-  fun ref on_expect_set(qty: USize): USize =>
+  fun ref _on_expect_set(qty: USize): USize =>
     """
     Called when setting the expect amount on the connection.
 
@@ -172,23 +170,23 @@ trait ClientLifecycleEventReceiver
     """
     match _next_lifecycle_event_receiver()
     | let r: ClientLifecycleEventReceiver =>
-      r.on_expect_set(qty)
+      r._on_expect_set(qty)
     | None =>
       qty
     end
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
     """
     Called each time data is received on this connection
     """
     match _next_lifecycle_event_receiver()
     | let r: ClientLifecycleEventReceiver =>
-      r.on_received(consume data)
+      r._on_received(consume data)
     | None =>
       None
     end
 
-  fun ref on_send(data: ByteSeq): (ByteSeq | None) =>
+  fun ref _on_send(data: ByteSeq): (ByteSeq | None) =>
     """
     Called when data is about to be sent on this connection.
     This allows for protocols like SSL to hook in and modify the outgoing
@@ -198,29 +196,29 @@ trait ClientLifecycleEventReceiver
     """
     match _next_lifecycle_event_receiver()
     | let r: ClientLifecycleEventReceiver =>
-      r.on_send(data)
+      r._on_send(data)
     | None =>
       data
     end
 
-  fun ref on_throttled() =>
+  fun ref _on_throttled() =>
     """
     Called when we start experiencing backpressure
     """
     match _next_lifecycle_event_receiver()
     | let r: ClientLifecycleEventReceiver =>
-      r.on_throttled()
+      r._on_throttled()
     | None =>
       None
     end
 
-  fun ref on_unthrottled() =>
+  fun ref _on_unthrottled() =>
     """
     Called when backpressure is released
     """
     match _next_lifecycle_event_receiver()
     | let r: ClientLifecycleEventReceiver =>
-      r.on_unthrottled()
+      r._on_unthrottled()
     | None =>
       None
     end

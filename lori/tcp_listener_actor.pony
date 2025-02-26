@@ -31,13 +31,13 @@ trait tag TCPListenerActor is AsioEventNotify
     _listener().close()
 
   be _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
-    _listener().event_notify(event, flags, arg)
+    _listener()._event_notify(event, flags, arg)
 
   be _connection_opened(conn: TCPConnection tag) =>
-    _listener().connection_opened(conn)
+    _listener()._connection_opened(conn)
 
   be _connection_closed(conn: TCPConnection tag) =>
-    _listener().connection_closed(conn)
+    _listener()._connection_closed(conn)
 
   be _finish_initialization() =>
-    _listener().finish_initialization()
+    _listener()._finish_initialization()

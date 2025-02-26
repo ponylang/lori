@@ -44,9 +44,7 @@ class TCPListener
       _Unreachable()
     end
 
-  // TODO this should be private but...
-  // https://github.com/ponylang/ponyc/issues/4613
-  fun ref event_notify(event: AsioEventID, flags: U32, arg: U32) =>
+  fun ref _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
     if event isnt _event then
       return
     end
@@ -135,23 +133,17 @@ class TCPListener
     | None => false
     end
 
-  // TODO this should be private but...
-  // https://github.com/ponylang/ponyc/issues/4613
-  fun ref connection_opened(conn: TCPConnection tag) =>
+  fun ref _connection_opened(conn: TCPConnection tag) =>
     _open_connections.set(conn)
 
-  // TODO this should be private but...
-  // https://github.com/ponylang/ponyc/issues/4613
-  fun ref connection_closed(conn: TCPConnection tag) =>
+  fun ref _connection_closed(conn: TCPConnection tag) =>
     _open_connections.unset(conn)
     if _paused and not _at_connection_limit() then
       _paused = false
       _accept()
     end
 
-  // TODO this should be private but...
-  // https://github.com/ponylang/ponyc/issues/4613
-  fun ref finish_initialization() =>
+  fun ref _finish_initialization() =>
     match _enclosing
     | let e: TCPListenerActor ref =>
       _event = PonyTCP.listen(e, _host, _port)

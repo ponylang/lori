@@ -85,9 +85,9 @@ actor Echoer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _next_lifecycle_event_receiver(): None =>
     None
 
-  fun ref on_closed() =>
+  fun ref _on_closed() =>
     _out.print("Connection Closed")
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
     _out.print("Decrypted Data received. Echoing it back.")
     _connection().send(consume data)
