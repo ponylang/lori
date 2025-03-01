@@ -120,7 +120,7 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _next_lifecycle_event_receiver(): None =>
     None
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
     _logger(ll.Fine) and _logger.log("Server received data.")
     _tcp_connection.send(consume data)
 
@@ -256,19 +256,19 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
   fun ref _next_lifecycle_event_receiver(): None =>
     None
 
-  fun ref on_connected() =>
+  fun ref _on_connected() =>
     _logger(ll.Fine) and _logger.log("Client Connected.")
     _tcp_connection.send("Hi there!")
 
-  fun ref on_connection_failure() =>
+  fun ref _on_connection_failure() =>
     _logger(ll.Fine) and _logger.log("Client Connection Failure.")
     _spawner.failed(this)
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
     _logger(ll.Fine) and _logger.log("Client Received Data.")
     _tcp_connection.close()
 
-  fun ref on_closed() =>
+  fun ref _on_closed() =>
     _spawner.closed(this)
 
 primitive TimestampAddingFormatter

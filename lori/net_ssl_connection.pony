@@ -46,17 +46,17 @@ class NetSSLClientConnection is ClientLifecycleEventReceiver
   fun ref _next_lifecycle_event_receiver(): ClientLifecycleEventReceiver =>
     _lifecycle_event_receiver
 
-  fun ref on_connected() =>
+  fun ref _on_connected() =>
     """
     Swallow this event until the handshake is complete.
     """
 
     _ssl_poll()
 
-  fun ref on_connection_failure() =>
-    _lifecycle_event_receiver.on_connection_failure()
+  fun ref _on_connection_failure() =>
+    _lifecycle_event_receiver._on_connection_failure()
 
-  fun ref on_closed() =>
+  fun ref _on_closed() =>
     """
     Clean up our SSL session and inform the wrapped protocol that the connection
     closing.
@@ -67,17 +67,17 @@ class NetSSLClientConnection is ClientLifecycleEventReceiver
     _connected = false
     _pending.clear()
 
-    _lifecycle_event_receiver.on_closed()
+    _lifecycle_event_receiver._on_closed()
 
-  fun ref on_expect_set(qty: USize): USize =>
+  fun ref _on_expect_set(qty: USize): USize =>
     """
     Keep track of the expect count for the wrapped protocol. Always tell the
     TCPConnection to read all available data.
     """
-    _expect = _lifecycle_event_receiver.on_expect_set(qty)
+    _expect = _lifecycle_event_receiver._on_expect_set(qty)
     0
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
     """
     Pass the data to the SSL session and check for both new application data
     and new destination data.
@@ -86,13 +86,13 @@ class NetSSLClientConnection is ClientLifecycleEventReceiver
     _ssl.receive(consume data)
     _ssl_poll()
 
-  fun ref on_send(data: ByteSeq): (ByteSeq | None) =>
+  fun ref _on_send(data: ByteSeq): (ByteSeq | None) =>
     """
     Pass the data to the SSL session and check for both new application data
     and new destination data.
     """
 
-    match _lifecycle_event_receiver.on_send(data)
+    match _lifecycle_event_receiver._on_send(data)
     | let d: ByteSeq =>
       if _connected then
         try
@@ -106,11 +106,11 @@ class NetSSLClientConnection is ClientLifecycleEventReceiver
     end
     _ssl_poll()
 
-  fun ref on_throttled() =>
-    _lifecycle_event_receiver.on_throttled()
+  fun ref _on_throttled() =>
+    _lifecycle_event_receiver._on_throttled()
 
-  fun ref on_unthrottled() =>
-    _lifecycle_event_receiver.on_unthrottled()
+  fun ref _on_unthrottled() =>
+    _lifecycle_event_receiver._on_unthrottled()
 
   fun ref _ssl_poll() =>
     """
@@ -121,7 +121,7 @@ class NetSSLClientConnection is ClientLifecycleEventReceiver
     | SSLReady =>
       if not _connected then
         _connected = true
-        _lifecycle_event_receiver.on_connected()
+        _lifecycle_event_receiver._on_connected()
 
         match _lifecycle_event_receiver
         | let ler: NetSSLLifecycleEventReceiver =>
@@ -161,7 +161,7 @@ class NetSSLClientConnection is ClientLifecycleEventReceiver
     while true do
       match _ssl.read(_expect)
       | let data: Array[U8] iso =>
-        _lifecycle_event_receiver.on_received(consume data)
+        _lifecycle_event_receiver._on_received(consume data)
       | None =>
         break
       end
@@ -193,14 +193,14 @@ class NetSSLServerConnection is ServerLifecycleEventReceiver
   fun ref _next_lifecycle_event_receiver(): ServerLifecycleEventReceiver =>
     _lifecycle_event_receiver
 
-  fun ref on_started() =>
+  fun ref _on_started() =>
     """
     Swallow this event until the handshake is complete.
     """
 
     _ssl_poll()
 
-  fun ref on_closed() =>
+  fun ref _on_closed() =>
     """
     Clean up our SSL session and inform the wrapped protocol that the connection
     closing.
@@ -212,17 +212,17 @@ class NetSSLServerConnection is ServerLifecycleEventReceiver
     _connected = false
     _pending.clear()
 
-    _lifecycle_event_receiver.on_closed()
+    _lifecycle_event_receiver._on_closed()
 
-  fun ref on_expect_set(qty: USize): USize =>
+  fun ref _on_expect_set(qty: USize): USize =>
     """
     Keep track of the expect count for the wrapped protocol. Always tell the
     TCPConnection to read all available data.
     """
-    _expect = _lifecycle_event_receiver.on_expect_set(qty)
+    _expect = _lifecycle_event_receiver._on_expect_set(qty)
     0
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
     """
     Pass the data to the SSL session and check for both new application data
     and new destination data.
@@ -231,13 +231,13 @@ class NetSSLServerConnection is ServerLifecycleEventReceiver
     _ssl.receive(consume data)
     _ssl_poll()
 
-  fun ref on_send(data: ByteSeq): (ByteSeq | None) =>
+  fun ref _on_send(data: ByteSeq): (ByteSeq | None) =>
     """
     Pass the data to the SSL session and check for both new application data
     and new destination data.
     """
 
-    match _lifecycle_event_receiver.on_send(data)
+    match _lifecycle_event_receiver._on_send(data)
     | let d: ByteSeq =>
       if _connected then
         try
@@ -251,11 +251,11 @@ class NetSSLServerConnection is ServerLifecycleEventReceiver
     end
     _ssl_poll()
 
-  fun ref on_throttled() =>
-    _lifecycle_event_receiver.on_throttled()
+  fun ref _on_throttled() =>
+    _lifecycle_event_receiver._on_throttled()
 
-  fun ref on_unthrottled() =>
-    _lifecycle_event_receiver.on_unthrottled()
+  fun ref _on_unthrottled() =>
+    _lifecycle_event_receiver._on_unthrottled()
 
   fun ref _ssl_poll() =>
     """
@@ -266,7 +266,7 @@ class NetSSLServerConnection is ServerLifecycleEventReceiver
     | SSLReady =>
       if not _connected then
         _connected = true
-        _lifecycle_event_receiver.on_started()
+        _lifecycle_event_receiver._on_started()
 
         match _lifecycle_event_receiver
         | let ler: NetSSLLifecycleEventReceiver =>
@@ -306,7 +306,7 @@ class NetSSLServerConnection is ServerLifecycleEventReceiver
     while true do
       match _ssl.read(_expect)
       | let data: Array[U8] iso =>
-        _lifecycle_event_receiver.on_received(consume data)
+        _lifecycle_event_receiver._on_received(consume data)
       | None =>
         break
       end

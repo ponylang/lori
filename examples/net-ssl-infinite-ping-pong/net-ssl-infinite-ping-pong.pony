@@ -84,7 +84,7 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _next_lifecycle_event_receiver(): None =>
     None
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
     _out.print(consume data)
     _tcp_connection.send("Pong")
 
@@ -109,9 +109,9 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
   fun ref _next_lifecycle_event_receiver(): None =>
     None
 
-  fun ref on_connected() =>
+  fun ref _on_connected() =>
    _tcp_connection.send("Ping")
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
    _out.print(consume data)
    _tcp_connection.send("Ping")

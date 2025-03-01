@@ -50,11 +50,11 @@ actor \nodoc\ _TestOutgoingFailure is (TCPConnectionActor & ClientLifecycleEvent
   fun ref _next_lifecycle_event_receiver(): None =>
     None
 
-  fun ref on_connected() =>
-    _h.fail("on_connected for a connection that should have failed")
+  fun ref _on_connected() =>
+    _h.fail("_on_connected for a connection that should have failed")
     _h.complete(false)
 
-  fun ref on_connection_failure() =>
+  fun ref _on_connection_failure() =>
     _h.complete(true)
 
 class \nodoc\ iso _TestPingPong is UnitTest
@@ -136,13 +136,13 @@ actor \nodoc\ _TestPinger is (TCPConnectionActor & ClientLifecycleEventReceiver)
   fun ref _next_lifecycle_event_receiver(): None =>
     None
 
-  fun ref on_connected() =>
+  fun ref _on_connected() =>
     if _pings_to_send > 0 then
       _tcp_connection.send("Ping")
       _pings_to_send = _pings_to_send - 1
     end
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
     if _pings_to_send > 0 then
       _tcp_connection.send("Ping")
       _pings_to_send = _pings_to_send - 1
@@ -186,7 +186,7 @@ actor \nodoc\ _TestPonger is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _next_lifecycle_event_receiver(): None =>
     None
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
     if _pings_to_receive > 0 then
       _tcp_connection.send("Pong")
       _pings_to_receive = _pings_to_receive - 1
@@ -294,11 +294,11 @@ actor \nodoc\ _TestBasicExpectClient is (TCPConnectionActor & ClientLifecycleEve
   fun ref _next_lifecycle_event_receiver(): None =>
     None
 
-  fun ref on_connected() =>
+  fun ref _on_connected() =>
     _h.complete_action("client connected")
     _tcp_connection.send("hi there, how are you???")
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
     _h.fail("Client shouldn't get data")
 
 actor \nodoc\ _TestBasicExpectListener is TCPListenerActor
@@ -350,7 +350,7 @@ actor \nodoc\ _TestBasicExpectServer is (TCPConnectionActor & ServerLifecycleEve
   fun ref _next_lifecycle_event_receiver(): None =>
     None
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
     _received_count = _received_count + 1
 
     if _received_count == 1 then
@@ -434,8 +434,8 @@ actor \nodoc\ _TestDoNothingServerActor is (TCPConnectionActor & ServerLifecycle
   Test works as follows:
 
   Once an incoming connection is established, we set mute on it and then
-  verify that within a 2 second long test that the `on_received` callback is
-  not triggered. A timeout is considering passing and `on_received` being called
+  verify that within a 2 second long test that the `_on_received` callback is
+  not triggered. A timeout is considering passing and `_on_received` being called
   is grounds for a failure.
   """
   fun name(): String => "TestMute"
@@ -516,13 +516,13 @@ actor \nodoc\ _TestMuteClient
   fun ref _next_lifecycle_event_receiver(): None =>
     None
 
-  fun ref on_connected() =>
+  fun ref _on_connected() =>
     _h.complete_action("client connected")
 
-  fun ref on_connection_failure() =>
+  fun ref _on_connection_failure() =>
     _h.fail("client connect failed")
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
      _tcp_connection.send("it's sad that you won't ever read this")
      _h.complete_action("client sent data")
 
@@ -545,14 +545,14 @@ actor \nodoc\ _TestMuteServer
   fun ref _next_lifecycle_event_receiver(): None =>
     None
 
-  fun ref on_started() =>
+  fun ref _on_started() =>
     _h.complete_action("server started")
     _tcp_connection.mute()
     _h.complete_action("server muted")
     _tcp_connection.send("send me some data that i won't ever read")
     _h.complete_action("server asks for data")
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
     _h.fail("server should not receive data")
     _h.complete(false)
 
@@ -645,13 +645,13 @@ actor \nodoc\ _TestUnmuteClient
   fun ref _next_lifecycle_event_receiver(): None =>
     None
 
-  fun ref on_connected() =>
+  fun ref _on_connected() =>
     _h.complete_action("client connected")
 
-  fun ref on_connection_failure() =>
+  fun ref _on_connection_failure() =>
     _h.fail("client connect failed")
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
      _tcp_connection.send("i'm happy you will receive this")
      _h.complete_action("client sent data")
 
@@ -674,7 +674,7 @@ actor \nodoc\ _TestUnmuteServer
   fun ref _next_lifecycle_event_receiver(): None =>
     None
 
-  fun ref on_started() =>
+  fun ref _on_started() =>
     _h.complete_action("server started")
     _tcp_connection.mute()
     _h.complete_action("server muted")
@@ -683,5 +683,5 @@ actor \nodoc\ _TestUnmuteServer
     _tcp_connection.unmute()
     _h.complete_action("server unmuted")
 
-  fun ref on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso) =>
     _h.complete(true)

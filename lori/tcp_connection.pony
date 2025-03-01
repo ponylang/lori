@@ -117,7 +117,7 @@ class TCPConnection
   fun ref expect(qty: USize) ? =>
     match _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver =>
-      let final_qty = s.on_expect_set(qty)
+      let final_qty = s._on_expect_set(qty)
       if final_qty <= _read_buffer_size then
         _expect = final_qty
       else
@@ -168,7 +168,7 @@ class TCPConnection
 
     match _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
-      s.on_closed()
+      s._on_closed()
     | None =>
       _Unreachable()
     end
@@ -195,7 +195,7 @@ class TCPConnection
     // TODO: should we be checking if we are open here?
     match _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
-      match s.on_send(data)
+      match s._on_send(data)
       | let seq: ByteSeq =>
         _send_final(seq)
       end
@@ -299,9 +299,7 @@ class TCPConnection
       _Unreachable()
     end
 
-  // TODO this should be private but...
-  // https://github.com/ponylang/ponyc/issues/4613
-  fun ref read() =>
+  fun ref _read() =>
     ifdef posix then
       match _lifecycle_event_receiver
       | let s: EitherLifecycleEventReceiver ref =>
@@ -328,7 +326,7 @@ class TCPConnection
               (let data', _read_buffer) = (consume x).chop(bytes_to_consume)
               _bytes_in_read_buffer = _bytes_in_read_buffer - bytes_to_consume
 
-              s.on_received(consume data')
+              s._on_received(consume data')
             end
 
             if total_bytes_read >= _read_buffer_size then
@@ -414,7 +412,7 @@ class TCPConnection
           (let data, _read_buffer) = (consume _read_buffer).chop(chop_at)
           _bytes_in_read_buffer = _bytes_in_read_buffer - chop_at
 
-          s.on_received(consume data)
+          s._on_received(consume data)
 
           _resize_read_buffer_if_needed()
         end
@@ -450,7 +448,7 @@ class TCPConnection
         ifdef not windows then
           PonyAsio.resubscribe_write(_event)
         end
-        s.on_throttled()
+        s._on_throttled()
       end
     | None =>
       _Unreachable()
@@ -461,7 +459,7 @@ class TCPConnection
     | let s: EitherLifecycleEventReceiver =>
       if _throttled then
         _throttled = false
-        s.on_unthrottled()
+        s._on_unthrottled()
       end
     | None =>
       _Unreachable()
@@ -470,9 +468,7 @@ class TCPConnection
   fun _has_pending_writes(): Bool =>
     _pending.size() != 0
 
-  // TODO this should be private but...
-  // https://github.com/ponylang/ponyc/issues/4613
-  fun ref event_notify(event: AsioEventID, flags: U32, arg: U32) =>
+  fun ref _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
     if event is _event then
       if AsioEvent.writeable(flags) then
         _writeable = true
@@ -488,7 +484,7 @@ class TCPConnection
         ifdef windows then
           _read_completed(arg)
         else
-          read()
+          _read()
         end
       end
 
@@ -513,11 +509,11 @@ class TCPConnection
               _connected = true
               _writeable = true
               _readable = true
-              c.on_connected()
+              c._on_connected()
               ifdef windows then
                 _iocp_read()
               else
-                read()
+                _read()
                 if _has_pending_writes() then
                   _send_pending_writes()
                   _release_backpressure()
@@ -556,9 +552,9 @@ class TCPConnection
     match _lifecycle_event_receiver
     | let c: ClientLifecycleEventReceiver ref =>
       if _inflight_connections > 0 then
-        c.on_connecting(_inflight_connections)
+        c._on_connecting(_inflight_connections)
       else
-        c.on_connection_failure()
+        c._on_connection_failure()
         hard_close()
       end
     | let s: ServerLifecycleEventReceiver ref =>
@@ -576,9 +572,7 @@ class TCPConnection
       (errno == 0) and (value == 0)
     end
 
-  // TODO this should be private but..
-  // https://github.com/ponylang/ponyc/issues/4613
-  fun ref register_spawner(listener: TCPListenerActor) =>
+  fun ref _register_spawner(listener: TCPListenerActor) =>
     _spawned_by = listener
     match _spawned_by
     | let spawner: TCPListenerActor =>
@@ -596,9 +590,7 @@ class TCPConnection
       _Unreachable()
     end
 
-  // TODO this should be private but...
-  // https://github.com/ponylang/ponyc/issues/4613
-  fun ref finish_initialization() =>
+  fun ref _finish_initialization() =>
     match _lifecycle_event_receiver
     | let s: ServerLifecycleEventReceiver ref =>
       _complete_server_initialization(s)
@@ -637,7 +629,7 @@ class TCPConnection
       end
       _writeable = true
 
-      s.on_started()
+      s._on_started()
 
       _readable = true
       // Queue up reads as we are now connected
