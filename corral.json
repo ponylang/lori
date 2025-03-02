@@ -17,7 +17,7 @@
     "homepage": "https://github.com/seantallen-org/lori",
     "license": "BSD-2-Clause",
     "documentation_url": "https://seantallen-org.github.io/lori/",
-    "version": "0.5.1",
+    "version": "0.6.0",
     "name": "lori"
   }
 }
