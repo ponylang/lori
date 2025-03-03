@@ -89,10 +89,10 @@ class TCPListener
             var fd = PonyTCP.accept(_event)
 
             match fd
-              | -1 =>
+            | -1 =>
               // Wouldn't block but we got an error. Keep trying.
               None
-              | 0 =>
+            | 0 =>
               // Would block. Bail out.
               return
             else
