@@ -85,7 +85,8 @@ class TCPListener
             PonyTCP.close(arg)
           end
         else
-          while not _at_connection_limit() do
+          var currently_accepted: USize = 0
+          while not _at_connection_limit(currently_accepted) do
             var fd = PonyTCP.accept(_event)
 
             match fd
@@ -99,6 +100,7 @@ class TCPListener
               try
                 let opened = e._on_accept(fd)?
                 opened._register_spawner(e)
+                currently_accepted = currently_accepted + 1
               else
                 PonyTCP.close(fd)
               end
@@ -127,9 +129,9 @@ class TCPListener
       _Unreachable()
     end
 
-  fun _at_connection_limit(): Bool =>
+  fun _at_connection_limit(plus: USize = 0): Bool =>
     match _limit
-    | let l: U32 => _open_connections.size() >= l.usize()
+    | let l: U32 => (_open_connections.size() + plus) >= l.usize()
     | None => false
     end
 
