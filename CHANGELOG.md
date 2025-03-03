@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 
+- Don't accept new connections after closing listener ([PR #131](https://github.com/ponylang/lori/pull/131))
 
 ### Added
 
