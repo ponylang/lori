@@ -156,6 +156,8 @@ class TCPConnection
     _shutdown = true
     _shutdown_peer = true
 
+    _pending.clear()
+
     PonyAsio.unsubscribe(_event)
     _readable = false
     _writeable = false
