@@ -72,6 +72,11 @@ class TCPListener
 
           try
             if arg > 0 then
+              if not _listening then
+                PonyTCP.close(arg)
+                return
+              end
+
               let opened = e._on_accept(arg)?
               opened._register_spawner(e)
             end
@@ -85,6 +90,10 @@ class TCPListener
             PonyTCP.close(arg)
           end
         else
+          if not _listening then
+            return
+          end
+
           while not _at_connection_limit() do
             var fd = PonyTCP.accept(_event)
 
