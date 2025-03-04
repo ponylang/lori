@@ -6,13 +6,13 @@ class TCPListener
   let _host: String
   let _port: String
   let _limit: MaxSpawn
-  var _open_connections: SetIs[USize] = _open_connections.create()
+  var _open_connections: SetIs[_OpenConnectionToken] = _open_connections.create()
   var _paused: Bool = false
   var _event: AsioEventID = AsioEvent.none()
   var _fd: U32 = -1
   var _listening: Bool = false
   var _enclosing: (TCPListenerActor ref | None)
-  var _latest_open_token: USize = 0
+  let _oct_generator: _OpenConnectionTokenGenerator = _OpenConnectionTokenGenerator.create()
 
   new create(auth: TCPListenAuth, host: String, port: String, enclosing: TCPListenerActor ref, limit: MaxSpawn = None) =>
     _host = host
@@ -74,8 +74,8 @@ class TCPListener
           try
             if arg > 0 then
               let opened = e._on_accept(arg)?
-              _latest_open_token = _latest_open_token + 1
-              opened._register_spawner(e, _latest_open_token)
+              let t = _oct_generator.token()
+              opened._register_spawner(e, t)
             end
 
             if not _at_connection_limit() then
@@ -101,8 +101,8 @@ class TCPListener
             else
               try
                 let opened = e._on_accept(fd)?
-                _latest_open_token = _latest_open_token + 1
-                opened._register_spawner(e, _latest_open_token)
+                let t = _oct_generator.token()
+                opened._register_spawner(e, t)
                 currently_accepted = currently_accepted + 1
               else
                 PonyTCP.close(fd)
@@ -138,10 +138,10 @@ class TCPListener
     | None => false
     end
 
-  fun ref _connection_opened(token: USize) =>
+  fun ref _connection_opened(token: _OpenConnectionToken) =>
     _open_connections.set(token)
 
-  fun ref _connection_closed(token: USize) =>
+  fun ref _connection_closed(token: _OpenConnectionToken) =>
     _open_connections.unset(token)
     if _paused and not _at_connection_limit() then
       _paused = false
@@ -163,4 +163,27 @@ class TCPListener
       _Unreachable()
     end
 
+type _TokenID is USize
+type _TokenEpoch is USize
+type _OpenConnectionToken is (_TokenID, _TokenEpoch)
 
+class _OpenConnectionTokenGenerator
+  var _epoch: _TokenEpoch = 0
+  var _token_id: _TokenID = 0
+
+  new create() =>
+    None
+
+  fun ref token(): _OpenConnectionToken =>
+    if _token_id == _TokenID.max_value() then
+      _token_id = 0
+      if _epoch == _TokenEpoch.max_value() then
+        _epoch = 0
+      else
+        _epoch = _epoch + 1
+      end
+    else
+      _token_id = _token_id + 1
+    end
+
+    (_token_id, _epoch)
