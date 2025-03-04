@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file. This projec
 
 - Fix incorrect listen limit enforcement ([PR #132](https://github.com/ponylang/lori/pull/132))
 - Fix memory leak ([PR #133](https://github.com/ponylang/lori/pull/133))
+- Fix GC unfriendly connection limiting ([PR #134](https://github.com/ponylang/lori/pull/134))
 
 ### Added
 
