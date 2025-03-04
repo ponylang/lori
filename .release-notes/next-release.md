@@ -8,3 +8,7 @@ When hard closing a connection, we weren't clearing the list of pending data to 
 
 It wasn't actually a leak. Everything in the Pony runtime was working as it should, we just were "doing a bad bad thing".
 
+## Fix GC unfriendly connection limiting
+
+The original version of connection limiting was unfriendly to the garbage collector. This could result in large amounts of memory bloat. This has been fixed by switching to a more GC friendly strategy.
+
