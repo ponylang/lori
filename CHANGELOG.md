@@ -2,19 +2,13 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/) and [Keep a CHANGELOG](http://keepachangelog.com/).
 
-## [unreleased] - unreleased
+## [0.6.1] - 2025-03-04
 
 ### Fixed
 
 - Fix incorrect listen limit enforcement ([PR #132](https://github.com/ponylang/lori/pull/132))
 - Fix memory leak ([PR #133](https://github.com/ponylang/lori/pull/133))
 - Fix GC unfriendly connection limiting ([PR #134](https://github.com/ponylang/lori/pull/134))
-
-### Added
-
-
-### Changed
-
 
 ## [0.6.0] - 2025-03-02
 
