@@ -18,11 +18,11 @@ trait tag TCPConnectionActor is AsioEventNotify
       _connection()._read()
     end
 
-  be _register_spawner(listener: TCPListenerActor) =>
+  be _register_spawner(listener: TCPListenerActor, token: USize) =>
     """
     Register the listener as the spawner of this connection
     """
-    _connection()._register_spawner(listener)
+    _connection()._register_spawner(listener, token)
 
   be _finish_initialization() =>
     _connection()._finish_initialization()

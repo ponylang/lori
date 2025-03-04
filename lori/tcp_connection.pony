@@ -16,6 +16,7 @@ class TCPConnection
   var _fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
   var _spawned_by: (TCPListenerActor | None) = None
+  var _spawner_token: USize = 0
   let _lifecycle_event_receiver: (ClientLifecycleEventReceiver ref | ServerLifecycleEventReceiver ref | None)
   let _enclosing: (TCPConnectionActor ref| None)
   let _pending: List[(ByteSeq, USize)] = _pending.create()
@@ -179,7 +180,7 @@ class TCPConnection
     | let e: ServerLifecycleEventReceiver ref =>
       match _spawned_by
       | let spawner: TCPListenerActor =>
-        spawner._connection_closed(this)
+        spawner._connection_closed(_spawner_token)
       | None =>
         // It is possible that we didn't yet receive the message giving us
         // our spawner. Do nothing in that case.
@@ -574,19 +575,20 @@ class TCPConnection
       (errno == 0) and (value == 0)
     end
 
-  fun ref _register_spawner(listener: TCPListenerActor) =>
+  fun ref _register_spawner(listener: TCPListenerActor, token: USize) =>
     _spawned_by = listener
+    _spawner_token = token
     match _spawned_by
     | let spawner: TCPListenerActor =>
       if _connected then
         // We were connected by the time the spawner was registered,
         // so, let's let it know we were connected
-        spawner._connection_opened(this)
+        spawner._connection_opened(token)
       end
       if _closed then
         // We were closed by the time the spawner was registered,
         // so, let's let it know we were closed
-        spawner._connection_closed(this)
+        spawner._connection_closed(token)
       end
     | None =>
       _Unreachable()

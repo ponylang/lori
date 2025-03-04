@@ -6,12 +6,13 @@ class TCPListener
   let _host: String
   let _port: String
   let _limit: MaxSpawn
-  var _open_connections: SetIs[TCPConnection tag] = _open_connections.create()
+  var _open_connections: SetIs[USize] = _open_connections.create()
   var _paused: Bool = false
   var _event: AsioEventID = AsioEvent.none()
   var _fd: U32 = -1
   var _listening: Bool = false
   var _enclosing: (TCPListenerActor ref | None)
+  var _latest_open_token: USize = 0
 
   new create(auth: TCPListenAuth, host: String, port: String, enclosing: TCPListenerActor ref, limit: MaxSpawn = None) =>
     _host = host
@@ -73,7 +74,8 @@ class TCPListener
           try
             if arg > 0 then
               let opened = e._on_accept(arg)?
-              opened._register_spawner(e)
+              _latest_open_token = _latest_open_token + 1
+              opened._register_spawner(e, _latest_open_token)
             end
 
             if not _at_connection_limit() then
@@ -99,7 +101,8 @@ class TCPListener
             else
               try
                 let opened = e._on_accept(fd)?
-                opened._register_spawner(e)
+                _latest_open_token = _latest_open_token + 1
+                opened._register_spawner(e, _latest_open_token)
                 currently_accepted = currently_accepted + 1
               else
                 PonyTCP.close(fd)
@@ -135,11 +138,11 @@ class TCPListener
     | None => false
     end
 
-  fun ref _connection_opened(conn: TCPConnection tag) =>
-    _open_connections.set(conn)
+  fun ref _connection_opened(token: USize) =>
+    _open_connections.set(token)
 
-  fun ref _connection_closed(conn: TCPConnection tag) =>
-    _open_connections.unset(conn)
+  fun ref _connection_closed(token: USize) =>
+    _open_connections.unset(token)
     if _paused and not _at_connection_limit() then
       _paused = false
       _accept()
