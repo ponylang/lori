@@ -16,7 +16,7 @@ class TCPConnection
   var _fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
   var _spawned_by: (TCPListenerActor | None) = None
-  var _spawner_token: USize = 0
+  var _connection_token: (_OpenConnectionToken | None) = None
   let _lifecycle_event_receiver: (ClientLifecycleEventReceiver ref | ServerLifecycleEventReceiver ref | None)
   let _enclosing: (TCPConnectionActor ref| None)
   let _pending: List[(ByteSeq, USize)] = _pending.create()
@@ -178,13 +178,15 @@ class TCPConnection
 
     match _lifecycle_event_receiver
     | let e: ServerLifecycleEventReceiver ref =>
-      match _spawned_by
-      | let spawner: TCPListenerActor =>
-        spawner._connection_closed(_spawner_token)
-      | None =>
+      match (_spawned_by, _connection_token)
+      | (let spawner: TCPListenerActor, let token: _OpenConnectionToken) =>
+        spawner._connection_closed(token)
+      | (None, _) =>
         // It is possible that we didn't yet receive the message giving us
         // our spawner. Do nothing in that case.
         None
+      | (let _: TCPListenerActor, None) =>
+        _Unreachable()
       end
     end
 
@@ -575,9 +577,9 @@ class TCPConnection
       (errno == 0) and (value == 0)
     end
 
-  fun ref _register_spawner(listener: TCPListenerActor, token: USize) =>
+  fun ref _register_spawner(listener: TCPListenerActor, token: _OpenConnectionToken) =>
     _spawned_by = listener
-    _spawner_token = token
+    _connection_token = token
     match _spawned_by
     | let spawner: TCPListenerActor =>
       if _connected then
