@@ -582,12 +582,11 @@ class TCPConnection
     _connection_token = token
     match _spawned_by
     | let spawner: TCPListenerActor =>
-      if _connected then
+      if not _closed then
         // We were connected by the time the spawner was registered,
         // so, let's let it know we were connected
         spawner._connection_opened(token)
-      end
-      if _closed then
+      else
         // We were closed by the time the spawner was registered,
         // so, let's let it know we were closed
         spawner._connection_closed(token)
