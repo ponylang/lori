@@ -6,6 +6,7 @@ class TCPListener
   let _host: String
   let _port: String
   let _limit: MaxSpawn
+  var _unseen_opens: U32 = 0
   var _open_connections: SetIs[_OpenConnectionToken] = _open_connections.create()
   var _paused: Bool = false
   var _event: AsioEventID = AsioEvent.none()
@@ -76,6 +77,7 @@ class TCPListener
               let opened = e._on_accept(arg)?
               let t = _oct_generator.token()
               opened._register_spawner(e, t)
+              _unseen_opens = _unseen_opens + 1
             end
 
             if not _at_connection_limit() then
@@ -87,8 +89,7 @@ class TCPListener
             PonyTCP.close(arg)
           end
         else
-          var currently_accepted: USize = 0
-          while not _at_connection_limit(currently_accepted) do
+          while not _at_connection_limit() do
             var fd = PonyTCP.accept(_event)
 
             match fd
@@ -103,7 +104,7 @@ class TCPListener
                 let opened = e._on_accept(fd)?
                 let t = _oct_generator.token()
                 opened._register_spawner(e, t)
-                currently_accepted = currently_accepted + 1
+                _unseen_opens = _unseen_opens + 1
               else
                 PonyTCP.close(fd)
               end
@@ -132,17 +133,22 @@ class TCPListener
       _Unreachable()
     end
 
-  fun _at_connection_limit(plus: USize = 0): Bool =>
+  fun _at_connection_limit(): Bool =>
     match _limit
-    | let l: U32 => (_open_connections.size() + plus) >= l.usize()
+    | let l: U32 => (_open_connections.size() + _unseen_opens.usize()) >= l.usize()
     | None => false
     end
 
   fun ref _connection_opened(token: _OpenConnectionToken) =>
     _open_connections.set(token)
+    _unseen_opens = _unseen_opens - 1
 
   fun ref _connection_closed(token: _OpenConnectionToken) =>
-    _open_connections.unset(token)
+    if _open_connections.contains(token) then
+      _open_connections.unset(token)
+    else
+      _unseen_opens = _unseen_opens - 1
+    end
     if _paused and not _at_connection_limit() then
       _paused = false
       _accept()
