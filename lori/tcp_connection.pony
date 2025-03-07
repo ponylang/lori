@@ -534,13 +534,17 @@ class TCPConnection
             _Unreachable()
           end
         else
+          // There is a possibility that a non-Windows system has
+          // already unsubscribed this event already.  (Windows might
+          // be vulnerable to this race, too, I'm not sure.) It's a
+          // bug to do a second time.  Look at the disposable status
+          // of the event (not the flags that this behavior's args!)
+          // to see if it's ok to unsubscribe.
           if not PonyAsio.get_disposable(event) then
             PonyAsio.unsubscribe(event)
           end
           PonyTCP.close(fd)
-          ifdef windows then
-            _try_shutdown()
-          end
+          _try_shutdown()
         end
       else
         if AsioEvent.disposable(flags) then
