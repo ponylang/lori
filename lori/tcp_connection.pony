@@ -560,20 +560,6 @@ class TCPConnection
         c._on_connecting(_inflight_connections)
       else
         c._on_connection_failure()
-        // Inform the listener that we weren't able to connect
-        match _lifecycle_event_receiver
-        | let e: ServerLifecycleEventReceiver ref =>
-          match (_spawned_by, _connection_token)
-          | (let spawner: TCPListenerActor, let token: _OpenConnectionToken) =>
-            spawner._connection_closed(token)
-          | (None, _) =>
-            // It is possible that we didn't yet receive the message giving us
-            // our spawner. Do nothing in that case.
-            None
-          | (let _: TCPListenerActor, None) =>
-            _Unreachable()
-          end
-        end
         hard_close()
       end
     | let s: ServerLifecycleEventReceiver ref =>
