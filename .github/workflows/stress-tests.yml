@@ -20,7 +20,7 @@ jobs:
       - name: Build
         run: make stress-tests config=debug ssl=0.9.0
       - name: Run
-        run: build/debug/open-close 10000000
+        run: build/debug/open-close 15000000
       - name: Send alert on failure
         if: ${{ failure() }}
         uses: zulip/github-actions-zulip/send-message@e4c8f27c732ba9bd98ac6be0583096dea82feea5
@@ -49,7 +49,7 @@ jobs:
           export PATH=/Users/runner/.local/share/ponyup/bin/:$PATH
           make ci config=debug ssl=0.9.0
       - name: Run
-        run: build/debug/open-close 2500000
+        run: build/debug/open-close 3750000
       - name: Send alert on failure
         if: ${{ failure() }}
         uses: zulip/github-actions-zulip/send-message@e4c8f27c732ba9bd98ac6be0583096dea82feea5
@@ -89,7 +89,7 @@ jobs:
       - name: Run
         run: |
           $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
-          .\build\debug\open-close 1000
+          .\build\debug\open-close 1500
       - name: Send alert on failure
         if: ${{ failure() }}
         uses: zulip/github-actions-zulip/send-message@e4c8f27c732ba9bd98ac6be0583096dea82feea5
