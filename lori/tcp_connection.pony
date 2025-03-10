@@ -16,7 +16,6 @@ class TCPConnection
   var _fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
   var _spawned_by: (TCPListenerActor | None) = None
-  var _connection_token: (_OpenConnectionToken | None) = None
   let _lifecycle_event_receiver: (ClientLifecycleEventReceiver ref | ServerLifecycleEventReceiver ref | None)
   let _enclosing: (TCPConnectionActor ref| None)
   let _pending: List[(ByteSeq, USize)] = _pending.create()
@@ -178,15 +177,14 @@ class TCPConnection
 
     match _lifecycle_event_receiver
     | let e: ServerLifecycleEventReceiver ref =>
-      match (_spawned_by, _connection_token)
-      | (let spawner: TCPListenerActor, let token: _OpenConnectionToken) =>
-        spawner._connection_closed(token)
-      | (None, _) =>
+      match _spawned_by
+      | let spawner: TCPListenerActor =>
+        spawner._connection_closed()
+        _spawned_by = None
+      | None =>
         // It is possible that we didn't yet receive the message giving us
         // our spawner. Do nothing in that case.
         None
-      | (let _: TCPListenerActor, None) =>
-        _Unreachable()
       end
     end
 
@@ -577,21 +575,19 @@ class TCPConnection
       (errno == 0) and (value == 0)
     end
 
-  fun ref _register_spawner(listener: TCPListenerActor, token: _OpenConnectionToken) =>
-    _spawned_by = listener
-    _connection_token = token
-    match _spawned_by
-    | let spawner: TCPListenerActor =>
+  fun ref _register_spawner(listener: TCPListenerActor) =>
+    if _spawned_by is None then
       if not _closed then
         // We were connected by the time the spawner was registered,
         // so, let's let it know we were connected
-        spawner._connection_opened(token)
+        _spawned_by = listener
       else
         // We were closed by the time the spawner was registered,
-        // so, let's let it know we were closed
-        spawner._connection_closed(token)
+        // so, let's let it know we were closed, And leave our "spawned by" as
+        // None.
+        listener._connection_closed()
       end
-    | None =>
+    else
       _Unreachable()
     end
 

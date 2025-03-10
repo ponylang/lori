@@ -6,14 +6,12 @@ class TCPListener
   let _host: String
   let _port: String
   let _limit: MaxSpawn
-  var _unseen_opens: U32 = 0
-  var _open_connections: SetIs[_OpenConnectionToken] = _open_connections.create()
+  var _open_connections: U32 = 0
   var _paused: Bool = false
   var _event: AsioEventID = AsioEvent.none()
   var _fd: U32 = -1
   var _listening: Bool = false
   var _enclosing: (TCPListenerActor ref | None)
-  let _oct_generator: _OpenConnectionTokenGenerator = _OpenConnectionTokenGenerator.create()
 
   new create(auth: TCPListenAuth, host: String, port: String, enclosing: TCPListenerActor ref, limit: MaxSpawn = None) =>
     _host = host
@@ -75,9 +73,8 @@ class TCPListener
           try
             if arg > 0 then
               let opened = e._on_accept(arg)?
-              let t = _oct_generator.token()
-              opened._register_spawner(e, t)
-              _unseen_opens = _unseen_opens + 1
+              opened._register_spawner(e)
+              _open_connections = _open_connections + 1
             end
 
             if not _at_connection_limit() then
@@ -102,9 +99,8 @@ class TCPListener
             else
               try
                 let opened = e._on_accept(fd)?
-                let t = _oct_generator.token()
-                opened._register_spawner(e, t)
-                _unseen_opens = _unseen_opens + 1
+                opened._register_spawner(e)
+                _open_connections = _open_connections + 1
               else
                 PonyTCP.close(fd)
               end
@@ -135,20 +131,12 @@ class TCPListener
 
   fun _at_connection_limit(): Bool =>
     match _limit
-    | let l: U32 => (_open_connections.size() + _unseen_opens.usize()) >= l.usize()
+    | let l: U32 => _open_connections >= l
     | None => false
     end
 
-  fun ref _connection_opened(token: _OpenConnectionToken) =>
-    _open_connections.set(token)
-    _unseen_opens = _unseen_opens - 1
-
-  fun ref _connection_closed(token: _OpenConnectionToken) =>
-    if _open_connections.contains(token) then
-      _open_connections.unset(token)
-    else
-      _unseen_opens = _unseen_opens - 1
-    end
+  fun ref _connection_closed() =>
+    _open_connections = _open_connections - 1
     if _paused and not _at_connection_limit() then
       _paused = false
       _accept()
@@ -168,28 +156,3 @@ class TCPListener
     | None =>
       _Unreachable()
     end
-
-type _TokenID is USize
-type _TokenEpoch is USize
-type _OpenConnectionToken is (_TokenID, _TokenEpoch)
-
-class _OpenConnectionTokenGenerator
-  var _epoch: _TokenEpoch = 0
-  var _token_id: _TokenID = 0
-
-  new create() =>
-    None
-
-  fun ref token(): _OpenConnectionToken =>
-    if _token_id == _TokenID.max_value() then
-      _token_id = 0
-      if _epoch == _TokenEpoch.max_value() then
-        _epoch = 0
-      else
-        _epoch = _epoch + 1
-      end
-    else
-      _token_id = _token_id + 1
-    end
-
-    (_token_id, _epoch)
