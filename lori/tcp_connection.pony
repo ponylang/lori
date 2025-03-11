@@ -151,10 +151,8 @@ class TCPConnection
     _pending.clear()
 
     PonyAsio.unsubscribe(_event)
-    _readable = false
-    _writeable = false
-    PonyAsio.set_unreadable(_event)
-    PonyAsio.set_unwriteable(_event)
+    _set_unreadable()
+    _set_unwriteable()
 
     // On windows, this will also cancel all outstanding IOCP operations.
     PonyTCP.close(_fd)
@@ -336,8 +334,7 @@ class TCPConnection
 
             if bytes_read == 0 then
               // would block. try again later
-              _readable = false
-              PonyAsio.set_unreadable(_event)
+              _set_unreadable()
               PonyAsio.resubscribe_read(_event)
               return
             end
@@ -381,7 +378,7 @@ class TCPConnection
         if len == 0 then
           // The socket has been closed from the other side, or a hard close has
           // cancelled the queued read.
-          _readable = false
+          _set_unreadable()
           _shutdown_peer = true
           close()
           return
@@ -446,8 +443,7 @@ class TCPConnection
         _throttled = true
         // throttled means we are also unwriteable
         // being unthrottled doesn't however mean we are writable
-        _writeable = false
-        PonyAsio.set_unwriteable(_event)
+        _set_unwriteable()
         ifdef not windows then
           PonyAsio.resubscribe_write(_event)
         end
@@ -474,7 +470,7 @@ class TCPConnection
   fun ref _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
     if event is _event then
       if AsioEvent.writeable(flags) then
-        _writeable = true
+        _set_writeable()
         ifdef windows then
           _write_completed(arg)
         else
@@ -483,7 +479,7 @@ class TCPConnection
       end
 
       if AsioEvent.readable(flags) then
-        _readable = true
+        _set_readable()
         ifdef windows then
           _read_completed(arg)
         else
@@ -510,8 +506,8 @@ class TCPConnection
               _event = event
               _fd = fd
               _connected = true
-              _writeable = true
-              _readable = true
+              _set_writeable()
+              _set_readable()
               c._on_connected()
               ifdef windows then
                 _queue_read()
@@ -625,17 +621,29 @@ class TCPConnection
     | let e: TCPConnectionActor ref =>
       _event = PonyAsio.create_event(e, _fd)
       _connected = true
-      ifdef not windows then
-        PonyAsio.set_writeable(_event)
-      end
-      _writeable = true
+      _set_readable()
+      _set_writeable()
 
       s._on_started()
-
-      _readable = true
       // Queue up reads as we are now connected
       // But might have been in a race with ASIO
       _queue_read()
     | None =>
       _Unreachable()
     end
+
+  fun ref _set_readable() =>
+    _readable = true
+    PonyAsio.set_readable(_event)
+
+  fun ref _set_unreadable() =>
+    _readable = false
+    PonyAsio.set_unreadable(_event)
+
+  fun ref _set_writeable() =>
+    _writeable = true
+    PonyAsio.set_writeable(_event)
+
+  fun ref _set_unwriteable() =>
+    _writeable = false
+    PonyAsio.set_unwriteable(_event)
