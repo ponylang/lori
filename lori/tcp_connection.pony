@@ -103,16 +103,8 @@ class TCPConnection
     Start reading off this TCPConnection again after having been muted.
     """
     _muted = false
-    ifdef posix then
-      // Trigger a read in case we ignored any previous ASIO notifications
-      match _enclosing
-      | let e: TCPConnectionActor ref =>
-        e._read_again()
-        return
-      | None =>
-        _Unreachable()
-      end
-    end
+    // Trigger a read in case we ignored any previous ASIO notifications
+    _queue_read()
 
   fun ref expect(qty: USize) ? =>
     match _lifecycle_event_receiver
@@ -333,13 +325,7 @@ class TCPConnection
             end
 
             if total_bytes_read >= _read_buffer_size then
-              match _enclosing
-              | let e: TCPConnectionActor ref =>
-                e._read_again()
-                return
-              else
-                _Unreachable()
-              end
+              _queue_read()
             end
 
             _resize_read_buffer_if_needed()
@@ -420,7 +406,7 @@ class TCPConnection
           _resize_read_buffer_if_needed()
         end
 
-        _iocp_read()
+        _queue_read()
       | None =>
         _Unreachable()
       end
@@ -437,6 +423,20 @@ class TCPConnection
     """
     if _read_buffer.size() <= _expect then
       _read_buffer.undefined(_read_buffer_size)
+    end
+
+  fun ref _queue_read() =>
+    ifdef posix then
+      // Trigger a read in case we ignored any previous ASIO notifications
+      match _enclosing
+      | let e: TCPConnectionActor ref =>
+        e._read_again()
+        return
+      | None =>
+        _Unreachable()
+      end
+    else
+      _iocp_read()
     end
 
   fun ref _apply_backpressure() =>
@@ -514,7 +514,7 @@ class TCPConnection
               _readable = true
               c._on_connected()
               ifdef windows then
-                _iocp_read()
+                _queue_read()
               else
                 _read()
                 if _has_pending_writes() then
@@ -635,11 +635,7 @@ class TCPConnection
       _readable = true
       // Queue up reads as we are now connected
       // But might have been in a race with ASIO
-      ifdef windows then
-        _iocp_read()
-      else
-        e._read_again()
-      end
+      _queue_read()
     | None =>
       _Unreachable()
     end
