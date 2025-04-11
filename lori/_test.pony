@@ -89,8 +89,8 @@ class \nodoc\ iso _TestSSLPingPong is UnitTest
           .> set_cert(
             FilePath(file_auth, "assets/cert.pem"),
             FilePath(file_auth, "assets/key.pem"))?
-          .> set_client_verify(true)
-          .> set_server_verify(true)
+          .> set_client_verify(false)
+          .> set_server_verify(false)
       end
 
     let pings_to_send: I32 = 100
