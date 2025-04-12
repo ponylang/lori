@@ -34,7 +34,7 @@ jobs:
           content: ${{ github.server_url}}/${{ github.repository }}/actions/runs/${{ github.run_id }} failed.
 
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
 
     name: MacOS
     steps:
