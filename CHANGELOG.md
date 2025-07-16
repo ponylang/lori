@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file. This projec
 ### Changed
 
 - Make connection limit more accurate([PR  #138](https://github.com/ponylang/lori/pull/138))
+- Change SSL Dependency ([PR #146](https://github.com/ponylang/lori/pull/146))
 
 ## [0.6.1] - 2025-03-04
 
