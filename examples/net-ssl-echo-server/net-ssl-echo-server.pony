@@ -1,6 +1,6 @@
 use "collections"
 use "files"
-use "net_ssl"
+use "ssl/net"
 use "../../lori"
 
 actor Main

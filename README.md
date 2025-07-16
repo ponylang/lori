@@ -16,7 +16,7 @@ Please note that if this library encounters a state that the programmers thought
 * `use "lori"` to include this package
 * `corral run -- ponyc` to compile your application
 
-Note: The net_ssl transitive dependency requires a C SSL library to be installed. Please see the net_ssl installation instructions for more information.
+Note: The ssl transitive dependency requires a C SSL library to be installed. Please see the ssl installation instructions for more information.
 
 ## API Documentation
 

@@ -1,6 +1,6 @@
 use "pony_test"
 use "files"
-use "net_ssl"
+use "ssl/net"
 
 actor \nodoc\ Main is TestList
   new create(env: Env) =>
