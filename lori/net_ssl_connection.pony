@@ -1,5 +1,5 @@
 use "collections"
-use "net_ssl"
+use "ssl/net"
 
 interface NetSSLLifecycleEventReceiver
   """
