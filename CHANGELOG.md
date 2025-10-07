@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Changed
 
+- Update ponylang/ssl dependency ([PR #147](https://github.com/ponylang/lori/pull/147))
 
 ## [0.6.2] - 2025-07-16
 
