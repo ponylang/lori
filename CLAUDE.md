@@ -95,6 +95,17 @@ actor MyClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
 
 The `_next_lifecycle_event_receiver()` method enables middleware-style wrapping. `NetSSLClientConnection`/`NetSSLServerConnection` wrap a user's receiver to intercept lifecycle events for SSL handshake/encryption. Default trait method implementations auto-delegate to the next receiver in the chain.
 
+### SSL layer internals
+
+The SSL layer (`NetSSLClientConnection`/`NetSSLServerConnection` in `net_ssl_connection.pony`) is not a simple synchronous data transform. Key behaviors:
+
+- **0-to-N output per input on both sides:** Both read and write can produce zero, one, or many output chunks per input chunk. During handshake, output may be zero (buffered). A single TCP read containing multiple SSL records produces multiple decrypted chunks.
+- **Unified `_ssl_poll()` pump:** Called from both `_on_received` and `_on_send`. It delivers decrypted data to the wrapped receiver AND sends encrypted protocol data (handshake responses, etc.) directly via `_send_final()`. This bidirectional coupling matters for any refactoring.
+- **Bypasses the normal send return path:** `_on_send` always returns `None` (via `_ssl_poll()` which implicitly returns `None`), suppressing `TCPConnection.send()`'s normal `_send_final()` call. SSL instead sends encrypted bytes directly through `_connection()._send_final()` inside `_ssl_poll()`.
+- **Lifecycle interception:** SSL swallows `_on_connected`/`_on_started` until handshake completes, overrides `_on_expect_set` to always return 0 (managing its own framing internally), and cleans up on `_on_closed`.
+
+The lifecycle receiver chaining model has a known design limitation (issue #137): it can only express one wrapping order, but reading and writing need opposite orderings when multiple protocol layers are composed (e.g., SSL + compression). Design for fixing this is at Discussion #149.
+
 ### Platform differences
 
 POSIX and Windows (IOCP) have distinct code paths throughout `TCPConnection`, guarded by `ifdef posix`/`ifdef windows`. POSIX uses edge-triggered oneshot events with resubscription; Windows uses IOCP completion callbacks.
