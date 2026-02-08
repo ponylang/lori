@@ -57,7 +57,7 @@ Lori separates connection logic (class) from actor scheduling (trait):
 
 1. **`TCPConnection`** (class) — All TCP state and I/O logic. Created with `TCPConnection.client(...)` or `TCPConnection.server(...)`. Not an actor itself.
 2. **`TCPConnectionActor`** (trait) — The actor trait users implement. Requires `fun ref _connection(): TCPConnection`. Provides behaviors that delegate to the TCPConnection: `_event_notify`, `_read_again`, `dispose`, etc.
-3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` / `ServerLifecycleEventReceiver` traits with callbacks: `_on_connected`, `_on_received`, `_on_closed`, `_on_send`, `_on_throttled`, etc.
+3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure`, `_on_received`, `_on_closed`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_received`, `_on_closed`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_send`, `_on_throttled`/`_on_unthrottled`.
 
 ### How to implement a server
 
@@ -104,7 +104,7 @@ POSIX and Windows (IOCP) have distinct code paths throughout `TCPConnection`, gu
 - Follows the [Pony standard library Style Guide](https://github.com/ponylang/ponyc/blob/main/STYLE_GUIDE.md)
 - `_Unreachable()` primitive used for states the compiler can't prove impossible — prints location and exits with code 1
 - `TCPConnection.none()` used as a field initializer before real initialization happens via `_finish_initialization` behavior
-- Auth hierarchy: `AmbientAuth` > `NetAuth` > `TCPAuth` > `TCPListenAuth`/`TCPConnectAuth` > `TCPServerAuth`
-- All lifecycle callbacks are prefixed with `_on_` (private by convention)
-- Tests use hardcoded ports per test (5786, 6666, 6767, 7664, 9728, etc.)
+- Auth hierarchy: `AmbientAuth` > `NetAuth` > `TCPAuth` > `TCPListenAuth` > `TCPServerAuth`, with `TCPConnectAuth` as a separate leaf under `TCPAuth`
+- Core lifecycle callbacks are prefixed with `_on_` (private by convention); SSL-specific callbacks on `NetSSLLifecycleEventReceiver` use public `on_` prefix
+- Tests use hardcoded ports per test
 - `\nodoc\` annotation on test classes
