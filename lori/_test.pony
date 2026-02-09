@@ -36,9 +36,10 @@ actor \nodoc\ _TestOutgoingFailure is (TCPConnectionActor & ClientLifecycleEvent
 
   new create(h: TestHelper) =>
     _h = h
+    let host = ifdef linux then "127.0.0.2" else "localhost" end
     _tcp_connection = TCPConnection.client(
       TCPConnectAuth(_h.env.root),
-      "localhost",
+      host,
       "3245",
       "",
       this,
