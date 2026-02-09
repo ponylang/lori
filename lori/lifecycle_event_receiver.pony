@@ -35,6 +35,17 @@ trait ServerLifecycleEventReceiver
     """
     None
 
+  fun ref _on_sent(token: SendToken) =>
+    """
+    Called when data from a successful send() has been fully handed to the
+    OS. The token matches the one returned by send().
+
+    Always fires in a subsequent behavior turn, never synchronously during
+    send(). This guarantees the caller has received and processed the
+    SendToken return value before the callback arrives.
+    """
+    None
+
 trait ClientLifecycleEventReceiver
   """
   Application-level callbacks for client-side TCP connections.
@@ -88,6 +99,17 @@ trait ClientLifecycleEventReceiver
   fun ref _on_unthrottled() =>
     """
     Called when backpressure is released.
+    """
+    None
+
+  fun ref _on_sent(token: SendToken) =>
+    """
+    Called when data from a successful send() has been fully handed to the
+    OS. The token matches the one returned by send().
+
+    Always fires in a subsequent behavior turn, never synchronously during
+    send(). This guarantees the caller has received and processed the
+    SendToken return value before the callback arrives.
     """
     None
 

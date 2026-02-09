@@ -1,4 +1,3 @@
-use "collections"
 use "ssl/net"
 
 interface NetSSLLifecycleEventReceiver
@@ -36,7 +35,6 @@ class SSLClientInterceptor is DataInterceptor
   """
   let _ssl: SSL
   let _ssl_receiver: (NetSSLLifecycleEventReceiver ref | None)
-  let _pending: List[ByteSeq] = _pending.create()
   var _connected: Bool = false
   var _closed: Bool = false
   var _expect: USize = 0
@@ -62,7 +60,6 @@ class SSLClientInterceptor is DataInterceptor
     _closed = true
     _ssl.dispose()
     _connected = false
-    _pending.clear()
     _control = None
 
   fun ref incoming(data: Array[U8] iso,
@@ -73,11 +70,7 @@ class SSLClientInterceptor is DataInterceptor
     _ssl_poll(receiver, wire)
 
   fun ref outgoing(data: ByteSeq, wire: WireSender ref) =>
-    if _connected then
-      try _ssl.write(data)? end
-    else
-      _pending.push(data)
-    end
+    try _ssl.write(data)? end
     try
       while _ssl.can_send() do
         wire.send(_ssl.send()?)
@@ -102,12 +95,6 @@ class SSLClientInterceptor is DataInterceptor
         match _ssl_receiver
         | let ler: NetSSLLifecycleEventReceiver ref =>
           ler.on_alpn_negotiated(_ssl.alpn_selected())
-        end
-
-        try
-          while _pending.size() > 0 do
-            _ssl.write(_pending.shift()?)?
-          end
         end
       end
     | SSLAuthFail =>
@@ -157,7 +144,6 @@ class SSLServerInterceptor is DataInterceptor
   """
   let _ssl: SSL
   let _ssl_receiver: (NetSSLLifecycleEventReceiver ref | None)
-  let _pending: List[ByteSeq] = _pending.create()
   var _connected: Bool = false
   var _closed: Bool = false
   var _expect: USize = 0
@@ -184,7 +170,6 @@ class SSLServerInterceptor is DataInterceptor
     _closed = true
     _ssl.dispose()
     _connected = false
-    _pending.clear()
     _control = None
 
   fun ref incoming(data: Array[U8] iso,
@@ -195,11 +180,7 @@ class SSLServerInterceptor is DataInterceptor
     _ssl_poll(receiver, wire)
 
   fun ref outgoing(data: ByteSeq, wire: WireSender ref) =>
-    if _connected then
-      try _ssl.write(data)? end
-    else
-      _pending.push(data)
-    end
+    try _ssl.write(data)? end
     try
       while _ssl.can_send() do
         wire.send(_ssl.send()?)
@@ -224,12 +205,6 @@ class SSLServerInterceptor is DataInterceptor
         match _ssl_receiver
         | let ler: NetSSLLifecycleEventReceiver ref =>
           ler.on_alpn_negotiated(_ssl.alpn_selected())
-        end
-
-        try
-          while _pending.size() > 0 do
-            _ssl.write(_pending.shift()?)?
-          end
         end
       end
     | SSLAuthFail =>

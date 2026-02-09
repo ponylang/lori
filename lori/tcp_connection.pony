@@ -69,6 +69,10 @@ class TCPConnection
   var _read_buffer_size: USize = 16384
   var _expect: USize = 0
 
+  // Send token tracking
+  var _next_token_id: USize = 0
+  var _pending_token: (SendToken | None) = None
+
   // Interceptor support
   let _interceptor: (DataInterceptor ref | None)
   var _interceptor_ready: Bool = false
@@ -227,6 +231,7 @@ class TCPConnection
     _shutdown_peer = true
 
     _pending.clear()
+    _pending_token = None
 
     PonyAsio.unsubscribe(_event)
     _set_unreadable()
@@ -284,7 +289,46 @@ class TCPConnection
   fun is_closed(): Bool =>
     _closed
 
-  fun ref send(data: ByteSeq) =>
+  fun is_writeable(): Bool =>
+    """
+    Returns whether the connection can currently accept a `send()` call.
+    Checks that the connection is open, the socket is writeable, and any
+    interceptor layer (e.g., SSL) has completed its handshake.
+    """
+    if not (is_open() and _writeable) then
+      return false
+    end
+
+    match _interceptor
+    | let _: DataInterceptor box => _interceptor_ready
+    | None => true
+    end
+
+  fun ref send(data: ByteSeq): (SendToken | SendError) =>
+    """
+    Send data on this connection. Returns a `SendToken` on success, or a
+    `SendError` explaining the failure. When successful, `_on_sent(token)`
+    will fire in a subsequent behavior turn once the data has been fully
+    handed to the OS.
+    """
+    if not is_open() then
+      return SendErrorNotConnected
+    end
+
+    if not _writeable then
+      return SendErrorNotWriteable
+    end
+
+    match _interceptor
+    | let _: DataInterceptor ref =>
+      if not _interceptor_ready then
+        return SendErrorNotReady
+      end
+    end
+
+    _next_token_id = _next_token_id + 1
+    let token = SendToken._create(_next_token_id)
+
     match _interceptor
     | let i: DataInterceptor ref =>
       match _wire_sender
@@ -293,9 +337,31 @@ class TCPConnection
       | None =>
         _Unreachable()
       end
+
+      // Check if the interceptor closed the connection (e.g., SSL
+      // encryption error triggered close()).
+      if not is_open() then
+        return SendErrorNotConnected
+      end
     | None =>
       _send_final(data)
     end
+
+    // Determine when to fire _on_sent
+    if not _has_pending_writes() then
+      // All data sent to OS immediately; defer _on_sent
+      match _enclosing
+      | let e: TCPConnectionActor ref =>
+        e._notify_sent(token)
+      | None =>
+        _Unreachable()
+      end
+    else
+      // Partial write; _on_sent fires when pending list drains
+      _pending_token = token
+    end
+
+    token
 
   fun ref _close() =>
     _closed = true
@@ -368,8 +434,21 @@ class TCPConnection
       end
 
       if not _has_pending_writes() then
-        // all pending data was sent
+        // Release backpressure before deferring _on_sent so the
+        // application sees settled backpressure state when the
+        // callback fires.
         _release_backpressure()
+
+        match _pending_token
+        | let t: SendToken =>
+          _pending_token = None
+          match _enclosing
+          | let e: TCPConnectionActor ref =>
+            e._notify_sent(t)
+          | None =>
+            _Unreachable()
+          end
+        end
       end
     else
       _Unreachable()
@@ -581,6 +660,18 @@ class TCPConnection
         _throttled = false
         s._on_unthrottled()
       end
+    | None =>
+      _Unreachable()
+    end
+
+  fun ref _fire_on_sent(token: SendToken) =>
+    """
+    Dispatch _on_sent to the lifecycle event receiver. Called from
+    _notify_sent behavior on TCPConnectionActor.
+    """
+    match _lifecycle_event_receiver
+    | let s: EitherLifecycleEventReceiver ref =>
+      s._on_sent(token)
     | None =>
       _Unreachable()
     end

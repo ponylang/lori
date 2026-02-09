@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file. This projec
 
 - Update ponylang/ssl dependency ([PR #147](https://github.com/ponylang/lori/pull/147))
 - Separate data interception from lifecycle events ([PR #151](https://github.com/ponylang/lori/pull/151))
+- Redesign send system for fallible sends and completion tracking ([PR #154](https://github.com/ponylang/lori/pull/154))
 
 ## [0.6.2] - 2025-07-16
 

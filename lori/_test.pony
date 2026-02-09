@@ -17,6 +17,8 @@ actor \nodoc\ Main is TestList
     test(_TestSSLPingPong)
     test(_TestBasicExpect)
     test(_TestUnmute)
+    test(_TestSendToken)
+    test(_TestSendAfterClose)
 
 class \nodoc\ iso _TestOutgoingFails is UnitTest
   """
@@ -658,3 +660,197 @@ actor \nodoc\ _TestUnmuteServer
 
   fun ref _on_received(data: Array[U8] iso) =>
     _h.complete(true)
+
+class \nodoc\ iso _TestSendToken is UnitTest
+  """
+  Test that send() returns a SendToken and that _on_sent fires with the
+  matching token after data is handed to the OS.
+  """
+  fun name(): String => "SendToken"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("server listening")
+    h.expect_action("client connected")
+    h.expect_action("on_sent fired")
+
+    let s = _TestSendTokenListener(h)
+    h.dispose_when_done(s)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSendTokenListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSendTokenClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      "7891",
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSendTokenServer =>
+    _TestSendTokenServer(fd, _h)
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendTokenClient).dispose() end
+
+  fun ref _on_listening() =>
+    _h.complete_action("server listening")
+    _client = _TestSendTokenClient(_h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSendTokenListener")
+
+actor \nodoc\ _TestSendTokenClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _expected_token: (SendToken | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(_h.env.root),
+      "localhost",
+      "7891",
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _h.complete_action("client connected")
+    match _tcp_connection.send("hello")
+    | let token: SendToken =>
+      _expected_token = token
+    | let _: SendError =>
+      _h.fail("send() returned an error")
+      _h.complete(false)
+    end
+
+  fun ref _on_sent(token: SendToken) =>
+    match _expected_token
+    | let expected: SendToken =>
+      _h.assert_true(token == expected, "token mismatch")
+      _h.complete_action("on_sent fired")
+    | None =>
+      _h.fail("_on_sent fired but no token was expected")
+    end
+
+actor \nodoc\ _TestSendTokenServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.server(
+      TCPServerAuth(_h.env.root),
+      fd,
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+class \nodoc\ iso _TestSendAfterClose is UnitTest
+  """
+  Test that send() returns SendErrorNotConnected after the connection
+  has been closed.
+  """
+  fun name(): String => "SendAfterClose"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("server listening")
+    h.expect_action("client connected")
+    h.expect_action("send error verified")
+
+    let s = _TestSendAfterCloseListener(h)
+    h.dispose_when_done(s)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSendAfterCloseListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSendAfterCloseClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      "7892",
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSendAfterCloseServer =>
+    _TestSendAfterCloseServer(fd, _h)
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendAfterCloseClient).dispose() end
+
+  fun ref _on_listening() =>
+    _h.complete_action("server listening")
+    _client = _TestSendAfterCloseClient(_h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSendAfterCloseListener")
+
+actor \nodoc\ _TestSendAfterCloseClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(_h.env.root),
+      "localhost",
+      "7892",
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _h.complete_action("client connected")
+    _tcp_connection.close()
+    match _tcp_connection.send("should fail")
+    | let _: SendToken =>
+      _h.fail("send() should have returned an error after close")
+      _h.complete(false)
+    | let _: SendErrorNotConnected =>
+      _h.complete_action("send error verified")
+    | let _: SendError =>
+      _h.fail("send() returned wrong error type after close")
+      _h.complete(false)
+    end
+
+actor \nodoc\ _TestSendAfterCloseServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.server(
+      TCPServerAuth(_h.env.root),
+      fd,
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
