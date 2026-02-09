@@ -32,7 +32,8 @@ lori/
   tcp_listener.pony         -- TCPListener class (accept loop, connection limits)
   tcp_listener_actor.pony   -- TCPListenerActor trait (actor wrapper)
   lifecycle_event_receiver.pony -- Client/ServerLifecycleEventReceiver traits
-  net_ssl_connection.pony   -- NetSSLClientConnection/NetSSLServerConnection (SSL layer)
+  data_interceptor.pony     -- DataInterceptor trait, WireSender/IncomingDataReceiver/InterceptorControl interfaces
+  net_ssl_connection.pony   -- SSLClientInterceptor/SSLServerInterceptor (SSL layer)
   auth.pony                 -- Auth primitives (NetAuth, TCPAuth, TCPListenAuth, etc.)
   pony_tcp.pony             -- FFI wrappers for pony_os_* TCP functions
   pony_asio.pony            -- FFI wrappers for pony_asio_event_* functions
@@ -57,7 +58,8 @@ Lori separates connection logic (class) from actor scheduling (trait):
 
 1. **`TCPConnection`** (class) — All TCP state and I/O logic. Created with `TCPConnection.client(...)` or `TCPConnection.server(...)`. Not an actor itself.
 2. **`TCPConnectionActor`** (trait) — The actor trait users implement. Requires `fun ref _connection(): TCPConnection`. Provides behaviors that delegate to the TCPConnection: `_event_notify`, `_read_again`, `dispose`, etc.
-3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure`, `_on_received`, `_on_closed`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_received`, `_on_closed`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_send`, `_on_throttled`/`_on_unthrottled`.
+3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure`, `_on_received`, `_on_closed`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_received`, `_on_closed`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_throttled`/`_on_unthrottled`.
+4. **Data interceptors** — `DataInterceptor` trait for protocol-level data transformation (encryption, compression). Interceptors sit between `TCPConnection` and the lifecycle event receiver, transforming data in both directions. Passed as an optional parameter to `TCPConnection.client()` / `TCPConnection.server()`.
 
 ### How to implement a server
 
@@ -69,7 +71,6 @@ actor MyServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
     _tcp_connection = TCPConnection.server(auth, fd, this, this)
 
   fun ref _connection(): TCPConnection => _tcp_connection
-  fun ref _next_lifecycle_event_receiver(): None => None
 
   fun ref _on_received(data: Array[U8] iso) =>
     // handle data
@@ -85,26 +86,49 @@ actor MyClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
     _tcp_connection = TCPConnection.client(auth, host, port, "", this, this)
 
   fun ref _connection(): TCPConnection => _tcp_connection
-  fun ref _next_lifecycle_event_receiver(): None => None
 
   fun ref _on_connected() => // connected
   fun ref _on_received(data: Array[U8] iso) => // handle data
 ```
 
-### Lifecycle receiver chaining
+### How to add SSL
 
-The `_next_lifecycle_event_receiver()` method enables middleware-style wrapping. `NetSSLClientConnection`/`NetSSLServerConnection` wrap a user's receiver to intercept lifecycle events for SSL handshake/encryption. Default trait method implementations auto-delegate to the next receiver in the chain.
+Pass an `SSLClientInterceptor` or `SSLServerInterceptor` as the interceptor parameter:
 
-### SSL layer internals
+```
+actor MySSLServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
 
-The SSL layer (`NetSSLClientConnection`/`NetSSLServerConnection` in `net_ssl_connection.pony`) is not a simple synchronous data transform. Key behaviors:
+  new create(auth: TCPServerAuth, ssl: SSL iso, fd: U32) =>
+    let interceptor = SSLServerInterceptor(consume ssl)
+    _tcp_connection = TCPConnection.server(auth, fd, this, this, interceptor)
+
+  fun ref _connection(): TCPConnection => _tcp_connection
+```
+
+### Data interceptors
+
+The `DataInterceptor` trait separates protocol-level data transformation from application lifecycle callbacks. Interceptors transform data in both directions (incoming and outgoing) and are passed as an optional parameter to `TCPConnection.client()` / `TCPConnection.server()`.
+
+Key points:
+- `on_setup(control)` is called when the connection is established. Call `control.signal_ready()` when the interceptor is ready (e.g., after SSL handshake completes). `TCPConnection` defers `_on_connected`/`_on_started` until the interceptor signals ready.
+- `incoming(data, receiver, wire)` transforms incoming data and pushes results to `receiver.receive()`. Can also send protocol data (e.g., handshake responses) via `wire.send()`.
+- `outgoing(data, wire)` transforms outgoing data and pushes results to `wire.send()`.
+- `on_teardown()` is called on connection close.
+- All methods have default pass-through implementations.
+- If the connection closes before the interceptor signals ready, clients get `_on_connection_failure()`.
+
+### SSL interceptor internals
+
+The SSL interceptors (`SSLClientInterceptor`/`SSLServerInterceptor` in `net_ssl_connection.pony`) implement `DataInterceptor` for SSL/TLS encryption. Key behaviors:
 
 - **0-to-N output per input on both sides:** Both read and write can produce zero, one, or many output chunks per input chunk. During handshake, output may be zero (buffered). A single TCP read containing multiple SSL records produces multiple decrypted chunks.
-- **Unified `_ssl_poll()` pump:** Called from both `_on_received` and `_on_send`. It delivers decrypted data to the wrapped receiver AND sends encrypted protocol data (handshake responses, etc.) directly via `_send_final()`. This bidirectional coupling matters for any refactoring.
-- **Bypasses the normal send return path:** `_on_send` always returns `None` (via `_ssl_poll()` which implicitly returns `None`), suppressing `TCPConnection.send()`'s normal `_send_final()` call. SSL instead sends encrypted bytes directly through `_connection()._send_final()` inside `_ssl_poll()`.
-- **Lifecycle interception:** SSL swallows `_on_connected`/`_on_started` until handshake completes, overrides `_on_expect_set` to always return 0 (managing its own framing internally), and cleans up on `_on_closed`.
+- **Unified `_ssl_poll()` pump:** Called from `incoming()`. It delivers decrypted data to the `IncomingDataReceiver` AND sends encrypted protocol data (handshake responses, etc.) via the `WireSender`.
+- **`on_setup()` flushes initial SSL data:** For clients, this sends the ClientHello to initiate the handshake. For servers, it flushes any initial protocol data the SSL library has ready.
+- **Ready signaling:** `control.signal_ready()` is called when the SSL handshake completes, which triggers `_on_connected`/`_on_started` delivery to the application.
+- **Error handling:** SSL auth failures or errors call `control.close()`, which closes the connection. If the handshake never completed, clients get `_on_connection_failure()`.
 
-The lifecycle receiver chaining model has a known design limitation (issue #137): it can only express one wrapping order, but reading and writing need opposite orderings when multiple protocol layers are composed (e.g., SSL + compression). Design for fixing this is at Discussion #149.
+The old lifecycle receiver chaining approach (issue #137) was replaced by the interceptor design (Discussion #149). Composition of multiple interceptors (`ChainedInterceptor`) is deferred to a follow-up.
 
 ### Platform differences
 
