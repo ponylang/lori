@@ -1,4 +1,3 @@
-use "collections"
 use "files"
 use "ssl/net"
 use "../../lori"
@@ -75,14 +74,11 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
 
   new create(auth: TCPServerAuth, ssl: SSL iso, fd: U32, out: OutStream) =>
     _out = out
-    let sslc = NetSSLServerConnection(consume ssl, this)
-    _tcp_connection =  TCPConnection.server(auth, fd, this, sslc)
+    let interceptor = SSLServerInterceptor(consume ssl)
+    _tcp_connection = TCPConnection.server(auth, fd, this, this, interceptor)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
-
-  fun ref _next_lifecycle_event_receiver(): None =>
-    None
 
   fun ref _on_received(data: Array[U8] iso) =>
     _out.print(consume data)
@@ -100,14 +96,12 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
     out: OutStream)
   =>
     _out = out
-    let sslc = NetSSLClientConnection(consume ssl, this)
-    _tcp_connection = TCPConnection.client(auth, host, port, from, this, sslc)
+    let interceptor = SSLClientInterceptor(consume ssl)
+    _tcp_connection = TCPConnection.client(auth, host, port, from, this, this,
+      interceptor)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
-
-  fun ref _next_lifecycle_event_receiver(): None =>
-    None
 
   fun ref _on_connected() =>
    _tcp_connection.send("Ping")

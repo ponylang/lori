@@ -3,14 +3,14 @@ use "ssl/net"
 
 interface NetSSLLifecycleEventReceiver
   """
-  If you implement this interface, you will be able to get callbackes when major
-  SSL lifecycle changes happen if you are using a `NetSSLClientConnection` or
-  `NetSSLClientConnection.
+  Callbacks for major SSL lifecycle changes. Implement this interface
+  and pass it to SSLClientInterceptor or SSLServerInterceptor to receive
+  SSL-specific notifications.
   """
   fun ref on_alpn_negotiated(protocol: (String | None)) =>
     """
-    Called when a final protocol is negotatiated using ALPN. Will only be
-    called if you set your connnection up using ALPN.
+    Called when a final protocol is negotiated using ALPN. Will only be
+    called if you set your connection up using ALPN.
     """
     None
 
@@ -26,105 +26,81 @@ interface NetSSLLifecycleEventReceiver
     """
     None
 
-class NetSSLClientConnection is ClientLifecycleEventReceiver
+class SSLClientInterceptor is DataInterceptor
+  """
+  DataInterceptor that adds SSL/TLS encryption for client connections.
+
+  Handles the SSL handshake during the setup phase, defers signaling
+  ready until the handshake completes, and encrypts/decrypts data
+  flowing through the connection.
+  """
   let _ssl: SSL
-  let _lifecycle_event_receiver: ClientLifecycleEventReceiver
+  let _ssl_receiver: (NetSSLLifecycleEventReceiver ref | None)
   let _pending: List[ByteSeq] = _pending.create()
   var _connected: Bool = false
   var _closed: Bool = false
   var _expect: USize = 0
+  var _control: (InterceptorControl ref | None) = None
 
   new create(ssl: SSL iso,
-    lifecycle_event_receiver: ClientLifecycleEventReceiver)
+    ssl_receiver: (NetSSLLifecycleEventReceiver ref | None) = None)
   =>
     _ssl = consume ssl
-    _lifecycle_event_receiver = lifecycle_event_receiver
+    _ssl_receiver = ssl_receiver
 
-  fun ref _connection(): TCPConnection =>
-    _lifecycle_event_receiver._connection()
+  fun ref on_setup(control: InterceptorControl ref) =>
+    _control = control
+    // Flush any initial SSL protocol data. For clients, this sends
+    // the ClientHello to initiate the handshake.
+    try
+      while _ssl.can_send() do
+        control.send_to_wire(_ssl.send()?)
+      end
+    end
 
-  fun ref _next_lifecycle_event_receiver(): ClientLifecycleEventReceiver =>
-    _lifecycle_event_receiver
-
-  fun ref _on_connected() =>
-    """
-    Swallow this event until the handshake is complete.
-    """
-
-    _ssl_poll()
-
-  fun ref _on_connection_failure() =>
-    _lifecycle_event_receiver._on_connection_failure()
-
-  fun ref _on_closed() =>
-    """
-    Clean up our SSL session and inform the wrapped protocol that the connection
-    closing.
-    """
+  fun ref on_teardown() =>
     _closed = true
-    _ssl_poll()
     _ssl.dispose()
     _connected = false
     _pending.clear()
+    _control = None
 
-    _lifecycle_event_receiver._on_closed()
-
-  fun ref _on_expect_set(qty: USize): USize =>
-    """
-    Keep track of the expect count for the wrapped protocol. Always tell the
-    TCPConnection to read all available data.
-    """
-    _expect = _lifecycle_event_receiver._on_expect_set(qty)
-    0
-
-  fun ref _on_received(data: Array[U8] iso) =>
-    """
-    Pass the data to the SSL session and check for both new application data
-    and new destination data.
-    """
-
+  fun ref incoming(data: Array[U8] iso,
+    receiver: IncomingDataReceiver ref,
+    wire: WireSender ref)
+  =>
     _ssl.receive(consume data)
-    _ssl_poll()
+    _ssl_poll(receiver, wire)
 
-  fun ref _on_send(data: ByteSeq): (ByteSeq | None) =>
-    """
-    Pass the data to the SSL session and check for both new application data
-    and new destination data.
-    """
-
-    match _lifecycle_event_receiver._on_send(data)
-    | let d: ByteSeq =>
-      if _connected then
-        try
-          _ssl.write(d)?
-        else
-          return None
-        end
-      else
-        _pending.push(d)
+  fun ref outgoing(data: ByteSeq, wire: WireSender ref) =>
+    if _connected then
+      try _ssl.write(data)? end
+    else
+      _pending.push(data)
+    end
+    try
+      while _ssl.can_send() do
+        wire.send(_ssl.send()?)
       end
     end
-    _ssl_poll()
 
-  fun ref _on_throttled() =>
-    _lifecycle_event_receiver._on_throttled()
+  fun ref adjust_expect(qty: USize): USize =>
+    _expect = qty
+    0
 
-  fun ref _on_unthrottled() =>
-    _lifecycle_event_receiver._on_unthrottled()
-
-  fun ref _ssl_poll() =>
-    """
-    Checks for both new application data and new destination data. Informs the
-    wrapped protocol that is has connected when the handshake is complete.
-    """
+  fun ref _ssl_poll(receiver: IncomingDataReceiver ref,
+    wire: WireSender ref)
+  =>
     match _ssl.state()
     | SSLReady =>
       if not _connected then
         _connected = true
-        _lifecycle_event_receiver._on_connected()
+        match _control
+        | let c: InterceptorControl ref => c.signal_ready()
+        end
 
-        match _lifecycle_event_receiver
-        | let ler: NetSSLLifecycleEventReceiver =>
+        match _ssl_receiver
+        | let ler: NetSSLLifecycleEventReceiver ref =>
           ler.on_alpn_negotiated(_ssl.alpn_selected())
         end
 
@@ -136,140 +112,117 @@ class NetSSLClientConnection is ClientLifecycleEventReceiver
       end
     | SSLAuthFail =>
       if not _closed then
-        match _lifecycle_event_receiver
-        | let ler: NetSSLLifecycleEventReceiver =>
+        match _ssl_receiver
+        | let ler: NetSSLLifecycleEventReceiver ref =>
           ler.on_ssl_auth_failed()
         end
-
-        _lifecycle_event_receiver._connection().close()
+        match _control
+        | let c: InterceptorControl ref => c.close()
+        end
       end
-
       return
     | SSLError =>
       if not _closed then
-        match _lifecycle_event_receiver
-        | let ler: NetSSLLifecycleEventReceiver =>
+        match _ssl_receiver
+        | let ler: NetSSLLifecycleEventReceiver ref =>
           ler.on_ssl_error()
         end
-
-        _lifecycle_event_receiver._connection().close()
+        match _control
+        | let c: InterceptorControl ref => c.close()
+        end
       end
-
       return
     end
 
     while true do
       match _ssl.read(_expect)
-      | let data: Array[U8] iso =>
-        _lifecycle_event_receiver._on_received(consume data)
-      | None =>
-        break
+      | let d: Array[U8] iso => receiver.receive(consume d)
+      | None => break
       end
     end
 
     try
       while _ssl.can_send() do
-        _lifecycle_event_receiver._connection()._send_final(_ssl.send()?)
+        wire.send(_ssl.send()?)
       end
     end
 
-class NetSSLServerConnection is ServerLifecycleEventReceiver
+class SSLServerInterceptor is DataInterceptor
+  """
+  DataInterceptor that adds SSL/TLS encryption for server connections.
+
+  Identical to SSLClientInterceptor in behavior. The separation exists
+  because SSL client and server roles differ at the protocol level (who
+  initiates the handshake), handled internally by the SSL library.
+  """
   let _ssl: SSL
-  let _lifecycle_event_receiver: ServerLifecycleEventReceiver
+  let _ssl_receiver: (NetSSLLifecycleEventReceiver ref | None)
   let _pending: List[ByteSeq] = _pending.create()
   var _connected: Bool = false
   var _closed: Bool = false
   var _expect: USize = 0
+  var _control: (InterceptorControl ref | None) = None
 
   new create(ssl: SSL iso,
-    lifecycle_event_receiver: ServerLifecycleEventReceiver)
+    ssl_receiver: (NetSSLLifecycleEventReceiver ref | None) = None)
   =>
     _ssl = consume ssl
-    _lifecycle_event_receiver = lifecycle_event_receiver
+    _ssl_receiver = ssl_receiver
 
-  fun ref _connection(): TCPConnection =>
-    _lifecycle_event_receiver._connection()
+  fun ref on_setup(control: InterceptorControl ref) =>
+    _control = control
+    // Flush any initial SSL protocol data. For servers this is typically
+    // a no-op since the server waits for ClientHello, but included for
+    // consistency with SSLClientInterceptor.
+    try
+      while _ssl.can_send() do
+        control.send_to_wire(_ssl.send()?)
+      end
+    end
 
-  fun ref _next_lifecycle_event_receiver(): ServerLifecycleEventReceiver =>
-    _lifecycle_event_receiver
-
-  fun ref _on_started() =>
-    """
-    Swallow this event until the handshake is complete.
-    """
-
-    _ssl_poll()
-
-  fun ref _on_closed() =>
-    """
-    Clean up our SSL session and inform the wrapped protocol that the connection
-    closing.
-    """
-
+  fun ref on_teardown() =>
     _closed = true
-    _ssl_poll()
     _ssl.dispose()
     _connected = false
     _pending.clear()
+    _control = None
 
-    _lifecycle_event_receiver._on_closed()
-
-  fun ref _on_expect_set(qty: USize): USize =>
-    """
-    Keep track of the expect count for the wrapped protocol. Always tell the
-    TCPConnection to read all available data.
-    """
-    _expect = _lifecycle_event_receiver._on_expect_set(qty)
-    0
-
-  fun ref _on_received(data: Array[U8] iso) =>
-    """
-    Pass the data to the SSL session and check for both new application data
-    and new destination data.
-    """
-
+  fun ref incoming(data: Array[U8] iso,
+    receiver: IncomingDataReceiver ref,
+    wire: WireSender ref)
+  =>
     _ssl.receive(consume data)
-    _ssl_poll()
+    _ssl_poll(receiver, wire)
 
-  fun ref _on_send(data: ByteSeq): (ByteSeq | None) =>
-    """
-    Pass the data to the SSL session and check for both new application data
-    and new destination data.
-    """
-
-    match _lifecycle_event_receiver._on_send(data)
-    | let d: ByteSeq =>
-      if _connected then
-        try
-          _ssl.write(d)?
-        else
-          return None
-        end
-      else
-        _pending.push(d)
+  fun ref outgoing(data: ByteSeq, wire: WireSender ref) =>
+    if _connected then
+      try _ssl.write(data)? end
+    else
+      _pending.push(data)
+    end
+    try
+      while _ssl.can_send() do
+        wire.send(_ssl.send()?)
       end
     end
-    _ssl_poll()
 
-  fun ref _on_throttled() =>
-    _lifecycle_event_receiver._on_throttled()
+  fun ref adjust_expect(qty: USize): USize =>
+    _expect = qty
+    0
 
-  fun ref _on_unthrottled() =>
-    _lifecycle_event_receiver._on_unthrottled()
-
-  fun ref _ssl_poll() =>
-    """
-    Checks for both new application data and new destination data. Informs the
-    wrapped protocol that is has connected when the handshake is complete.
-    """
+  fun ref _ssl_poll(receiver: IncomingDataReceiver ref,
+    wire: WireSender ref)
+  =>
     match _ssl.state()
     | SSLReady =>
       if not _connected then
         _connected = true
-        _lifecycle_event_receiver._on_started()
+        match _control
+        | let c: InterceptorControl ref => c.signal_ready()
+        end
 
-        match _lifecycle_event_receiver
-        | let ler: NetSSLLifecycleEventReceiver =>
+        match _ssl_receiver
+        | let ler: NetSSLLifecycleEventReceiver ref =>
           ler.on_alpn_negotiated(_ssl.alpn_selected())
         end
 
@@ -281,39 +234,37 @@ class NetSSLServerConnection is ServerLifecycleEventReceiver
       end
     | SSLAuthFail =>
       if not _closed then
-        match _lifecycle_event_receiver
-        | let ler: NetSSLLifecycleEventReceiver =>
+        match _ssl_receiver
+        | let ler: NetSSLLifecycleEventReceiver ref =>
           ler.on_ssl_auth_failed()
         end
-
-        _lifecycle_event_receiver._connection().close()
+        match _control
+        | let c: InterceptorControl ref => c.close()
+        end
       end
-
       return
     | SSLError =>
       if not _closed then
-        match _lifecycle_event_receiver
-        | let ler: NetSSLLifecycleEventReceiver =>
+        match _ssl_receiver
+        | let ler: NetSSLLifecycleEventReceiver ref =>
           ler.on_ssl_error()
         end
-
-        _lifecycle_event_receiver._connection().close()
+        match _control
+        | let c: InterceptorControl ref => c.close()
+        end
       end
-
       return
     end
 
     while true do
       match _ssl.read(_expect)
-      | let data: Array[U8] iso =>
-        _lifecycle_event_receiver._on_received(consume data)
-      | None =>
-        break
+      | let d: Array[U8] iso => receiver.receive(consume d)
+      | None => break
       end
     end
 
     try
       while _ssl.can_send() do
-        _lifecycle_event_receiver._connection()._send_final(_ssl.send()?)
+        wire.send(_ssl.send()?)
       end
     end

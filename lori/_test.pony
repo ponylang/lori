@@ -47,9 +47,6 @@ actor \nodoc\ _TestOutgoingFailure is (TCPConnectionActor & ClientLifecycleEvent
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _next_lifecycle_event_receiver(): None =>
-    None
-
   fun ref _on_connected() =>
     _h.fail("_on_connected for a connection that should have failed")
     _h.complete(false)
@@ -113,12 +110,12 @@ actor \nodoc\ _TestPinger is (TCPConnectionActor & ClientLifecycleEventReceiver)
     _pings_to_send = pings_to_send
     _h = h
 
-    let receiver =
+    let interceptor: (DataInterceptor ref | None) =
       match consume ssl
       | let s: SSL iso =>
-        NetSSLClientConnection(consume s, this)
+        SSLClientInterceptor(consume s)
       | None =>
-        this
+        None
       end
 
     _tcp_connection = TCPConnection.client(
@@ -127,14 +124,12 @@ actor \nodoc\ _TestPinger is (TCPConnectionActor & ClientLifecycleEventReceiver)
       port,
       "",
       this,
-      receiver)
+      this,
+      interceptor)
     try _tcp_connection.expect(4)? end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
-
-  fun ref _next_lifecycle_event_receiver(): None =>
-    None
 
   fun ref _on_connected() =>
     if _pings_to_send > 0 then
@@ -165,26 +160,24 @@ actor \nodoc\ _TestPonger is (TCPConnectionActor & ServerLifecycleEventReceiver)
     _pings_to_receive = pings_to_receive
     _h = h
 
-    let receiver =
+    let interceptor: (DataInterceptor ref | None) =
       match consume ssl
       | let s: SSL iso =>
-        NetSSLServerConnection(consume s, this)
+        SSLServerInterceptor(consume s)
       | None =>
-        this
+        None
       end
 
     _tcp_connection = TCPConnection.server(
       TCPServerAuth(_h.env.root),
       fd,
       this,
-      receiver)
+      this,
+      interceptor)
     try _tcp_connection.expect(4)? end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
-
-  fun ref _next_lifecycle_event_receiver(): None =>
-    None
 
   fun ref _on_received(data: Array[U8] iso) =>
     if _pings_to_receive > 0 then
@@ -291,9 +284,6 @@ actor \nodoc\ _TestBasicExpectClient is (TCPConnectionActor & ClientLifecycleEve
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _next_lifecycle_event_receiver(): None =>
-    None
-
   fun ref _on_connected() =>
     _h.complete_action("client connected")
     _tcp_connection.send("hi there, how are you???")
@@ -346,9 +336,6 @@ actor \nodoc\ _TestBasicExpectServer is (TCPConnectionActor & ServerLifecycleEve
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
-
-  fun ref _next_lifecycle_event_receiver(): None =>
-    None
 
   fun ref _on_received(data: Array[U8] iso) =>
     _received_count = _received_count + 1
@@ -421,9 +408,6 @@ actor \nodoc\ _TestDoNothingServerActor is (TCPConnectionActor & ServerLifecycle
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
-
-  fun ref _next_lifecycle_event_receiver(): None =>
-    None
 
  class \nodoc\ iso _TestMute is UnitTest
   """
@@ -513,9 +497,6 @@ actor \nodoc\ _TestMuteClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _next_lifecycle_event_receiver(): None =>
-    None
-
   fun ref _on_connected() =>
     _h.complete_action("client connected")
 
@@ -541,9 +522,6 @@ actor \nodoc\ _TestMuteServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
-
-  fun ref _next_lifecycle_event_receiver(): None =>
-    None
 
   fun ref _on_started() =>
     _h.complete_action("server started")
@@ -642,9 +620,6 @@ actor \nodoc\ _TestUnmuteClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _next_lifecycle_event_receiver(): None =>
-    None
-
   fun ref _on_connected() =>
     _h.complete_action("client connected")
 
@@ -670,9 +645,6 @@ actor \nodoc\ _TestUnmuteServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
-
-  fun ref _next_lifecycle_event_receiver(): None =>
-    None
 
   fun ref _on_started() =>
     _h.complete_action("server started")
