@@ -33,6 +33,7 @@ lori/
   tcp_listener_actor.pony   -- TCPListenerActor trait (actor wrapper)
   lifecycle_event_receiver.pony -- Client/ServerLifecycleEventReceiver traits
   data_interceptor.pony     -- DataInterceptor trait, WireSender/IncomingDataReceiver/InterceptorControl interfaces
+  send_token.pony           -- SendToken class, SendError primitives and type alias
   net_ssl_connection.pony   -- SSLClientInterceptor/SSLServerInterceptor (SSL layer)
   auth.pony                 -- Auth primitives (NetAuth, TCPAuth, TCPListenAuth, etc.)
   pony_tcp.pony             -- FFI wrappers for pony_os_* TCP functions
@@ -58,7 +59,7 @@ Lori separates connection logic (class) from actor scheduling (trait):
 
 1. **`TCPConnection`** (class) — All TCP state and I/O logic. Created with `TCPConnection.client(...)` or `TCPConnection.server(...)`. Not an actor itself.
 2. **`TCPConnectionActor`** (trait) — The actor trait users implement. Requires `fun ref _connection(): TCPConnection`. Provides behaviors that delegate to the TCPConnection: `_event_notify`, `_read_again`, `dispose`, etc.
-3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure`, `_on_received`, `_on_closed`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_received`, `_on_closed`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_throttled`/`_on_unthrottled`.
+3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure`, `_on_received`, `_on_closed`, `_on_sent`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_received`, `_on_closed`, `_on_sent`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_throttled`/`_on_unthrottled`, `_on_sent`.
 4. **Data interceptors** — `DataInterceptor` trait for protocol-level data transformation (encryption, compression). Interceptors sit between `TCPConnection` and the lifecycle event receiver, transforming data in both directions. Passed as an optional parameter to `TCPConnection.client()` / `TCPConnection.server()`.
 
 ### How to implement a server
@@ -117,6 +118,23 @@ Key points:
 - `on_teardown()` is called on connection close.
 - All methods have default pass-through implementations.
 - If the connection closes before the interceptor signals ready, clients get `_on_connection_failure()`.
+
+### Send system
+
+`send()` is fallible — it returns `(SendToken | SendError)` instead of silently dropping data:
+
+- `SendToken` — opaque token identifying the send operation. Delivered to `_on_sent(token)` when data is fully handed to the OS.
+- `SendErrorNotConnected` — connection not open (permanent).
+- `SendErrorNotWriteable` — socket under backpressure (transient, wait for `_on_unthrottled`).
+- `SendErrorNotReady` — interceptor handshake not complete (transient, wait for `_on_connected`/`_on_started`).
+
+`is_writeable()` lets the application check writeability before calling `send()`.
+
+`_on_sent(token)` always fires in a subsequent behavior turn (via `_notify_sent` on `TCPConnectionActor`), never synchronously during `send()`. If the connection closes with a pending send, `_on_sent` does not fire — `_on_closed` is the signal that outstanding tokens are implicitly failed.
+
+The library does not queue data on behalf of the application during backpressure. `send()` returns `SendErrorNotWriteable` and the application decides what to do (queue, drop, close, etc.).
+
+Design: Discussion #150.
 
 ### SSL interceptor internals
 

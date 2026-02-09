@@ -24,5 +24,11 @@ trait tag TCPConnectionActor is AsioEventNotify
     """
     _connection()._register_spawner(listener)
 
+  be _notify_sent(token: SendToken) =>
+    """
+    Deferred delivery of _on_sent to the lifecycle event receiver.
+    """
+    _connection()._fire_on_sent(token)
+
   be _finish_initialization() =>
     _connection()._finish_initialization()
