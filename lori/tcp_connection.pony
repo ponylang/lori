@@ -1,6 +1,51 @@
 use "collections"
 use net = "net"
 
+class _WireSenderAdapter is WireSender
+  """
+  Routes data directly to TCPConnection._send_final(), bypassing the
+  interceptor pipeline.
+  """
+  let _conn: TCPConnection ref
+
+  new create(conn: TCPConnection ref) =>
+    _conn = conn
+
+  fun ref send(data: ByteSeq) =>
+    _conn._send_final(data)
+
+class _IncomingDataReceiverAdapter is IncomingDataReceiver
+  """
+  Routes processed data from an interceptor to the lifecycle event
+  receiver's _on_received callback.
+  """
+  let _ler: EitherLifecycleEventReceiver ref
+
+  new create(ler: EitherLifecycleEventReceiver ref) =>
+    _ler = ler
+
+  fun ref receive(data: Array[U8] iso) =>
+    _ler._on_received(consume data)
+
+class _InterceptorControlAdapter is InterceptorControl
+  """
+  Provides interceptors with the ability to signal readiness, send wire
+  data, and close the connection during setup and handshake.
+  """
+  let _conn: TCPConnection ref
+
+  new create(conn: TCPConnection ref) =>
+    _conn = conn
+
+  fun ref signal_ready() =>
+    _conn._interceptor_signal_ready()
+
+  fun ref send_to_wire(data: ByteSeq) =>
+    _conn._send_final(data)
+
+  fun ref close() =>
+    _conn.close()
+
 class TCPConnection
   var _connected: Bool = false
   var _closed: Bool = false
@@ -17,12 +62,19 @@ class TCPConnection
   var _event: AsioEventID = AsioEvent.none()
   var _spawned_by: (TCPListenerActor | None) = None
   let _lifecycle_event_receiver: (ClientLifecycleEventReceiver ref | ServerLifecycleEventReceiver ref | None)
-  let _enclosing: (TCPConnectionActor ref| None)
+  let _enclosing: (TCPConnectionActor ref | None)
   let _pending: List[(ByteSeq, USize)] = _pending.create()
   var _read_buffer: Array[U8] iso = recover Array[U8] end
   var _bytes_in_read_buffer: USize = 0
   var _read_buffer_size: USize = 16384
   var _expect: USize = 0
+
+  // Interceptor support
+  let _interceptor: (DataInterceptor ref | None)
+  var _interceptor_ready: Bool = false
+  var _wire_sender: (_WireSenderAdapter | None) = None
+  var _incoming_receiver: (_IncomingDataReceiverAdapter | None) = None
+  var _interceptor_control: (_InterceptorControlAdapter | None) = None
 
   // client startup state
   var _host: String = ""
@@ -34,13 +86,23 @@ class TCPConnection
     port: String,
     from: String,
     enclosing: TCPConnectionActor ref,
-    ler: ClientLifecycleEventReceiver ref)
+    ler: ClientLifecycleEventReceiver ref,
+    interceptor: (DataInterceptor ref | None) = None)
   =>
     _lifecycle_event_receiver = ler
     _enclosing = enclosing
+    _interceptor = interceptor
     _host = host
     _port = port
     _from = from
+
+    match _interceptor
+    | let _: DataInterceptor ref =>
+      _wire_sender = _WireSenderAdapter(this)
+      _incoming_receiver = _IncomingDataReceiverAdapter(ler)
+      _interceptor_control = _InterceptorControlAdapter(this)
+    end
+
     _resize_read_buffer_if_needed()
 
     enclosing._finish_initialization()
@@ -48,11 +110,20 @@ class TCPConnection
   new server(auth: TCPServerAuth,
     fd': U32,
     enclosing: TCPConnectionActor ref,
-    ler: ServerLifecycleEventReceiver ref)
+    ler: ServerLifecycleEventReceiver ref,
+    interceptor: (DataInterceptor ref | None) = None)
   =>
     _fd = fd'
     _lifecycle_event_receiver = ler
     _enclosing = enclosing
+    _interceptor = interceptor
+
+    match _interceptor
+    | let _: DataInterceptor ref =>
+      _wire_sender = _WireSenderAdapter(this)
+      _incoming_receiver = _IncomingDataReceiverAdapter(ler)
+      _interceptor_control = _InterceptorControlAdapter(this)
+    end
 
     _resize_read_buffer_if_needed()
 
@@ -61,6 +132,7 @@ class TCPConnection
   new none() =>
     _enclosing = None
     _lifecycle_event_receiver = None
+    _interceptor = None
 
   fun keepalive(secs: U32) =>
     """
@@ -108,8 +180,14 @@ class TCPConnection
 
   fun ref expect(qty: USize) ? =>
     match _lifecycle_event_receiver
-    | let s: EitherLifecycleEventReceiver =>
-      let final_qty = s._on_expect_set(qty)
+    | let _: EitherLifecycleEventReceiver =>
+      let final_qty = match _interceptor
+      | let i: DataInterceptor ref =>
+        i.adjust_expect(qty)
+      | None =>
+        qty
+      end
+
       if final_qty <= _read_buffer_size then
         _expect = final_qty
       else
@@ -158,9 +236,31 @@ class TCPConnection
     PonyTCP.close(_fd)
     _fd = -1
 
+    match _interceptor
+    | let i: DataInterceptor ref =>
+      i.on_teardown()
+    end
+
     match _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
-      s._on_closed()
+      match _interceptor
+      | let _: DataInterceptor ref =>
+        if not _interceptor_ready then
+          // Interceptor never signaled ready (e.g., handshake failed).
+          // For clients, deliver _on_connection_failure since the
+          // application never learned the connection existed.
+          match s
+          | let c: ClientLifecycleEventReceiver ref =>
+            c._on_connection_failure()
+          | let srv: ServerLifecycleEventReceiver ref =>
+            srv._on_closed()
+          end
+        else
+          s._on_closed()
+        end
+      | None =>
+        s._on_closed()
+      end
     | None =>
       _Unreachable()
     end
@@ -185,15 +285,16 @@ class TCPConnection
     _closed
 
   fun ref send(data: ByteSeq) =>
-    // TODO: should we be checking if we are open here?
-    match _lifecycle_event_receiver
-    | let s: EitherLifecycleEventReceiver ref =>
-      match s._on_send(data)
-      | let seq: ByteSeq =>
-        _send_final(seq)
+    match _interceptor
+    | let i: DataInterceptor ref =>
+      match _wire_sender
+      | let w: _WireSenderAdapter ref =>
+        i.outgoing(data, w)
+      | None =>
+        _Unreachable()
       end
     | None =>
-      _Unreachable()
+      _send_final(data)
     end
 
   fun ref _close() =>
@@ -292,6 +393,26 @@ class TCPConnection
       _Unreachable()
     end
 
+  fun ref _deliver_received(s: EitherLifecycleEventReceiver ref,
+    data: Array[U8] iso)
+  =>
+    """
+    Route incoming data through the interceptor pipeline (if present) or
+    directly to the lifecycle event receiver.
+    """
+    match _interceptor
+    | let i: DataInterceptor ref =>
+      match (_incoming_receiver, _wire_sender)
+      | (let r: _IncomingDataReceiverAdapter ref,
+         let w: _WireSenderAdapter ref) =>
+        i.incoming(consume data, r, w)
+      else
+        _Unreachable()
+      end
+    | None =>
+      s._on_received(consume data)
+    end
+
   fun ref _read() =>
     ifdef posix then
       match _lifecycle_event_receiver
@@ -319,7 +440,7 @@ class TCPConnection
               (let data', _read_buffer) = (consume x).chop(bytes_to_consume)
               _bytes_in_read_buffer = _bytes_in_read_buffer - bytes_to_consume
 
-              s._on_received(consume data')
+              _deliver_received(s, consume data')
             end
 
             if total_bytes_read >= _read_buffer_size then
@@ -398,7 +519,7 @@ class TCPConnection
           (let data, _read_buffer) = (consume _read_buffer).chop(chop_at)
           _bytes_in_read_buffer = _bytes_in_read_buffer - chop_at
 
-          s._on_received(consume data)
+          _deliver_received(s, consume data)
 
           _resize_read_buffer_if_needed()
         end
@@ -508,7 +629,20 @@ class TCPConnection
               _connected = true
               _set_writeable()
               _set_readable()
-              c._on_connected()
+
+              match _interceptor
+              | let i: DataInterceptor ref =>
+                match _interceptor_control
+                | let ctrl: _InterceptorControlAdapter ref =>
+                  i.on_setup(ctrl)
+                else
+                  _Unreachable()
+                end
+                // _on_connected() deferred until signal_ready()
+              | None =>
+                c._on_connected()
+              end
+
               ifdef windows then
                 _queue_read()
               else
@@ -545,6 +679,27 @@ class TCPConnection
           PonyAsio.destroy(event)
         end
       end
+    end
+
+  fun ref _interceptor_signal_ready() =>
+    """
+    Called by the interceptor (via InterceptorControl) when the protocol
+    handshake is complete and the connection is ready for application data.
+    Delivers the deferred _on_connected/_on_started to the lifecycle
+    receiver. Guarded against multiple calls.
+    """
+    if _interceptor_ready then
+      return
+    end
+    _interceptor_ready = true
+
+    match _lifecycle_event_receiver
+    | let c: ClientLifecycleEventReceiver ref =>
+      c._on_connected()
+    | let s: ServerLifecycleEventReceiver ref =>
+      s._on_started()
+    | None =>
+      _Unreachable()
     end
 
   fun ref _connecting_callback() =>
@@ -624,7 +779,19 @@ class TCPConnection
       _set_readable()
       _set_writeable()
 
-      s._on_started()
+      match _interceptor
+      | let i: DataInterceptor ref =>
+        match _interceptor_control
+        | let c: _InterceptorControlAdapter ref =>
+          i.on_setup(c)
+        else
+          _Unreachable()
+        end
+        // _on_started() deferred until signal_ready()
+      | None =>
+        s._on_started()
+      end
+
       // Queue up reads as we are now connected
       // But might have been in a race with ASIO
       _queue_read()

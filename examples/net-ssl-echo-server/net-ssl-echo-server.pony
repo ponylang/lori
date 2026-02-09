@@ -1,4 +1,3 @@
-use "collections"
 use "files"
 use "ssl/net"
 use "../../lori"
@@ -70,20 +69,14 @@ actor EchoServer is TCPListenerActor
 actor Echoer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
-  var _connected: Bool = false
-  let _pending: List[ByteSeq] = _pending.create()
-  var _closed: Bool = false
 
   new create(auth: TCPServerAuth, ssl: SSL iso, fd: U32, out: OutStream) =>
     _out = out
-    let sslc = NetSSLServerConnection(consume ssl, this)
-    _tcp_connection = TCPConnection.server(auth, fd, this, sslc)
+    let interceptor = SSLServerInterceptor(consume ssl)
+    _tcp_connection = TCPConnection.server(auth, fd, this, this, interceptor)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
-
-  fun ref _next_lifecycle_event_receiver(): None =>
-    None
 
   fun ref _on_closed() =>
     _out.print("Connection Closed")

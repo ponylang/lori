@@ -46,9 +46,6 @@ actor Echoer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _next_lifecycle_event_receiver(): None =>
-    None
-
   fun ref _on_closed() =>
     _out.print("Connection Closed")
 
