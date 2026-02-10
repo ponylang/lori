@@ -169,3 +169,6 @@ POSIX and Windows (IOCP) have distinct code paths throughout `TCPConnection`, gu
 - Core lifecycle callbacks are prefixed with `_on_` (private by convention)
 - Tests use hardcoded ports per test
 - `\nodoc\` annotation on test classes
+- Examples have a file-level docstring explaining what they demonstrate
+- Self-contained examples use the Listener/Server/Client actor structure (listener accepts connections, launches client on `_on_listening`)
+- Each example uses a unique port (tests: 9725–9732, examples: 7669–7670)
