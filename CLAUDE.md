@@ -27,6 +27,7 @@ Uses `corral` for dependency management. `make` automatically runs `corral fetch
 
 ```
 lori/
+  lori.pony                 -- Package docstring (entry point for API documentation)
   tcp_connection.pony       -- TCPConnection class (core: read/write/connect/close/SSL)
   tcp_connection_actor.pony -- TCPConnectionActor trait (actor wrapper)
   tcp_listener.pony         -- TCPListener class (accept loop, connection limits)
