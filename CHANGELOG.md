@@ -11,12 +11,15 @@ All notable changes to this project will be documented in this file. This projec
 
 - Add send failure notification ([PR #159](https://github.com/ponylang/lori/pull/159))
 - Add server start failure notification ([PR #159](https://github.com/ponylang/lori/pull/159))
+- Add `ssl_client` and `ssl_server` constructors to TCPConnection ([PR #160](https://github.com/ponylang/lori/pull/160))
 
 ### Changed
 
 - Update ponylang/ssl dependency ([PR #147](https://github.com/ponylang/lori/pull/147))
 - Separate data interception from lifecycle events ([PR #151](https://github.com/ponylang/lori/pull/151))
 - Redesign send system for fallible sends and completion tracking ([PR #154](https://github.com/ponylang/lori/pull/154))
+- Remove DataInterceptor infrastructure in favor of built-in SSL constructors ([PR #160](https://github.com/ponylang/lori/pull/160))
+- Remove `SendErrorNotReady` ([PR #160](https://github.com/ponylang/lori/pull/160))
 
 ## [0.6.2] - 2025-07-16
 
