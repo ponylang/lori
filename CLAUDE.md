@@ -42,6 +42,7 @@ lori/
   _panics.pony              -- _Unreachable primitive for impossible states
   _test.pony                -- Tests
 examples/
+  backpressure/             -- Backpressure handling with throttle/unthrottle
   echo-server/              -- Simple echo server
   infinite-ping-pong/       -- Ping-pong client+server
   net-ssl-echo-server/      -- SSL echo server
