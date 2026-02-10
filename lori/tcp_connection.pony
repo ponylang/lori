@@ -34,6 +34,11 @@ class TCPConnection
   var _ssl_ready: Bool = false
   var _ssl_failed: Bool = false
   var _ssl_expect: USize = 0
+  // Distinguishes "initial SSL from constructor" vs "upgraded SSL from
+  // start_tls()". Used by _ssl_poll() and hard_close() to route to the
+  // correct callbacks (_on_tls_ready/_on_tls_failure vs
+  // _on_connected/_on_started/_on_connection_failure/_on_start_failure).
+  var _tls_upgrade: Bool = false
 
   // client startup state
   var _host: String = ""
@@ -253,14 +258,26 @@ class TCPConnection
       match _ssl
       | let _: SSL ref =>
         if not _ssl_ready then
-          // SSL handshake never completed. For clients, the application
-          // never learned the connection existed. For servers, the
-          // connection never started.
-          match s
-          | let c: ClientLifecycleEventReceiver ref =>
-            c._on_connection_failure()
-          | let srv: ServerLifecycleEventReceiver ref =>
-            srv._on_start_failure()
+          // _tls_upgrade distinguishes initial SSL (constructor) from
+          // mid-stream TLS upgrade (start_tls). Changing _tls_upgrade
+          // semantics or removing it would break the callback routing
+          // here and in _ssl_poll().
+          if _tls_upgrade then
+            // TLS upgrade handshake failed. The application already received
+            // _on_connected/_on_started for the original plaintext connection,
+            // so _on_closed must follow for cleanup.
+            s._on_tls_failure()
+            s._on_closed()
+          else
+            // Initial SSL handshake never completed. For clients, the
+            // application never learned the connection existed. For servers,
+            // the connection never started.
+            match s
+            | let c: ClientLifecycleEventReceiver ref =>
+              c._on_connection_failure()
+            | let srv: ServerLifecycleEventReceiver ref =>
+              srv._on_start_failure()
+            end
           end
         else
           s._on_closed()
@@ -305,6 +322,61 @@ class TCPConnection
     | let _: SSL box => _ssl_ready
     | None => true
     end
+
+  fun ref start_tls(ssl_ctx: SSLContext val, host: String = ""):
+    (None | StartTLSError)
+  =>
+    """
+    Initiate a TLS handshake on an established plaintext connection. Returns
+    `None` when the handshake has been started, or a `StartTLSError` if the
+    upgrade cannot proceed (the connection is unchanged in that case).
+
+    Preconditions: the connection must be open, not already TLS, not muted,
+    have no unprocessed data in the read buffer, and have no pending writes.
+    The read buffer check prevents a man-in-the-middle from injecting pre-TLS
+    data that the application would process as post-TLS (CVE-2021-23222).
+
+    On success, `_on_tls_ready()` fires when the handshake completes. During
+    the handshake, `send()` returns `SendErrorNotConnected`. If the handshake
+    fails, `_on_tls_failure()` fires followed by `_on_closed()`.
+
+    The `host` parameter is used for SNI (Server Name Indication) on client
+    connections. Pass an empty string for server connections or when SNI is
+    not needed.
+    """
+    if not is_open() then
+      return StartTLSNotConnected
+    end
+
+    match _ssl
+    | let _: SSL ref => return StartTLSAlreadyTLS
+    end
+
+    if _muted or (_bytes_in_read_buffer > 0) or _has_pending_writes() then
+      return StartTLSNotReady
+    end
+
+    let ssl = try
+      match _lifecycle_event_receiver
+      | let _: ClientLifecycleEventReceiver ref =>
+        ssl_ctx.client(host)?
+      | let _: ServerLifecycleEventReceiver ref =>
+        ssl_ctx.server()?
+      | None =>
+        _Unreachable()
+        return StartTLSSessionFailed
+      end
+    else
+      return StartTLSSessionFailed
+    end
+
+    _ssl_expect = _expect
+    _expect = 0
+    _tls_upgrade = true
+    _ssl = consume ssl
+    _ssl_ready = false
+    _ssl_flush_sends()
+    None
 
   fun ref send(data: ByteSeq): (SendToken | SendError) =>
     """
@@ -705,11 +777,19 @@ class TCPConnection
       | SSLReady =>
         if not _ssl_ready then
           _ssl_ready = true
-          match s
-          | let c: ClientLifecycleEventReceiver ref =>
-            c._on_connected()
-          | let srv: ServerLifecycleEventReceiver ref =>
-            srv._on_started()
+          // _tls_upgrade distinguishes initial SSL (constructor) from
+          // mid-stream TLS upgrade (start_tls). Changing _tls_upgrade
+          // semantics or removing it would break the callback routing
+          // here and in hard_close().
+          if _tls_upgrade then
+            s._on_tls_ready()
+          else
+            match s
+            | let c: ClientLifecycleEventReceiver ref =>
+              c._on_connected()
+            | let srv: ServerLifecycleEventReceiver ref =>
+              srv._on_started()
+            end
           end
         end
       | SSLAuthFail =>

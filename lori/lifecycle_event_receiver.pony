@@ -67,6 +67,24 @@ trait ServerLifecycleEventReceiver
     """
     None
 
+  fun ref _on_tls_ready() =>
+    """
+    Called when a TLS handshake initiated by `start_tls()` completes
+    successfully. The connection is now encrypted and ready for
+    application data over TLS.
+    """
+    None
+
+  fun ref _on_tls_failure() =>
+    """
+    Called when a TLS handshake initiated by `start_tls()` fails. Fires
+    synchronously during `hard_close()`, immediately before `_on_closed()`.
+    The connection was already established (the application received
+    `_on_started` earlier), so `_on_closed` always follows to signal
+    connection teardown.
+    """
+    None
+
 trait ClientLifecycleEventReceiver
   """
   Application-level callbacks for client-side TCP connections.
@@ -143,6 +161,24 @@ trait ClientLifecycleEventReceiver
     Always fires in a subsequent behavior turn, never synchronously during
     hard_close(). Always arrives after _on_closed, which fires synchronously
     during hard_close().
+    """
+    None
+
+  fun ref _on_tls_ready() =>
+    """
+    Called when a TLS handshake initiated by `start_tls()` completes
+    successfully. The connection is now encrypted and ready for
+    application data over TLS.
+    """
+    None
+
+  fun ref _on_tls_failure() =>
+    """
+    Called when a TLS handshake initiated by `start_tls()` fails. Fires
+    synchronously during `hard_close()`, immediately before `_on_closed()`.
+    The connection was already established (the application received
+    `_on_connected` earlier), so `_on_closed` always follows to signal
+    connection teardown.
     """
     None
 

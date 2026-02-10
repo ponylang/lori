@@ -186,6 +186,58 @@ the handshake fails, clients get `_on_connection_failure` and servers get
 `_on_start_failure`. The rest of the application code (sending, receiving,
 closing) is identical to the non-SSL case.
 
+## TLS Upgrade (STARTTLS)
+
+Some protocols (PostgreSQL, SMTP, LDAP) require upgrading an existing plaintext
+connection to TLS mid-stream. Use `start_tls()` on an established connection to
+initiate a TLS handshake:
+
+```pony
+use "lori"
+use "ssl/net"
+
+actor MyStartTLSClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _sslctx: SSLContext val
+
+  new create(auth: TCPConnectAuth, sslctx: SSLContext val,
+    host: String, port: String)
+  =>
+    _sslctx = sslctx
+    _tcp_connection = TCPConnection.client(auth, host, port, "", this, this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    // Send protocol-specific upgrade request over plaintext
+    _tcp_connection.send("STARTTLS")
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    let msg = String.from_array(consume data)
+    if msg == "OK" then
+      // Server agreed to upgrade — initiate TLS handshake
+      match _tcp_connection.start_tls(_sslctx, "localhost")
+      | let err: StartTLSError => None // handle error
+      end
+    end
+
+  fun ref _on_tls_ready() =>
+    // TLS handshake complete — now sending encrypted data
+    _tcp_connection.send("encrypted payload")
+
+  fun ref _on_tls_failure() =>
+    // TLS handshake failed — _on_closed will follow
+    None
+```
+
+`start_tls()` returns `None` when the handshake has been started, or a
+[`StartTLSError`](/lori/lori-StartTLSError/) if the upgrade cannot proceed. The
+connection must be open, not already TLS, not muted, and have no buffered read
+data or pending writes. During the handshake, `send()` returns
+`SendErrorNotConnected`. When the handshake completes, `_on_tls_ready()` fires.
+If it fails, `_on_tls_failure()` fires followed by `_on_closed()`.
+
 ## Connection Limits
 
 `TCPListener` accepts an optional `limit` parameter to cap the number of
