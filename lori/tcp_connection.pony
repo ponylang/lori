@@ -792,7 +792,6 @@ class TCPConnection
                 _read()
                 if _has_pending_writes() then
                   _send_pending_writes()
-                  _release_backpressure()
                 end
               end
             else
