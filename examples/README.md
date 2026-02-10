@@ -25,3 +25,7 @@ SSL version of the echo server. Demonstrates how to set up an `SSLContext` and u
 ## [net-ssl-infinite-ping-pong](net-ssl-infinite-ping-pong/)
 
 SSL version of infinite ping-pong. Shows both `TCPConnection.ssl_server` and `TCPConnection.ssl_client` in the same example.
+
+## [starttls-ping-pong](starttls-ping-pong/)
+
+STARTTLS upgrade from plaintext to TLS mid-connection. The client connects over plain TCP, negotiates a TLS upgrade, and then exchanges Ping/Pong messages over the encrypted connection. Shows `start_tls()` on both client and server, `_on_tls_ready` for post-handshake notification, and the negotiation pattern used by protocols like PostgreSQL and SMTP.

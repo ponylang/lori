@@ -34,6 +34,7 @@ lori/
   tcp_listener_actor.pony   -- TCPListenerActor trait (actor wrapper)
   lifecycle_event_receiver.pony -- Client/ServerLifecycleEventReceiver traits
   send_token.pony           -- SendToken class, SendError primitives and type alias
+  start_tls_error.pony      -- StartTLSError primitives and type alias
   auth.pony                 -- Auth primitives (NetAuth, TCPAuth, TCPListenAuth, etc.)
   pony_tcp.pony             -- FFI wrappers for pony_os_* TCP functions
   pony_asio.pony            -- FFI wrappers for pony_asio_event_* functions
@@ -48,6 +49,7 @@ examples/
   infinite-ping-pong/       -- Ping-pong client+server
   net-ssl-echo-server/      -- SSL echo server
   net-ssl-infinite-ping-pong/ -- SSL ping-pong
+  starttls-ping-pong/       -- STARTTLS upgrade from plaintext to TLS
 stress-tests/
   open-close/               -- Connection open/close stress test
 ```
@@ -58,9 +60,9 @@ stress-tests/
 
 Lori separates connection logic (class) from actor scheduling (trait):
 
-1. **`TCPConnection`** (class) — All TCP state and I/O logic including SSL. Created with `TCPConnection.client(...)`, `TCPConnection.server(...)`, `TCPConnection.ssl_client(...)`, or `TCPConnection.ssl_server(...)`. Not an actor itself.
+1. **`TCPConnection`** (class) — All TCP state and I/O logic including SSL. Created with `TCPConnection.client(...)`, `TCPConnection.server(...)`, `TCPConnection.ssl_client(...)`, or `TCPConnection.ssl_server(...)`. Existing plaintext connections can be upgraded to TLS via `start_tls()`. Not an actor itself.
 2. **`TCPConnectionActor`** (trait) — The actor trait users implement. Requires `fun ref _connection(): TCPConnection`. Provides behaviors that delegate to the TCPConnection: `_event_notify`, `_read_again`, `dispose`, etc.
-3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_start_failure`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_throttled`/`_on_unthrottled`, `_on_sent`, `_on_send_failed`.
+3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_start_failure`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_throttled`/`_on_unthrottled`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure`.
 
 ### How to implement a server
 
@@ -134,6 +136,15 @@ SSL state lives directly in `TCPConnection` (fields `_ssl`, `_ssl_ready`, `_ssl_
 - **Error handling:** `SSLAuthFail` or `SSLError` states trigger `hard_close()`. If the handshake never completed, clients get `_on_connection_failure()` and servers get `_on_start_failure()`.
 - **Expect handling:** The application's `expect()` value is stored in `_ssl_expect` and used when chunking decrypted data via `ssl.read()`. The TCP read layer uses 0 (read all available) since SSL record framing doesn't align with application framing.
 
+### TLS upgrade (STARTTLS)
+
+`start_tls(ssl_ctx, host)` upgrades an established plaintext connection to TLS. It creates an SSL session, migrates expect state (`_ssl_expect = _expect; _expect = 0`), sets `_tls_upgrade = true`, and flushes the ClientHello. The `_tls_upgrade` flag distinguishes "initial SSL from constructor" vs "upgraded SSL from start_tls()":
+
+- **`_ssl_poll()`**: When `SSLReady` is reached and `_tls_upgrade` is true, calls `_on_tls_ready()` instead of `_on_connected()`/`_on_started()`.
+- **`hard_close()`**: When SSL handshake is incomplete and `_tls_upgrade` is true, calls `_on_tls_failure()` then `_on_closed()` (the application already knew about the plaintext connection). Without `_tls_upgrade`, the initial-SSL path fires `_on_connection_failure()`/`_on_start_failure()` instead.
+
+Preconditions enforced synchronously: connection must be open, not already TLS, not muted, no buffered read data (CVE-2021-23222), no pending writes. Returns `StartTLSError` on failure (connection unchanged).
+
 ### Send system
 
 `send()` is fallible — it returns `(SendToken | SendError)` instead of silently dropping data:
@@ -141,7 +152,7 @@ SSL state lives directly in `TCPConnection` (fields `_ssl`, `_ssl_ready`, `_ssl_
 - `SendToken` — opaque token identifying the send operation. Delivered to `_on_sent(token)` when data is fully handed to the OS.
 - `SendErrorNotConnected` — connection not open (permanent).
 - `SendErrorNotWriteable` — socket under backpressure (transient, wait for `_on_unthrottled`).
-During SSL handshake (before `_on_connected`/`_on_started`), `send()` returns `SendErrorNotConnected`.
+During SSL handshake (before `_on_connected`/`_on_started`, or before `_on_tls_ready` after `start_tls()`), `send()` returns `SendErrorNotConnected`.
 
 `is_writeable()` lets the application check writeability before calling `send()`.
 
@@ -171,4 +182,4 @@ POSIX and Windows (IOCP) have distinct code paths throughout `TCPConnection`, gu
 - `\nodoc\` annotation on test classes
 - Examples have a file-level docstring explaining what they demonstrate
 - Self-contained examples use the Listener/Server/Client actor structure (listener accepts connections, launches client on `_on_listening`)
-- Each example uses a unique port (tests: 9725–9732, examples: 7669–7670)
+- Each example uses a unique port (tests: 9725–9734, examples: 7669–7671)
