@@ -46,6 +46,27 @@ trait ServerLifecycleEventReceiver
     """
     None
 
+  fun ref _on_send_failed(token: SendToken) =>
+    """
+    Called when data from a successful send() could not be delivered to the
+    OS. The token matches the one returned by send(). This happens when a
+    connection closes while a partial write is still pending.
+
+    Always fires in a subsequent behavior turn, never synchronously during
+    hard_close(). Always arrives after _on_closed, which fires synchronously
+    during hard_close().
+    """
+    None
+
+  fun ref _on_start_failure() =>
+    """
+    Called when a server connection fails to start. This covers failures
+    that occur before _on_started would have fired, such as an SSL
+    handshake failure. The application was never notified of the connection
+    via _on_started.
+    """
+    None
+
 trait ClientLifecycleEventReceiver
   """
   Application-level callbacks for client-side TCP connections.
@@ -110,6 +131,18 @@ trait ClientLifecycleEventReceiver
     Always fires in a subsequent behavior turn, never synchronously during
     send(). This guarantees the caller has received and processed the
     SendToken return value before the callback arrives.
+    """
+    None
+
+  fun ref _on_send_failed(token: SendToken) =>
+    """
+    Called when data from a successful send() could not be delivered to the
+    OS. The token matches the one returned by send(). This happens when a
+    connection closes while a partial write is still pending.
+
+    Always fires in a subsequent behavior turn, never synchronously during
+    hard_close(). Always arrives after _on_closed, which fires synchronously
+    during hard_close().
     """
     None
 
