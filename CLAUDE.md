@@ -44,6 +44,7 @@ lori/
 examples/
   backpressure/             -- Backpressure handling with throttle/unthrottle
   echo-server/              -- Simple echo server
+  framed-protocol/          -- Length-prefixed framing with expect()
   infinite-ping-pong/       -- Ping-pong client+server
   net-ssl-echo-server/      -- SSL echo server
   net-ssl-infinite-ping-pong/ -- SSL ping-pong
