@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 
+- Fix SSL host verification not disabled by set_client_verify(false) ([PR #169](https://github.com/ponylang/lori/pull/169))
 
 ### Added
 
