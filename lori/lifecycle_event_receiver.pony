@@ -92,10 +92,10 @@ trait ClientLifecycleEventReceiver
 
   fun ref _on_connection_failure() =>
     """
-    Called when a connection fails to open. For connections with a
-    DataInterceptor, this is also called when the connection closes during
-    the interceptor's handshake phase (before signal_ready), since the
-    application was never notified of the connection.
+    Called when a connection fails to open. For SSL connections, this is
+    also called when the SSL handshake fails before _on_connected would
+    have been delivered, since the application was never notified of the
+    connection.
     """
     None
 

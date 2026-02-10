@@ -10,7 +10,7 @@ actor Main
         // paths need to be adjusted to a absolute location or you need to run
         // the example from a location where this relative path will be valid
         // aka the root of this project
-        recover
+        recover val
           SSLContext
             .> set_authority(
               FilePath(file_auth, "assets/cert.pem"))?
@@ -26,16 +26,16 @@ actor Main
       end
 
     let auth = TCPListenAuth(env.root)
-    let echo = EchoServer(auth, consume sslctx, "", "7669", env.out)
+    let echo = EchoServer(auth, sslctx, "", "7669", env.out)
 
 actor EchoServer is TCPListenerActor
   var _tcp_listener: TCPListener = TCPListener.none()
   let _out: OutStream
   let _server_auth: TCPServerAuth
-  let _sslctx: SSLContext
+  let _sslctx: SSLContext val
 
   new create(listen_auth: TCPListenAuth,
-    sslctx: SSLContext,
+    sslctx: SSLContext val,
     host: String,
     port: String,
     out: OutStream)
@@ -48,13 +48,8 @@ actor EchoServer is TCPListenerActor
   fun ref _listener(): TCPListener =>
     _tcp_listener
 
-  fun ref _on_accept(fd: U32): Echoer ? =>
-    try
-      Echoer(_server_auth, _sslctx.server()?, fd, _out)
-    else
-      _out.print("unable to set up SSL connection")
-      error
-    end
+  fun ref _on_accept(fd: U32): Echoer =>
+    Echoer(_server_auth, _sslctx, fd, _out)
 
   fun ref _on_closed() =>
     _out.print("Echo server shut down.")
@@ -70,10 +65,11 @@ actor Echoer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
-  new create(auth: TCPServerAuth, ssl: SSL iso, fd: U32, out: OutStream) =>
+  new create(auth: TCPServerAuth, sslctx: SSLContext val, fd: U32,
+    out: OutStream)
+  =>
     _out = out
-    let interceptor = SSLServerInterceptor(consume ssl)
-    _tcp_connection = TCPConnection.server(auth, fd, this, this, interceptor)
+    _tcp_connection = TCPConnection.ssl_server(auth, sslctx, fd, this, this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection

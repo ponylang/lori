@@ -2,9 +2,9 @@
 
 We've updated the ponylang/ssl library dependency in this project to 1.0.1
 
-## Separate data interception from lifecycle events
+## Remove lifecycle event receiver chaining
 
-Protocol-level data transformation (encryption, compression, etc.) is now handled by the new `DataInterceptor` trait instead of lifecycle event receiver chaining. This replaces the `_next_lifecycle_event_receiver()` / `_on_send()` / `_on_expect_set()` approach which couldn't correctly compose multiple protocol layers.
+The `_next_lifecycle_event_receiver()` / `_on_send()` / `_on_expect_set()` approach has been removed.
 
 ### Non-SSL connections
 
@@ -43,7 +43,11 @@ actor MyServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
 
 ### SSL connections
 
-Replace `NetSSLClientConnection` / `NetSSLServerConnection` lifecycle wrappers with `SSLClientInterceptor` / `SSLServerInterceptor` passed as a parameter to `TCPConnection.client()` / `TCPConnection.server()`.
+See "Redesign SSL connection API" below.
+
+## Redesign SSL connection API
+
+`TCPConnection` now has four constructors: `client`, `server`, `ssl_client`, and `ssl_server`. Replace `NetSSLClientConnection` / `NetSSLServerConnection` lifecycle wrappers with the new `ssl_client` / `ssl_server` constructors. These constructors take `SSLContext val` and handle SSL session creation internally.
 
 Before:
 
@@ -65,16 +69,20 @@ After:
 actor MySSLServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
 
-  new create(auth: TCPServerAuth, ssl: SSL iso, fd: U32) =>
-    let interceptor = SSLServerInterceptor(consume ssl)
-    _tcp_connection = TCPConnection.server(auth, fd, this, this, interceptor)
+  new create(auth: TCPServerAuth, sslctx: SSLContext val, fd: U32) =>
+    _tcp_connection = TCPConnection.ssl_server(auth, sslctx, fd, this, this)
 
   fun ref _connection(): TCPConnection => _tcp_connection
 ```
 
-### Custom protocol layers
+For clients, the equivalent is:
 
-If you implemented custom protocol handling via `_next_lifecycle_event_receiver()` chaining, implement the `DataInterceptor` trait instead. See the `DataInterceptor` docstring for the full API.
+```pony
+_tcp_connection = TCPConnection.ssl_client(
+  auth, sslctx, host, port, from, this, this)
+```
+
+`ssl_client` and `ssl_server` are non-partial. If SSL session creation fails, the failure is reported asynchronously via `_on_connection_failure()` (clients) or `_on_start_failure()` (servers).
 
 ## Redesign send system for fallible sends and completion tracking
 
@@ -84,7 +92,6 @@ If you implemented custom protocol handling via `_next_lifecycle_event_receiver(
 
 - `SendErrorNotConnected` — connection not open (permanent)
 - `SendErrorNotWriteable` — socket under backpressure (wait for `_on_unthrottled`)
-- `SendErrorNotReady` — interceptor handshake in progress (wait for `_on_connected` / `_on_started`)
 
 The library no longer queues data on the application's behalf during backpressure. When `send()` returns `SendErrorNotWriteable`, the application decides what to do — queue the data, drop it, or close the connection.
 
@@ -102,9 +109,6 @@ match _tcp_connection.send(data)
   None
 | let _: SendErrorNotWriteable =>
   // Backpressured; queue or drop (your decision)
-  None
-| let _: SendErrorNotReady =>
-  // Interceptor handshake not complete
   None
 end
 ```
@@ -139,4 +143,3 @@ fun ref _on_start_failure() =>
 ```
 
 The default implementation is a no-op.
-

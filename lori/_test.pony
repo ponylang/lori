@@ -67,35 +67,7 @@ class \nodoc\ iso _TestPingPong is UnitTest
     let port = "7664"
     let pings_to_send: I32 = 100
 
-    let listener = _TestPongerListener(port, None, pings_to_send, h)
-    h.dispose_when_done(listener)
-
-    h.long_test(5_000_000_000)
-
-class \nodoc\ iso _TestSSLPingPong is UnitTest
-  """
-  Test sending and receiving via a simple Ping-Pong application
-  """
-  fun name(): String => "SSLPingPong"
-
-  fun apply(h: TestHelper) ? =>
-    let port = "1417"
-    let file_auth = FileAuth(h.env.root)
-    let sslctx =
-      recover
-        SSLContext
-          .> set_authority(
-            FilePath(file_auth, "assets/cert.pem"))?
-          .> set_cert(
-            FilePath(file_auth, "assets/cert.pem"),
-            FilePath(file_auth, "assets/key.pem"))?
-          .> set_client_verify(false)
-          .> set_server_verify(false)
-      end
-
-    let pings_to_send: I32 = 100
-
-    let listener = _TestPongerListener(port, consume sslctx, pings_to_send, h)
+    let listener = _TestPongerListener(port, pings_to_send, h)
     h.dispose_when_done(listener)
 
     h.long_test(5_000_000_000)
@@ -106,20 +78,11 @@ actor \nodoc\ _TestPinger is (TCPConnectionActor & ClientLifecycleEventReceiver)
   let _h: TestHelper
 
   new create(port: String,
-    ssl: (SSL iso | None),
     pings_to_send: I32,
     h: TestHelper)
   =>
     _pings_to_send = pings_to_send
     _h = h
-
-    let interceptor: (DataInterceptor ref | None) =
-      match consume ssl
-      | let s: SSL iso =>
-        SSLClientInterceptor(consume s)
-      | None =>
-        None
-      end
 
     _tcp_connection = TCPConnection.client(
       TCPConnectAuth(h.env.root),
@@ -127,8 +90,7 @@ actor \nodoc\ _TestPinger is (TCPConnectionActor & ClientLifecycleEventReceiver)
       port,
       "",
       this,
-      this,
-      interceptor)
+      this)
     try _tcp_connection.expect(4)? end
 
   fun ref _connection(): TCPConnection =>
@@ -155,28 +117,18 @@ actor \nodoc\ _TestPonger is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _pings_to_receive: I32
   let _h: TestHelper
 
-  new create(ssl: (SSL iso | None),
-    fd: U32,
+  new create(fd: U32,
     pings_to_receive: I32,
     h: TestHelper)
   =>
     _pings_to_receive = pings_to_receive
     _h = h
 
-    let interceptor: (DataInterceptor ref | None) =
-      match consume ssl
-      | let s: SSL iso =>
-        SSLServerInterceptor(consume s)
-      | None =>
-        None
-      end
-
     _tcp_connection = TCPConnection.server(
       TCPServerAuth(_h.env.root),
       fd,
       this,
-      this,
-      interceptor)
+      this)
     try _tcp_connection.expect(4)? end
 
   fun ref _connection(): TCPConnection =>
@@ -194,19 +146,16 @@ actor \nodoc\ _TestPonger is (TCPConnectionActor & ServerLifecycleEventReceiver)
 
 actor \nodoc\ _TestPongerListener is TCPListenerActor
   let _port: String
-  let _sslctx: (SSLContext | None)
   var _tcp_listener: TCPListener = TCPListener.none()
   var _pings_to_receive: I32
   let _h: TestHelper
   var _pinger: (_TestPinger | None) = None
 
   new create(port: String,
-    sslctx: (SSLContext | None),
     pings_to_receive: I32,
     h: TestHelper)
   =>
     _port = port
-    _sslctx = consume sslctx
     _pings_to_receive = pings_to_receive
     _h = h
     _tcp_listener = TCPListener(
@@ -218,22 +167,8 @@ actor \nodoc\ _TestPongerListener is TCPListenerActor
   fun ref _listener(): TCPListener =>
     _tcp_listener
 
-  fun ref _on_accept(fd: U32): _TestPonger ? =>
-    try
-      match _sslctx
-      | let ctx: SSLContext =>
-        _TestPonger(ctx.server()?,
-          fd,
-          _pings_to_receive,
-          _h)
-      | None =>
-        _TestPonger(None, fd, _pings_to_receive, _h)
-      end
-    else
-      _h.fail("Unable to set up incoming SSL connection")
-      _h.complete(false)
-      error
-    end
+  fun ref _on_accept(fd: U32): _TestPonger =>
+    _TestPonger(fd, _pings_to_receive, _h)
 
   fun ref _on_closed() =>
     try
@@ -241,17 +176,7 @@ actor \nodoc\ _TestPongerListener is TCPListenerActor
     end
 
   fun ref _on_listening() =>
-    try
-      match _sslctx
-      | let ctx: SSLContext =>
-        _pinger = _TestPinger(_port, ctx.client()?, _pings_to_receive, _h)
-      | None =>
-        _pinger = _TestPinger(_port, None, _pings_to_receive, _h)
-      end
-    else
-      _h.fail("Unable to set up outgoing SSL connection")
-      _h.complete(false)
-    end
+    _pinger = _TestPinger(_port, _pings_to_receive, _h)
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestPongerListener")
@@ -854,3 +779,151 @@ actor \nodoc\ _TestSendAfterCloseServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+class \nodoc\ iso _TestSSLPingPong is UnitTest
+  """
+  Test SSL via the built-in ssl_client/ssl_server constructors.
+  """
+  fun name(): String => "SSLPingPong"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "1417"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    let pings_to_send: I32 = 100
+
+    let listener = _TestSSLPongerListener(
+      port, consume sslctx, pings_to_send, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSSLPinger
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  var _pings_to_send: I32
+  let _h: TestHelper
+
+  new create(port: String,
+    sslctx: SSLContext val,
+    pings_to_send: I32,
+    h: TestHelper)
+  =>
+    _pings_to_send = pings_to_send
+    _h = h
+
+    _tcp_connection = TCPConnection.ssl_client(
+      TCPConnectAuth(h.env.root),
+      sslctx,
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+    try _tcp_connection.expect(4)? end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    if _pings_to_send > 0 then
+      _tcp_connection.send("Ping")
+      _pings_to_send = _pings_to_send - 1
+    end
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    if _pings_to_send > 0 then
+      _tcp_connection.send("Ping")
+      _pings_to_send = _pings_to_send - 1
+    elseif _pings_to_send == 0 then
+      _h.complete(true)
+    else
+      _h.fail("Too many pongs received")
+    end
+
+actor \nodoc\ _TestSSLPonger
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  var _pings_to_receive: I32
+  let _h: TestHelper
+
+  new create(sslctx: SSLContext val,
+    fd: U32,
+    pings_to_receive: I32,
+    h: TestHelper)
+  =>
+    _pings_to_receive = pings_to_receive
+    _h = h
+
+    _tcp_connection = TCPConnection.ssl_server(
+      TCPServerAuth(_h.env.root),
+      sslctx,
+      fd,
+      this,
+      this)
+    try _tcp_connection.expect(4)? end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    if _pings_to_receive > 0 then
+      _tcp_connection.send("Pong")
+      _pings_to_receive = _pings_to_receive - 1
+    elseif _pings_to_receive == 0 then
+      _tcp_connection.send("Pong")
+    else
+      _h.fail("Too many pings received")
+    end
+
+actor \nodoc\ _TestSSLPongerListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  var _pings_to_receive: I32
+  let _h: TestHelper
+  var _pinger: (_TestSSLPinger | None) = None
+
+  new create(port: String,
+    sslctx: SSLContext val,
+    pings_to_receive: I32,
+    h: TestHelper)
+  =>
+    _port = port
+    _sslctx = sslctx
+    _pings_to_receive = pings_to_receive
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSSLPonger =>
+    _TestSSLPonger(_sslctx, fd, _pings_to_receive, _h)
+
+  fun ref _on_closed() =>
+    try
+      (_pinger as _TestSSLPinger).dispose()
+    end
+
+  fun ref _on_listening() =>
+    _pinger = _TestSSLPinger(
+      _port, _sslctx, _pings_to_receive, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSSLPongerListener")

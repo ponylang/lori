@@ -10,7 +10,7 @@ actor Main
         // paths need to be adjusted to a absolute location or you need to run
         // the example from a location where this relative path will be valid
         // aka the root of this project
-        recover
+        recover val
           SSLContext
             .> set_authority(
               FilePath(file_auth, "assets/cert.pem"))?
@@ -27,18 +27,18 @@ actor Main
 
     let listen_auth = TCPListenAuth(env.root)
     let connect_auth = TCPConnectAuth(env.root)
-    Listener(listen_auth, connect_auth, consume sslctx, env.out)
+    Listener(listen_auth, connect_auth, sslctx, env.out)
 
 actor  Listener is TCPListenerActor
   var _tcp_listener: TCPListener = TCPListener.none()
   let _out: OutStream
   let _connect_auth: TCPConnectAuth
   let _server_auth: TCPServerAuth
-  let _sslctx: SSLContext
+  let _sslctx: SSLContext val
 
   new create(listen_auth: TCPListenAuth,
     connect_auth: TCPConnectAuth,
-    sslctx: SSLContext,
+    sslctx: SSLContext val,
     out: OutStream)
   =>
     _connect_auth = connect_auth
@@ -50,20 +50,11 @@ actor  Listener is TCPListenerActor
   fun ref _listener(): TCPListener =>
     _tcp_listener
 
-  fun ref _on_accept(fd: U32): Server ? =>
-    try
-      Server(_server_auth, _sslctx.server()?, fd, _out)
-    else
-      _out.print("unable to set up incoming SSL connection")
-      error
-    end
+  fun ref _on_accept(fd: U32): Server =>
+    Server(_server_auth, _sslctx, fd, _out)
 
   fun ref _on_listening() =>
-    try
-      Client(_connect_auth, _sslctx.client()?, "127.0.0.1", "7669", "", _out)
-    else
-      _out.print("unable to set up outgoing SSL connection")
-    end
+    Client(_connect_auth, _sslctx, "127.0.0.1", "7669", "", _out)
 
   fun ref _on_listen_failure() =>
     _out.print("Unable to open listener")
@@ -72,10 +63,11 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
-  new create(auth: TCPServerAuth, ssl: SSL iso, fd: U32, out: OutStream) =>
+  new create(auth: TCPServerAuth, sslctx: SSLContext val, fd: U32,
+    out: OutStream)
+  =>
     _out = out
-    let interceptor = SSLServerInterceptor(consume ssl)
-    _tcp_connection = TCPConnection.server(auth, fd, this, this, interceptor)
+    _tcp_connection = TCPConnection.ssl_server(auth, sslctx, fd, this, this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -89,16 +81,15 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
   let _out: OutStream
 
   new create(auth: TCPConnectAuth,
-    ssl: SSL iso,
+    sslctx: SSLContext val,
     host: String,
     port: String,
     from: String,
     out: OutStream)
   =>
     _out = out
-    let interceptor = SSLClientInterceptor(consume ssl)
-    _tcp_connection = TCPConnection.client(auth, host, port, from, this, this,
-      interceptor)
+    _tcp_connection = TCPConnection.ssl_client(auth, sslctx, host, port, from,
+      this, this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection

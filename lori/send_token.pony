@@ -30,12 +30,5 @@ primitive SendErrorNotWriteable
   Wait for `_on_unthrottled` before retrying.
   """
 
-primitive SendErrorNotReady
-  """
-  A data interceptor (e.g., SSL) is not ready for application data. This
-  typically means a handshake is still in progress.
-  Wait for `_on_connected` / `_on_started` before retrying.
-  """
-
 type SendError is
-  (SendErrorNotConnected | SendErrorNotWriteable | SendErrorNotReady)
+  (SendErrorNotConnected | SendErrorNotWriteable)
