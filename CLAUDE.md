@@ -152,6 +152,12 @@ The old lifecycle receiver chaining approach (issue #137) was replaced by the in
 
 POSIX and Windows (IOCP) have distinct code paths throughout `TCPConnection`, guarded by `ifdef posix`/`ifdef windows`. POSIX uses edge-triggered oneshot events with resubscription; Windows uses IOCP completion callbacks.
 
+## Active Design Discussions
+
+- **#156** — [Rethinking SSL and protocol transforms in lori](https://github.com/ponylang/lori/discussions/156): Research and design exploration for SSL/TLS alternatives and protocol transform architecture.
+- **#157** — [SSL as a first-class TCPConnection concern](https://github.com/ponylang/lori/discussions/157): Direction A design — four explicit constructors (`client`, `server`, `ssl_client`, `ssl_server`), `SSLContext` dependency injection, removal of `DataInterceptor`, send queueing with `_on_send_failed`.
+- **#158** — [Implementation plan: SSL as first-class TCPConnection concern](https://github.com/ponylang/lori/discussions/158): 11-step implementation plan for Direction A with phased approach.
+
 ## Conventions
 
 - Follows the [Pony standard library Style Guide](https://github.com/ponylang/ponyc/blob/main/STYLE_GUIDE.md)
