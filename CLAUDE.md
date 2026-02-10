@@ -152,6 +152,10 @@ Design: Discussion #150.
 
 POSIX and Windows (IOCP) have distinct code paths throughout `TCPConnection`, guarded by `ifdef posix`/`ifdef windows`. POSIX uses edge-triggered oneshot events with resubscription; Windows uses IOCP completion callbacks.
 
+## Future Work
+
+- **TCPConnection refactoring**: `tcp_connection.pony` has multiple interleaved state machines encoded as boolean flags (`_connected`, `_closed`, `_shutdown`, `_shutdown_peer`, `_ssl_ready`, `_ssl_failed`, `_throttled`, `_readable`, `_writeable`, `_muted`). Valid state combinations aren't obvious and invalid combinations aren't prevented. `_event_notify` is particularly dense — it handles own-event vs Happy Eyeballs events with nested platform and SSL branching. Potential improvements: explicit state types instead of boolean flags, breaking `_event_notify` into smaller dispatch methods, grouping platform-specific paths. Pony's reference capabilities may constrain sub-object extraction.
+
 ## Active Design Discussions
 
 - **#156** — [Rethinking SSL and protocol transforms in lori](https://github.com/ponylang/lori/discussions/156): Research and design exploration for SSL/TLS alternatives and protocol transform architecture.
