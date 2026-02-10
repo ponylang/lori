@@ -230,6 +230,14 @@ class TCPConnection
     _shutdown = true
     _shutdown_peer = true
 
+    // Fire _on_send_failed for any accepted-but-undelivered send before
+    // clearing the pending buffer. This is deferred via _notify_send_failed
+    // so it arrives in a subsequent turn, after _on_closed.
+    match (_pending_token, _enclosing)
+    | (let t: SendToken, let e: TCPConnectionActor ref) =>
+      e._notify_send_failed(t)
+    end
+
     _pending.clear()
     _pending_token = None
 
@@ -672,6 +680,18 @@ class TCPConnection
     match _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
       s._on_sent(token)
+    | None =>
+      _Unreachable()
+    end
+
+  fun ref _fire_on_send_failed(token: SendToken) =>
+    """
+    Dispatch _on_send_failed to the lifecycle event receiver. Called from
+    _notify_send_failed behavior on TCPConnectionActor.
+    """
+    match _lifecycle_event_receiver
+    | let s: EitherLifecycleEventReceiver ref =>
+      s._on_send_failed(token)
     | None =>
       _Unreachable()
     end

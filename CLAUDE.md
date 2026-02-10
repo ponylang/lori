@@ -59,7 +59,7 @@ Lori separates connection logic (class) from actor scheduling (trait):
 
 1. **`TCPConnection`** (class) — All TCP state and I/O logic. Created with `TCPConnection.client(...)` or `TCPConnection.server(...)`. Not an actor itself.
 2. **`TCPConnectionActor`** (trait) — The actor trait users implement. Requires `fun ref _connection(): TCPConnection`. Provides behaviors that delegate to the TCPConnection: `_event_notify`, `_read_again`, `dispose`, etc.
-3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure`, `_on_received`, `_on_closed`, `_on_sent`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_received`, `_on_closed`, `_on_sent`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_throttled`/`_on_unthrottled`, `_on_sent`.
+3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_start_failure`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_throttled`/`_on_unthrottled`, `_on_sent`, `_on_send_failed`.
 4. **Data interceptors** — `DataInterceptor` trait for protocol-level data transformation (encryption, compression). Interceptors sit between `TCPConnection` and the lifecycle event receiver, transforming data in both directions. Passed as an optional parameter to `TCPConnection.client()` / `TCPConnection.server()`.
 
 ### How to implement a server
@@ -130,7 +130,7 @@ Key points:
 
 `is_writeable()` lets the application check writeability before calling `send()`.
 
-`_on_sent(token)` always fires in a subsequent behavior turn (via `_notify_sent` on `TCPConnectionActor`), never synchronously during `send()`. If the connection closes with a pending send, `_on_sent` does not fire — `_on_closed` is the signal that outstanding tokens are implicitly failed.
+`_on_sent(token)` always fires in a subsequent behavior turn (via `_notify_sent` on `TCPConnectionActor`), never synchronously during `send()`. If the connection closes with a pending partial write, `_on_send_failed(token)` fires (via `_notify_send_failed`) to notify the application that the accepted send could not be delivered. `_on_send_failed` always arrives after `_on_closed`, which fires synchronously during `hard_close()`.
 
 The library does not queue data on behalf of the application during backpressure. `send()` returns `SendErrorNotWriteable` and the application decides what to do (queue, drop, close, etc.).
 

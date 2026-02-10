@@ -118,3 +118,25 @@ fun ref _on_sent(token: SendToken) =>
   // Data identified by token has been fully handed to the OS
 ```
 
+## Add send failure notification
+
+`_on_send_failed(token)` is a new callback on both `ServerLifecycleEventReceiver` and `ClientLifecycleEventReceiver`. It fires when a previously accepted `send()` could not be delivered to the OS — specifically when the connection closes while a partial write is still pending. The token matches the one returned by `send()`.
+
+```pony
+fun ref _on_send_failed(token: SendToken) =>
+  // The send identified by token was accepted but never delivered
+```
+
+The default implementation is a no-op. If the connection closes with no pending partial write, `_on_send_failed` does not fire — `_on_closed` alone signals that the connection is gone.
+
+## Add server start failure notification
+
+`_on_start_failure()` is a new callback on `ServerLifecycleEventReceiver`. It fires when a server connection fails before `_on_started` would have been delivered — for example, when an SSL handshake fails. This parallels `_on_connection_failure()` on the client side.
+
+```pony
+fun ref _on_start_failure() =>
+  // Server connection failed before it was ready for application data
+```
+
+The default implementation is a no-op.
+
