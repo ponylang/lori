@@ -27,14 +27,12 @@ Uses `corral` for dependency management. `make` automatically runs `corral fetch
 
 ```
 lori/
-  tcp_connection.pony       -- TCPConnection class (core: read/write/connect/close)
+  tcp_connection.pony       -- TCPConnection class (core: read/write/connect/close/SSL)
   tcp_connection_actor.pony -- TCPConnectionActor trait (actor wrapper)
   tcp_listener.pony         -- TCPListener class (accept loop, connection limits)
   tcp_listener_actor.pony   -- TCPListenerActor trait (actor wrapper)
   lifecycle_event_receiver.pony -- Client/ServerLifecycleEventReceiver traits
-  data_interceptor.pony     -- DataInterceptor trait, WireSender/IncomingDataReceiver/InterceptorControl interfaces
   send_token.pony           -- SendToken class, SendError primitives and type alias
-  net_ssl_connection.pony   -- SSLClientInterceptor/SSLServerInterceptor (SSL layer)
   auth.pony                 -- Auth primitives (NetAuth, TCPAuth, TCPListenAuth, etc.)
   pony_tcp.pony             -- FFI wrappers for pony_os_* TCP functions
   pony_asio.pony            -- FFI wrappers for pony_asio_event_* functions
@@ -57,10 +55,9 @@ stress-tests/
 
 Lori separates connection logic (class) from actor scheduling (trait):
 
-1. **`TCPConnection`** (class) — All TCP state and I/O logic. Created with `TCPConnection.client(...)` or `TCPConnection.server(...)`. Not an actor itself.
+1. **`TCPConnection`** (class) — All TCP state and I/O logic including SSL. Created with `TCPConnection.client(...)`, `TCPConnection.server(...)`, `TCPConnection.ssl_client(...)`, or `TCPConnection.ssl_server(...)`. Not an actor itself.
 2. **`TCPConnectionActor`** (trait) — The actor trait users implement. Requires `fun ref _connection(): TCPConnection`. Provides behaviors that delegate to the TCPConnection: `_event_notify`, `_read_again`, `dispose`, etc.
 3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_start_failure`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_throttled`/`_on_unthrottled`, `_on_sent`, `_on_send_failed`.
-4. **Data interceptors** — `DataInterceptor` trait for protocol-level data transformation (encryption, compression). Interceptors sit between `TCPConnection` and the lifecycle event receiver, transforming data in both directions. Passed as an optional parameter to `TCPConnection.client()` / `TCPConnection.server()`.
 
 ### How to implement a server
 
@@ -94,30 +91,45 @@ actor MyClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
 
 ### How to add SSL
 
-Pass an `SSLClientInterceptor` or `SSLServerInterceptor` as the interceptor parameter:
+Use the `ssl_client` or `ssl_server` constructors with an `SSLContext val`:
 
 ```
 actor MySSLServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
 
-  new create(auth: TCPServerAuth, ssl: SSL iso, fd: U32) =>
-    let interceptor = SSLServerInterceptor(consume ssl)
-    _tcp_connection = TCPConnection.server(auth, fd, this, this, interceptor)
+  new create(auth: TCPServerAuth, sslctx: SSLContext val, fd: U32) =>
+    _tcp_connection = TCPConnection.ssl_server(auth, sslctx, fd, this, this)
 
   fun ref _connection(): TCPConnection => _tcp_connection
 ```
 
-### Data interceptors
+```
+actor MySSLClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
 
-The `DataInterceptor` trait separates protocol-level data transformation from application lifecycle callbacks. Interceptors transform data in both directions (incoming and outgoing) and are passed as an optional parameter to `TCPConnection.client()` / `TCPConnection.server()`.
+  new create(auth: TCPConnectAuth, sslctx: SSLContext val,
+    host: String, port: String)
+  =>
+    _tcp_connection = TCPConnection.ssl_client(auth, sslctx, host, port, "",
+      this, this)
 
-Key points:
-- `on_setup(control)` is called when the connection is established. Call `control.signal_ready()` when the interceptor is ready (e.g., after SSL handshake completes). `TCPConnection` defers `_on_connected`/`_on_started` until the interceptor signals ready.
-- `incoming(data, receiver, wire)` transforms incoming data and pushes results to `receiver.receive()`. Can also send protocol data (e.g., handshake responses) via `wire.send()`.
-- `outgoing(data, wire)` transforms outgoing data and pushes results to `wire.send()`.
-- `on_teardown()` is called on connection close.
-- All methods have default pass-through implementations.
-- If the connection closes before the interceptor signals ready, clients get `_on_connection_failure()`.
+  fun ref _connection(): TCPConnection => _tcp_connection
+
+  fun ref _on_connected() => // SSL handshake complete, ready for data
+```
+
+SSL is handled internally by `TCPConnection`. The `ssl_client`/`ssl_server` constructors create an `SSL` session from the provided `SSLContext val`, perform the handshake transparently, and deliver `_on_connected`/`_on_started` only after the handshake completes. If SSL session creation fails, `_on_connection_failure()` (client) or `_on_start_failure()` (server) fires asynchronously. If the handshake fails, `hard_close()` triggers the same failure callbacks.
+
+### SSL internals
+
+SSL state lives directly in `TCPConnection` (fields `_ssl`, `_ssl_ready`, `_ssl_failed`, `_ssl_expect`). Key behaviors:
+
+- **0-to-N output per input on both sides:** Both read and write can produce zero, one, or many output chunks per input chunk. During handshake, output may be zero (buffered). A single TCP read containing multiple SSL records produces multiple decrypted chunks.
+- **`_ssl_poll()` pump:** Called after `ssl.receive()` in `_deliver_received()`. Checks SSL state, delivers decrypted data to the lifecycle event receiver, and flushes encrypted protocol data (handshake responses, etc.) via `_ssl_flush_sends()`.
+- **Client handshake initiation:** When TCP connects, `_ssl_flush_sends()` sends the ClientHello. The handshake proceeds via `_deliver_received()` → `ssl.receive()` → `_ssl_poll()`.
+- **Ready signaling:** `_ssl_ready` is set when `ssl.state()` returns `SSLReady`, which triggers `_on_connected`/`_on_started` delivery.
+- **Error handling:** `SSLAuthFail` or `SSLError` states trigger `hard_close()`. If the handshake never completed, clients get `_on_connection_failure()` and servers get `_on_start_failure()`.
+- **Expect handling:** The application's `expect()` value is stored in `_ssl_expect` and used when chunking decrypted data via `ssl.read()`. The TCP read layer uses 0 (read all available) since SSL record framing doesn't align with application framing.
 
 ### Send system
 
@@ -126,7 +138,7 @@ Key points:
 - `SendToken` — opaque token identifying the send operation. Delivered to `_on_sent(token)` when data is fully handed to the OS.
 - `SendErrorNotConnected` — connection not open (permanent).
 - `SendErrorNotWriteable` — socket under backpressure (transient, wait for `_on_unthrottled`).
-- `SendErrorNotReady` — interceptor handshake not complete (transient, wait for `_on_connected`/`_on_started`).
+During SSL handshake (before `_on_connected`/`_on_started`), `send()` returns `SendErrorNotConnected`.
 
 `is_writeable()` lets the application check writeability before calling `send()`.
 
@@ -136,18 +148,6 @@ The library does not queue data on behalf of the application during backpressure
 
 Design: Discussion #150.
 
-### SSL interceptor internals
-
-The SSL interceptors (`SSLClientInterceptor`/`SSLServerInterceptor` in `net_ssl_connection.pony`) implement `DataInterceptor` for SSL/TLS encryption. Key behaviors:
-
-- **0-to-N output per input on both sides:** Both read and write can produce zero, one, or many output chunks per input chunk. During handshake, output may be zero (buffered). A single TCP read containing multiple SSL records produces multiple decrypted chunks.
-- **Unified `_ssl_poll()` pump:** Called from `incoming()`. It delivers decrypted data to the `IncomingDataReceiver` AND sends encrypted protocol data (handshake responses, etc.) via the `WireSender`.
-- **`on_setup()` flushes initial SSL data:** For clients, this sends the ClientHello to initiate the handshake. For servers, it flushes any initial protocol data the SSL library has ready.
-- **Ready signaling:** `control.signal_ready()` is called when the SSL handshake completes, which triggers `_on_connected`/`_on_started` delivery to the application.
-- **Error handling:** SSL auth failures or errors call `control.close()`, which closes the connection. If the handshake never completed, clients get `_on_connection_failure()`.
-
-The old lifecycle receiver chaining approach (issue #137) was replaced by the interceptor design (Discussion #149). Composition of multiple interceptors (`ChainedInterceptor`) is deferred to a follow-up.
-
 ### Platform differences
 
 POSIX and Windows (IOCP) have distinct code paths throughout `TCPConnection`, guarded by `ifdef posix`/`ifdef windows`. POSIX uses edge-triggered oneshot events with resubscription; Windows uses IOCP completion callbacks.
@@ -155,7 +155,7 @@ POSIX and Windows (IOCP) have distinct code paths throughout `TCPConnection`, gu
 ## Active Design Discussions
 
 - **#156** — [Rethinking SSL and protocol transforms in lori](https://github.com/ponylang/lori/discussions/156): Research and design exploration for SSL/TLS alternatives and protocol transform architecture.
-- **#157** — [SSL as a first-class TCPConnection concern](https://github.com/ponylang/lori/discussions/157): Direction A design — four explicit constructors (`client`, `server`, `ssl_client`, `ssl_server`), `SSLContext` dependency injection, removal of `DataInterceptor`, send queueing with `_on_send_failed`.
+- **#157** — [SSL as a first-class TCPConnection concern](https://github.com/ponylang/lori/discussions/157): Direction A design — four explicit constructors (`client`, `server`, `ssl_client`, `ssl_server`), `SSLContext` dependency injection, removal of `DataInterceptor`.
 - **#158** — [Implementation plan: SSL as first-class TCPConnection concern](https://github.com/ponylang/lori/discussions/158): 11-step implementation plan for Direction A with phased approach.
 
 ## Conventions
@@ -164,6 +164,6 @@ POSIX and Windows (IOCP) have distinct code paths throughout `TCPConnection`, gu
 - `_Unreachable()` primitive used for states the compiler can't prove impossible — prints location and exits with code 1
 - `TCPConnection.none()` used as a field initializer before real initialization happens via `_finish_initialization` behavior
 - Auth hierarchy: `AmbientAuth` > `NetAuth` > `TCPAuth` > `TCPListenAuth` > `TCPServerAuth`, with `TCPConnectAuth` as a separate leaf under `TCPAuth`
-- Core lifecycle callbacks are prefixed with `_on_` (private by convention); SSL-specific callbacks on `NetSSLLifecycleEventReceiver` use public `on_` prefix
+- Core lifecycle callbacks are prefixed with `_on_` (private by convention)
 - Tests use hardcoded ports per test
 - `\nodoc\` annotation on test classes

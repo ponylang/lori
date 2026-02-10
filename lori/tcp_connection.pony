@@ -1,50 +1,6 @@
 use "collections"
 use net = "net"
-
-class _WireSenderAdapter is WireSender
-  """
-  Routes data directly to TCPConnection._send_final(), bypassing the
-  interceptor pipeline.
-  """
-  let _conn: TCPConnection ref
-
-  new create(conn: TCPConnection ref) =>
-    _conn = conn
-
-  fun ref send(data: ByteSeq) =>
-    _conn._send_final(data)
-
-class _IncomingDataReceiverAdapter is IncomingDataReceiver
-  """
-  Routes processed data from an interceptor to the lifecycle event
-  receiver's _on_received callback.
-  """
-  let _ler: EitherLifecycleEventReceiver ref
-
-  new create(ler: EitherLifecycleEventReceiver ref) =>
-    _ler = ler
-
-  fun ref receive(data: Array[U8] iso) =>
-    _ler._on_received(consume data)
-
-class _InterceptorControlAdapter is InterceptorControl
-  """
-  Provides interceptors with the ability to signal readiness, send wire
-  data, and close the connection during setup and handshake.
-  """
-  let _conn: TCPConnection ref
-
-  new create(conn: TCPConnection ref) =>
-    _conn = conn
-
-  fun ref signal_ready() =>
-    _conn._interceptor_signal_ready()
-
-  fun ref send_to_wire(data: ByteSeq) =>
-    _conn._send_final(data)
-
-  fun ref close() =>
-    _conn.close()
+use "ssl/net"
 
 class TCPConnection
   var _connected: Bool = false
@@ -73,12 +29,11 @@ class TCPConnection
   var _next_token_id: USize = 0
   var _pending_token: (SendToken | None) = None
 
-  // Interceptor support
-  let _interceptor: (DataInterceptor ref | None)
-  var _interceptor_ready: Bool = false
-  var _wire_sender: (_WireSenderAdapter | None) = None
-  var _incoming_receiver: (_IncomingDataReceiverAdapter | None) = None
-  var _interceptor_control: (_InterceptorControlAdapter | None) = None
+  // Built-in SSL support
+  var _ssl: (SSL ref | None) = None
+  var _ssl_ready: Bool = false
+  var _ssl_failed: Bool = false
+  var _ssl_expect: USize = 0
 
   // client startup state
   var _host: String = ""
@@ -90,22 +45,13 @@ class TCPConnection
     port: String,
     from: String,
     enclosing: TCPConnectionActor ref,
-    ler: ClientLifecycleEventReceiver ref,
-    interceptor: (DataInterceptor ref | None) = None)
+    ler: ClientLifecycleEventReceiver ref)
   =>
     _lifecycle_event_receiver = ler
     _enclosing = enclosing
-    _interceptor = interceptor
     _host = host
     _port = port
     _from = from
-
-    match _interceptor
-    | let _: DataInterceptor ref =>
-      _wire_sender = _WireSenderAdapter(this)
-      _incoming_receiver = _IncomingDataReceiverAdapter(ler)
-      _interceptor_control = _InterceptorControlAdapter(this)
-    end
 
     _resize_read_buffer_if_needed()
 
@@ -114,19 +60,64 @@ class TCPConnection
   new server(auth: TCPServerAuth,
     fd': U32,
     enclosing: TCPConnectionActor ref,
-    ler: ServerLifecycleEventReceiver ref,
-    interceptor: (DataInterceptor ref | None) = None)
+    ler: ServerLifecycleEventReceiver ref)
   =>
     _fd = fd'
     _lifecycle_event_receiver = ler
     _enclosing = enclosing
-    _interceptor = interceptor
 
-    match _interceptor
-    | let _: DataInterceptor ref =>
-      _wire_sender = _WireSenderAdapter(this)
-      _incoming_receiver = _IncomingDataReceiverAdapter(ler)
-      _interceptor_control = _InterceptorControlAdapter(this)
+    _resize_read_buffer_if_needed()
+
+    enclosing._finish_initialization()
+
+  new ssl_client(auth: TCPConnectAuth,
+    ssl_ctx: SSLContext val,
+    host: String,
+    port: String,
+    from: String,
+    enclosing: TCPConnectionActor ref,
+    ler: ClientLifecycleEventReceiver ref)
+  =>
+    """
+    Create a client-side SSL connection. The SSL session is created from the
+    provided SSLContext. If session creation fails, the connection reports
+    failure asynchronously via _on_connection_failure().
+    """
+    _lifecycle_event_receiver = ler
+    _enclosing = enclosing
+    _host = host
+    _port = port
+    _from = from
+
+    try
+      _ssl = ssl_ctx.client(host)?
+    else
+      _ssl_failed = true
+    end
+
+    _resize_read_buffer_if_needed()
+
+    enclosing._finish_initialization()
+
+  new ssl_server(auth: TCPServerAuth,
+    ssl_ctx: SSLContext val,
+    fd': U32,
+    enclosing: TCPConnectionActor ref,
+    ler: ServerLifecycleEventReceiver ref)
+  =>
+    """
+    Create a server-side SSL connection. The SSL session is created from the
+    provided SSLContext. If session creation fails, the connection reports
+    failure asynchronously via _on_start_failure() and closes the fd.
+    """
+    _fd = fd'
+    _lifecycle_event_receiver = ler
+    _enclosing = enclosing
+
+    try
+      _ssl = ssl_ctx.server()?
+    else
+      _ssl_failed = true
     end
 
     _resize_read_buffer_if_needed()
@@ -136,7 +127,6 @@ class TCPConnection
   new none() =>
     _enclosing = None
     _lifecycle_event_receiver = None
-    _interceptor = None
 
   fun keepalive(secs: U32) =>
     """
@@ -185,9 +175,13 @@ class TCPConnection
   fun ref expect(qty: USize) ? =>
     match _lifecycle_event_receiver
     | let _: EitherLifecycleEventReceiver =>
-      let final_qty = match _interceptor
-      | let i: DataInterceptor ref =>
-        i.adjust_expect(qty)
+      let final_qty = match _ssl
+      | let _: SSL ref =>
+        // Store the application's expect value for SSL read chunking.
+        // Tell the TCP read layer to read all available (0) since SSL
+        // record framing doesn't align with application framing.
+        _ssl_expect = qty
+        USize(0)
       | None =>
         qty
       end
@@ -249,24 +243,24 @@ class TCPConnection
     PonyTCP.close(_fd)
     _fd = -1
 
-    match _interceptor
-    | let i: DataInterceptor ref =>
-      i.on_teardown()
+    match _ssl
+    | let ssl: SSL ref =>
+      ssl.dispose()
     end
 
     match _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
-      match _interceptor
-      | let _: DataInterceptor ref =>
-        if not _interceptor_ready then
-          // Interceptor never signaled ready (e.g., handshake failed).
-          // For clients, deliver _on_connection_failure since the
-          // application never learned the connection existed.
+      match _ssl
+      | let _: SSL ref =>
+        if not _ssl_ready then
+          // SSL handshake never completed. For clients, the application
+          // never learned the connection existed. For servers, the
+          // connection never started.
           match s
           | let c: ClientLifecycleEventReceiver ref =>
             c._on_connection_failure()
           | let srv: ServerLifecycleEventReceiver ref =>
-            srv._on_closed()
+            srv._on_start_failure()
           end
         else
           s._on_closed()
@@ -301,14 +295,14 @@ class TCPConnection
     """
     Returns whether the connection can currently accept a `send()` call.
     Checks that the connection is open, the socket is writeable, and any
-    interceptor layer (e.g., SSL) has completed its handshake.
+    SSL layer has completed its handshake.
     """
     if not (is_open() and _writeable) then
       return false
     end
 
-    match _interceptor
-    | let _: DataInterceptor box => _interceptor_ready
+    match _ssl
+    | let _: SSL box => _ssl_ready
     | None => true
     end
 
@@ -327,27 +321,22 @@ class TCPConnection
       return SendErrorNotWriteable
     end
 
-    match _interceptor
-    | let _: DataInterceptor ref =>
-      if not _interceptor_ready then
-        return SendErrorNotReady
+    match _ssl
+    | let _: SSL ref =>
+      if not _ssl_ready then
+        return SendErrorNotConnected
       end
     end
 
     _next_token_id = _next_token_id + 1
     let token = SendToken._create(_next_token_id)
 
-    match _interceptor
-    | let i: DataInterceptor ref =>
-      match _wire_sender
-      | let w: _WireSenderAdapter ref =>
-        i.outgoing(data, w)
-      | None =>
-        _Unreachable()
-      end
+    match _ssl
+    | let ssl: SSL ref =>
+      try ssl.write(data)? end
+      _ssl_flush_sends()
 
-      // Check if the interceptor closed the connection (e.g., SSL
-      // encryption error triggered close()).
+      // Check if SSL error triggered close
       if not is_open() then
         return SendErrorNotConnected
       end
@@ -484,18 +473,13 @@ class TCPConnection
     data: Array[U8] iso)
   =>
     """
-    Route incoming data through the interceptor pipeline (if present) or
-    directly to the lifecycle event receiver.
+    Route incoming data through SSL decryption (if present) or directly
+    to the lifecycle event receiver.
     """
-    match _interceptor
-    | let i: DataInterceptor ref =>
-      match (_incoming_receiver, _wire_sender)
-      | (let r: _IncomingDataReceiverAdapter ref,
-         let w: _WireSenderAdapter ref) =>
-        i.incoming(consume data, r, w)
-      else
-        _Unreachable()
-      end
+    match _ssl
+    | let ssl: SSL ref =>
+      ssl.receive(consume data)
+      _ssl_poll(s)
     | None =>
       s._on_received(consume data)
     end
@@ -696,6 +680,58 @@ class TCPConnection
       _Unreachable()
     end
 
+  fun ref _ssl_flush_sends() =>
+    """
+    Flush any pending encrypted data from the SSL session to the wire.
+    Called after SSL operations that may produce output (handshake, write).
+    """
+    match _ssl
+    | let ssl: SSL ref =>
+      try
+        while ssl.can_send() do
+          _send_final(ssl.send()?)
+        end
+      end
+    end
+
+  fun ref _ssl_poll(s: EitherLifecycleEventReceiver ref) =>
+    """
+    Check SSL state after receiving data. Handles handshake completion,
+    error detection, decrypted data delivery, and protocol data flushing.
+    """
+    match _ssl
+    | let ssl: SSL ref =>
+      match ssl.state()
+      | SSLReady =>
+        if not _ssl_ready then
+          _ssl_ready = true
+          match s
+          | let c: ClientLifecycleEventReceiver ref =>
+            c._on_connected()
+          | let srv: ServerLifecycleEventReceiver ref =>
+            srv._on_started()
+          end
+        end
+      | SSLAuthFail =>
+        hard_close()
+        return
+      | SSLError =>
+        hard_close()
+        return
+      end
+
+      // Read all available decrypted data
+      while true do
+        match ssl.read(_ssl_expect)
+        | let d: Array[U8] iso => s._on_received(consume d)
+        | None => break
+        end
+      end
+
+      // Flush any SSL protocol data (handshake responses, etc.)
+      _ssl_flush_sends()
+    end
+
   fun _has_pending_writes(): Bool =>
     _pending.size() != 0
 
@@ -741,15 +777,11 @@ class TCPConnection
               _set_writeable()
               _set_readable()
 
-              match _interceptor
-              | let i: DataInterceptor ref =>
-                match _interceptor_control
-                | let ctrl: _InterceptorControlAdapter ref =>
-                  i.on_setup(ctrl)
-                else
-                  _Unreachable()
-                end
-                // _on_connected() deferred until signal_ready()
+              match _ssl
+              | let _: SSL ref =>
+                // Flush ClientHello to initiate SSL handshake
+                _ssl_flush_sends()
+                // _on_connected() deferred until _ssl_ready
               | None =>
                 c._on_connected()
               end
@@ -790,27 +822,6 @@ class TCPConnection
           PonyAsio.destroy(event)
         end
       end
-    end
-
-  fun ref _interceptor_signal_ready() =>
-    """
-    Called by the interceptor (via InterceptorControl) when the protocol
-    handshake is complete and the connection is ready for application data.
-    Delivers the deferred _on_connected/_on_started to the lifecycle
-    receiver. Guarded against multiple calls.
-    """
-    if _interceptor_ready then
-      return
-    end
-    _interceptor_ready = true
-
-    match _lifecycle_event_receiver
-    | let c: ClientLifecycleEventReceiver ref =>
-      c._on_connected()
-    | let s: ServerLifecycleEventReceiver ref =>
-      s._on_started()
-    | None =>
-      _Unreachable()
     end
 
   fun ref _connecting_callback() =>
@@ -866,6 +877,11 @@ class TCPConnection
   fun ref _complete_client_initialization(
     s: ClientLifecycleEventReceiver ref)
   =>
+    if _ssl_failed then
+      s._on_connection_failure()
+      return
+    end
+
     match _enclosing
     | let e: TCPConnectionActor ref =>
       let asio_flags = ifdef windows then
@@ -883,6 +899,14 @@ class TCPConnection
   fun ref _complete_server_initialization(
     s: ServerLifecycleEventReceiver ref)
   =>
+    if _ssl_failed then
+      PonyTCP.close(_fd)
+      _fd = -1
+      _closed = true
+      s._on_start_failure()
+      return
+    end
+
     match _enclosing
     | let e: TCPConnectionActor ref =>
       _event = PonyAsio.create_event(e, _fd)
@@ -890,15 +914,11 @@ class TCPConnection
       _set_readable()
       _set_writeable()
 
-      match _interceptor
-      | let i: DataInterceptor ref =>
-        match _interceptor_control
-        | let c: _InterceptorControlAdapter ref =>
-          i.on_setup(c)
-        else
-          _Unreachable()
-        end
-        // _on_started() deferred until signal_ready()
+      match _ssl
+      | let _: SSL ref =>
+        // Flush any initial SSL data (usually no-op for servers)
+        _ssl_flush_sends()
+        // _on_started() deferred until _ssl_ready
       | None =>
         s._on_started()
       end
