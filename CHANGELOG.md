@@ -2,17 +2,11 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/) and [Keep a CHANGELOG](http://keepachangelog.com/).
 
-## [unreleased] - unreleased
+## [0.7.1] - 2026-02-10
 
 ### Fixed
 
 - Fix SSL host verification not disabled by set_client_verify(false) ([PR #169](https://github.com/ponylang/lori/pull/169))
-
-### Added
-
-
-### Changed
-
 
 ## [0.7.0] - 2026-02-10
 
