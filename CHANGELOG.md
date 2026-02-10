@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 
+- Fix premature _on_unthrottled in Happy Eyeballs connect path ([PR #168](https://github.com/ponylang/lori/pull/168))
 
 ### Added
 
