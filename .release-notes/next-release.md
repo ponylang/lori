@@ -47,7 +47,7 @@ See "Redesign SSL connection API" below.
 
 ## Redesign SSL connection API
 
-Replace `NetSSLClientConnection` / `NetSSLServerConnection` lifecycle wrappers with the new `ssl_client` / `ssl_server` constructors on `TCPConnection`. These constructors take `SSLContext val` and handle SSL session creation internally.
+`TCPConnection` now has four constructors: `client`, `server`, `ssl_client`, and `ssl_server`. Replace `NetSSLClientConnection` / `NetSSLServerConnection` lifecycle wrappers with the new `ssl_client` / `ssl_server` constructors. These constructors take `SSLContext val` and handle SSL session creation internally.
 
 Before:
 
@@ -75,21 +75,14 @@ actor MySSLServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection => _tcp_connection
 ```
 
-`ssl_client` and `ssl_server` are non-partial. If SSL session creation fails, the failure is reported asynchronously via `_on_connection_failure()` (clients) or `_on_start_failure()` (servers).
-
-## Add `ssl_client` and `ssl_server` constructors to TCPConnection
-
-`TCPConnection` now has four constructors: `client`, `server`, `ssl_client`, and `ssl_server`. The SSL constructors take `SSLContext val` and manage SSL sessions internally, eliminating the need for separate wrapper classes.
+For clients, the equivalent is:
 
 ```pony
-// SSL client
 _tcp_connection = TCPConnection.ssl_client(
   auth, sslctx, host, port, from, this, this)
-
-// SSL server
-_tcp_connection = TCPConnection.ssl_server(
-  auth, sslctx, fd, this, this)
 ```
+
+`ssl_client` and `ssl_server` are non-partial. If SSL session creation fails, the failure is reported asynchronously via `_on_connection_failure()` (clients) or `_on_start_failure()` (servers).
 
 ## Redesign send system for fallible sends and completion tracking
 
