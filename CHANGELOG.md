@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 
+- Add TLS upgrade support (STARTTLS) ([PR #171](https://github.com/ponylang/lori/pull/171))
 
 ### Changed
 
