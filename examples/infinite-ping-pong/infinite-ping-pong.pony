@@ -6,7 +6,9 @@ A listener starts a server, then launches a client that connects and sends
 prints each reply and sends "Ping" again, producing an infinite back-and-forth.
 
 Shows both sides of a TCP conversation: ServerLifecycleEventReceiver for the
-server and ClientLifecycleEventReceiver for the client.
+server and ClientLifecycleEventReceiver for the client. Both sides use
+`expect(4)` so that each `_on_received` callback delivers exactly one
+4-byte message ("Ping" or "Pong").
 """
 use "../../lori"
 
@@ -50,6 +52,7 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
   new create(auth: TCPServerAuth, fd: U32, out: OutStream) =>
     _out = out
     _tcp_connection =  TCPConnection.server(auth, fd, this, this)
+    try _tcp_connection.expect(4)? end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -70,6 +73,7 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
   =>
     _out = out
     _tcp_connection = TCPConnection.client(auth, host, port, from, this, this)
+    try _tcp_connection.expect(4)? end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
