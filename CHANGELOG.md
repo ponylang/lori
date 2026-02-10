@@ -11,7 +11,6 @@ All notable changes to this project will be documented in this file. This projec
 
 - Add send failure notification ([PR #159](https://github.com/ponylang/lori/pull/159))
 - Add server start failure notification ([PR #159](https://github.com/ponylang/lori/pull/159))
-- Add `ssl_client` and `ssl_server` constructors to TCPConnection ([PR #160](https://github.com/ponylang/lori/pull/160))
 
 ### Changed
 
