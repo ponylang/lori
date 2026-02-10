@@ -1,3 +1,11 @@
+"""
+SSL version of infinite ping-pong.
+
+Same Ping/Pong exchange as the plain infinite-ping-pong example, but over SSL.
+Shows both TCPConnection.ssl_server and TCPConnection.ssl_client in the same
+program. Must be run from the project root so the relative certificate paths
+resolve correctly.
+"""
 use "files"
 use "ssl/net"
 use "../../lori"
