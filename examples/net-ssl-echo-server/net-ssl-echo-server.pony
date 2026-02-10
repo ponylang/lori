@@ -1,3 +1,14 @@
+"""
+SSL version of the echo server.
+
+Follows the same structure as the plain echo server, adding SSLContext setup
+and using TCPConnection.ssl_server instead of TCPConnection.server. The SSL
+handshake happens transparently inside TCPConnection.
+
+Must be run from the project root so the relative certificate paths resolve
+correctly. Connect with an SSL client (e.g. `openssl s_client -connect
+localhost:7669`) to test.
+"""
 use "files"
 use "ssl/net"
 use "../../lori"

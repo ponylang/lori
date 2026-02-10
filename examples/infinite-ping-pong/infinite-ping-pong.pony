@@ -1,3 +1,13 @@
+"""
+Client and server exchanging messages in an endless loop.
+
+A listener starts a server, then launches a client that connects and sends
+"Ping". The server prints each message and replies with "Pong". The client
+prints each reply and sends "Ping" again, producing an infinite back-and-forth.
+
+Shows both sides of a TCP conversation: ServerLifecycleEventReceiver for the
+server and ClientLifecycleEventReceiver for the client.
+"""
 use "../../lori"
 
 actor Main

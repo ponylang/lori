@@ -1,3 +1,14 @@
+"""
+Minimal echo server demonstrating lori's core pattern.
+
+A listener accepts TCP connections and hands each one to an Echoer actor that
+sends received data back to the client. Shows the three building blocks of a
+lori server: TCPListenerActor for accepting connections, TCPConnectionActor for
+event plumbing, and ServerLifecycleEventReceiver for application callbacks.
+
+Connect with any TCP client (e.g. `netcat localhost 7669`) and type to see
+your input echoed back.
+"""
 use "../../lori"
 
 actor Main
