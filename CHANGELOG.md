@@ -2,17 +2,11 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/) and [Keep a CHANGELOG](http://keepachangelog.com/).
 
-## [unreleased] - unreleased
-
-### Fixed
-
+## [0.7.2] - 2026-02-10
 
 ### Added
 
 - Add TLS upgrade support (STARTTLS) ([PR #171](https://github.com/ponylang/lori/pull/171))
-
-### Changed
-
 
 ## [0.7.1] - 2026-02-10
 
