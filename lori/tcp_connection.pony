@@ -221,6 +221,22 @@ class TCPConnection
     When an error happens, do a non-graceful close.
     """
     if not _connected then
+      if not _closed then
+        // Connecting phase (Happy Eyeballs in progress). Mark closed so
+        // straggler events clean up instead of establishing a connection.
+        _closed = true
+        _shutdown = true
+        _shutdown_peer = true
+        match _ssl
+        | let ssl: SSL ref =>
+          ssl.dispose()
+          _ssl = None
+        end
+        match _lifecycle_event_receiver
+        | let c: ClientLifecycleEventReceiver ref =>
+          c._on_connection_failure()
+        end
+      end
       return
     end
 
@@ -877,7 +893,6 @@ class TCPConnection
             else
               PonyAsio.unsubscribe(event)
               PonyTCP.close(fd)
-              hard_close()
               _connecting_callback()
             end
           | None =>
@@ -909,7 +924,6 @@ class TCPConnection
       if _inflight_connections > 0 then
         c._on_connecting(_inflight_connections)
       else
-        c._on_connection_failure()
         hard_close()
       end
     | let s: ServerLifecycleEventReceiver ref =>
