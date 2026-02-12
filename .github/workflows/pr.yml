@@ -39,9 +39,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4.1.1
       - name: config=debug
-        run: make ci config=debug ssl=0.9.0
+        run: make ci config=debug ssl=libressl
       - name: config=release
-        run: make ci config=release ssl=0.9.0
+        run: make ci config=release ssl=libressl
       - name: open/close stress test
         run: build/debug/open-close 1000000
 
@@ -57,11 +57,11 @@ jobs:
       - name: config=debug
         run: |
           export PATH=/Users/runner/.local/share/ponyup/bin/:$PATH
-          make ci config=debug ssl=0.9.0
+          make ci config=debug ssl=libressl
       - name: config=release
         run: |
           export PATH=/Users/runner/.local/share/ponyup/bin/:$PATH
-          make ci config=release ssl=0.9.0
+          make ci config=release ssl=libressl
       - name: open/close stress test
         run: build/debug/open-close 250000
 

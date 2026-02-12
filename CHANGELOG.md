@@ -9,9 +9,11 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 
+- Add first-class LibreSSL support ([PR #177](https://github.com/ponylang/lori/pull/177))
 
 ### Changed
 
+- Drop OpenSSL 0.9.0 support ([PR #177](https://github.com/ponylang/lori/pull/177))
 
 ## [0.7.2] - 2026-02-10
 
