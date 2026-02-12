@@ -2,17 +2,11 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/) and [Keep a CHANGELOG](http://keepachangelog.com/).
 
-## [unreleased] - unreleased
+## [0.8.1] - 2026-02-12
 
 ### Fixed
 
 - Fix spurious _on_connection_failure() after hard_close() ([PR #185](https://github.com/ponylang/lori/pull/185))
-
-### Added
-
-
-### Changed
-
 
 ## [0.8.0] - 2026-02-12
 
