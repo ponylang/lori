@@ -205,10 +205,16 @@ class TCPConnection
 
   fun ref close() =>
     """
-    Attempt to perform a graceful shutdown. Don't accept new writes. If the
-    connection isn't muted then we won't finish closing until we get a zero
-    length read. If the connection is muted, perform a hard close and shut
-    down immediately.
+    Attempt to perform a graceful shutdown. Don't accept new writes.
+
+    During the connecting phase (Happy Eyeballs in progress), marks the
+    connection as closed so straggler events clean up instead of establishing
+    a connection. Once all in-flight connections have drained,
+    `_on_connection_failure()` fires.
+
+    If the connection is established and not muted, we won't finish closing
+    until we get a zero length read. If the connection is muted, perform a
+    hard close and shut down immediately.
     """
     if _muted then
       hard_close()
@@ -470,8 +476,23 @@ class TCPConnection
       end
     end
 
-    if _connected and _shutdown and _shutdown_peer then
-      hard_close()
+    if _shutdown and _shutdown_peer then
+      if _connected then
+        hard_close()
+      else
+        // close() during connecting phase — all inflight connections have
+        // drained without establishing a connection. Dispose SSL and fire
+        // the failure callback.
+        match _ssl
+        | let ssl: SSL ref =>
+          ssl.dispose()
+          _ssl = None
+        end
+        match _lifecycle_event_receiver
+        | let c: ClientLifecycleEventReceiver ref =>
+          c._on_connection_failure()
+        end
+      end
     end
 
   fun ref _send_final(data: ByteSeq) =>

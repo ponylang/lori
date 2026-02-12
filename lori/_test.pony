@@ -22,6 +22,7 @@ actor \nodoc\ Main is TestList
     test(_TestStartTLSPingPong)
     test(_TestStartTLSPreconditions)
     test(_TestHardCloseWhileConnecting)
+    test(_TestCloseWhileConnecting)
 
 class \nodoc\ iso _TestOutgoingFails is UnitTest
   """
@@ -1367,3 +1368,74 @@ actor \nodoc\ _TestHardCloseWhileConnectingListener is TCPListenerActor
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestHardCloseWhileConnectingListener")
+
+class \nodoc\ iso _TestCloseWhileConnecting is UnitTest
+  """
+  Test that close() during the connecting phase fires
+  _on_connection_failure() and prevents the connection from going live.
+  """
+  fun name(): String => "CloseWhileConnecting"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("connection failure")
+
+    let listener = _TestCloseWhileConnectingListener(h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestCloseWhileConnectingClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(_h.env.root),
+      "localhost",
+      "9736",
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connecting(count: U32) =>
+    _tcp_connection.close()
+
+  fun ref _on_connected() =>
+    _h.fail("_on_connected should not fire after close")
+    _h.complete(false)
+
+  fun ref _on_connection_failure() =>
+    _h.complete_action("connection failure")
+
+actor \nodoc\ _TestCloseWhileConnectingListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestCloseWhileConnectingClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      "9736",
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestDoNothingServerActor =>
+    _TestDoNothingServerActor(fd, _h)
+
+  fun ref _on_closed() =>
+    try (_client as _TestCloseWhileConnectingClient).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestCloseWhileConnectingClient(_h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestCloseWhileConnectingListener")
