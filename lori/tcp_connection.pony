@@ -472,17 +472,10 @@ class TCPConnection
       if _connected then
         PonyTCP.shutdown(_fd)
       else
-        _shutdown_peer = true
-      end
-    end
-
-    if _shutdown and _shutdown_peer then
-      if _connected then
-        hard_close()
-      else
         // close() during connecting phase — all inflight connections have
         // drained without establishing a connection. Dispose SSL and fire
         // the failure callback.
+        _shutdown_peer = true
         match _ssl
         | let ssl: SSL ref =>
           ssl.dispose()
@@ -492,7 +485,12 @@ class TCPConnection
         | let c: ClientLifecycleEventReceiver ref =>
           c._on_connection_failure()
         end
+        return
       end
+    end
+
+    if _shutdown and _shutdown_peer then
+      hard_close()
     end
 
   fun ref _send_final(data: ByteSeq) =>
