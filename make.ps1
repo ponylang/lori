@@ -32,7 +32,7 @@ else
 
 $libsDir = Join-Path -Path $rootDir -ChildPath "build/libs"
 
-$ponyArgs = "--define openssl_0.9.0  --path $rootDir"
+$ponyArgs = "--define libressl  --path $rootDir"
 
 function BuildTest
 {
