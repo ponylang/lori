@@ -251,6 +251,6 @@ switch ($Command.ToLower())
 
   default
   {
-      throw "Unknown command '$Command'; must be one of (libs, test, examples)."
+      throw "Unknown command '$Command'; must be one of (libs, test, examples, stress-tests)."
   }
 }
