@@ -182,4 +182,4 @@ POSIX and Windows (IOCP) have distinct code paths throughout `TCPConnection`, gu
 - `\nodoc\` annotation on test classes
 - Examples have a file-level docstring explaining what they demonstrate
 - Self-contained examples use the Listener/Server/Client actor structure (listener accepts connections, launches client on `_on_listening`)
-- Each example uses a unique port (tests: 9725–9734, examples: 7669–7671)
+- Each example uses a unique port
