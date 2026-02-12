@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 
+- Fix hard_close() being a no-op during connecting phase ([PR #178](https://github.com/ponylang/lori/pull/178))
 
 ### Added
 
