@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 
+- Fix spurious _on_connection_failure() after hard_close() ([PR #185](https://github.com/ponylang/lori/pull/185))
 
 ### Added
 
