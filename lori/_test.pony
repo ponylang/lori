@@ -11,6 +11,7 @@ actor \nodoc\ Main is TestList
 
   fun tag tests(test: PonyTest) =>
     test(_TestCanListen)
+    test(_TestListenerLocalAddress)
     test(_TestMute)
     test(_TestOutgoingFails)
     test(_TestPingPong)
@@ -340,6 +341,48 @@ actor \nodoc\ _TestDoNothingServerActor is (TCPConnectionActor & ServerLifecycle
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+class \nodoc\ iso _TestListenerLocalAddress is UnitTest
+  """
+  Test that `local_address()` on a listener returns the actual bound address.
+  Binds to port "0" (OS-assigned) and verifies the reported port is non-zero.
+  """
+  fun name(): String => "ListenerLocalAddress"
+
+  fun apply(h: TestHelper) =>
+    let listener = _TestListenerLocalAddressListener(h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestListenerLocalAddressListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      "0",
+      this)
+
+  fun ref _on_accept(fd: U32): _TestDoNothingServerActor =>
+    _h.fail("_on_accept shouldn't be called")
+    _h.complete(false)
+    _TestDoNothingServerActor(fd, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("listening failed")
+    _h.complete(false)
+
+  fun ref _on_listening() =>
+    let addr = _listener().local_address()
+    _h.assert_true(addr.port() > 0)
+    _h.complete(true)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
 
  class \nodoc\ iso _TestMute is UnitTest
   """

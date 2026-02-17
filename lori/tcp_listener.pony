@@ -1,4 +1,5 @@
 use "collections"
+use net = "net"
 
 type MaxSpawn is (U32 | None)
 
@@ -43,6 +44,15 @@ class TCPListener
     | None =>
       _Unreachable()
     end
+
+  fun local_address(): net.NetAddress =>
+    """
+    Return the local IP address. If this TCPListener is closed then the
+    address returned is invalid.
+    """
+    let ip = recover net.NetAddress end
+    PonyTCP.sockname(_fd, ip)
+    ip
 
   fun ref _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
     if event isnt _event then
