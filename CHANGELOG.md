@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 
+- Add local_address() to TCPListener ([PR #189](https://github.com/ponylang/lori/pull/189))
 
 ### Changed
 
