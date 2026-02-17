@@ -152,6 +152,21 @@ decides what to do: queue, drop, or close. Use `_on_throttled` and
 `_on_unthrottled` to track backpressure state, or check `is_writeable()` before
 calling `send()`.
 
+`send()` accepts both a single buffer (`ByteSeq`) and multiple buffers
+(`ByteSeqIter`). When a protocol sends structured data (e.g. a length header
+followed by a payload), passing multiple buffers sends them in a single writev
+syscall — avoiding both the per-buffer syscall overhead of calling `send()`
+multiple times and the cost of copying into a contiguous buffer:
+
+```pony
+// Single buffer
+_tcp_connection.send("Hello, world!")
+
+// Multiple buffers — one writev syscall
+let header: Array[U8] val = _encode_header(payload.size())
+_tcp_connection.send(recover val [as ByteSeq: header; payload] end)
+```
+
 ## SSL
 
 Adding SSL to a connection requires only a constructor change. Use

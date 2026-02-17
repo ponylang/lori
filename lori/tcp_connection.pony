@@ -1,4 +1,3 @@
-use "collections"
 use net = "net"
 use "ssl/net"
 
@@ -19,7 +18,13 @@ class TCPConnection
   var _spawned_by: (TCPListenerActor | None) = None
   let _lifecycle_event_receiver: (ClientLifecycleEventReceiver ref | ServerLifecycleEventReceiver ref | None)
   let _enclosing: (TCPConnectionActor ref | None)
-  let _pending: List[(ByteSeq, USize)] = _pending.create()
+  // COUPLING: _pending_first_buffer_offset points into the buffer owned by
+  // _pending_data(0). Trimming _pending_data without resetting the offset
+  // causes a dangling pointer. _manage_pending_buffer maintains both.
+  embed _pending_data: Array[ByteSeq] = _pending_data.create()
+  var _pending_writev_total: USize = 0
+  var _pending_first_buffer_offset: USize = 0
+  var _pending_sent: USize = 0
   var _read_buffer: Array[U8] iso = recover Array[U8] end
   var _bytes_in_read_buffer: USize = 0
   var _read_buffer_size: USize = 16384
@@ -259,7 +264,12 @@ class TCPConnection
       e._notify_send_failed(t)
     end
 
-    _pending.clear()
+    _pending_data.clear()
+    _pending_writev_total = 0
+    _pending_first_buffer_offset = 0
+    ifdef windows then
+      _pending_sent = 0
+    end
     _pending_token = None
 
     PonyAsio.unsubscribe(_event)
@@ -374,7 +384,20 @@ class TCPConnection
     | let _: SSL ref => return StartTLSAlreadyTLS
     end
 
-    if _muted or (_bytes_in_read_buffer > 0) or _has_pending_writes() then
+    // On POSIX, _has_pending_writes() checks whether any data remains
+    // unsent (writev is synchronous — returns bytes written or EWOULDBLOCK).
+    // On Windows IOCP, submitted-but-unconfirmed writes are already in the
+    // kernel's send buffer, so only un-submitted entries block TLS upgrade.
+    // After send("OK") + _iocp_submit_pending(), _pending_writev_total > 0
+    // but _pending_data.size() == _pending_sent — the data is in the kernel
+    // and TLS can safely proceed.
+    let has_unsent_writes: Bool = ifdef windows then
+      _pending_data.size() > _pending_sent
+    else
+      _has_pending_writes()
+    end
+
+    if _muted or (_bytes_in_read_buffer > 0) or has_unsent_writes then
       return StartTLSNotReady
     end
 
@@ -400,12 +423,16 @@ class TCPConnection
     _ssl_flush_sends()
     None
 
-  fun ref send(data: ByteSeq): (SendToken | SendError) =>
+  fun ref send(data: (ByteSeq | ByteSeqIter)): (SendToken | SendError) =>
     """
-    Send data on this connection. Returns a `SendToken` on success, or a
-    `SendError` explaining the failure. When successful, `_on_sent(token)`
-    will fire in a subsequent behavior turn once the data has been fully
-    handed to the OS.
+    Send data on this connection. Accepts a single buffer (`ByteSeq`) or
+    multiple buffers (`ByteSeqIter`). When multiple buffers are provided,
+    they are sent in a single writev syscall — avoiding both per-buffer
+    syscall overhead and the cost of copying into a contiguous buffer.
+
+    Returns a `SendToken` on success, or a `SendError` explaining the
+    failure. When successful, `_on_sent(token)` will fire in a subsequent
+    behavior turn once the data has been fully handed to the OS.
     """
     if not is_open() then
       return SendErrorNotConnected
@@ -427,7 +454,14 @@ class TCPConnection
 
     match _ssl
     | let ssl: SSL ref =>
-      try ssl.write(data)? end
+      match data
+      | let d: ByteSeq =>
+        try ssl.write(d)? end
+      | let d: ByteSeqIter =>
+        for v in d.values() do
+          try ssl.write(v)? end
+        end
+      end
       _ssl_flush_sends()
 
       // Check if SSL error triggered close
@@ -435,7 +469,19 @@ class TCPConnection
         return SendErrorNotConnected
       end
     | None =>
-      _send_final(data)
+      match data
+      | let d: ByteSeq =>
+        _enqueue(d)
+      | let d: ByteSeqIter =>
+        for v in d.values() do
+          _enqueue(v)
+        end
+      end
+      ifdef windows then
+        _iocp_submit_pending()
+      else
+        _send_pending_writes()
+      end
     end
 
     // Determine when to fire _on_sent
@@ -493,54 +539,107 @@ class TCPConnection
       hard_close()
     end
 
-  fun ref _send_final(data: ByteSeq) =>
-    if (data.size() == 0) then
-      return
+  fun ref _enqueue(data: ByteSeq) =>
+    """
+    Add a buffer to the pending write queue. Callers must call the
+    platform-specific flush after enqueuing: `_send_pending_writes()` on
+    POSIX, `_iocp_submit_pending()` on Windows.
+    """
+    if data.size() == 0 then return end
+    if is_open() then
+      _pending_data.push(data)
+      _pending_writev_total = _pending_writev_total + data.size()
     end
 
-    if is_open() then
-      ifdef windows then
-        try
-          PonyTCP.send(_event, data, 0)?
+  fun ref _manage_pending_buffer(bytes_sent: USize): USize =>
+    """
+    Account for `bytes_sent` by walking `_pending_data` entries. Returns
+    the number of fully-sent entries. Updates `_pending_first_buffer_offset`,
+    `_pending_writev_total`, and trims `_pending_data`.
+    """
+    if bytes_sent == 0 then return 0 end
+
+    var remaining = bytes_sent
+    var num_fully_sent: USize = 0
+    var new_offset: USize = 0
+
+    while remaining > 0 do
+      try
+        let entry = _pending_data(num_fully_sent)?
+        let start = if num_fully_sent == 0 then
+          _pending_first_buffer_offset
         else
-          close()
+          USize(0)
+        end
+        let effective_size = entry.size() - start
+
+        if effective_size <= remaining then
+          // Fully sent
+          num_fully_sent = num_fully_sent + 1
+          remaining = remaining - effective_size
+        else
+          // Partially sent — this entry becomes the new entry 0 after trim
+          new_offset = start + remaining
+          remaining = 0
         end
       else
-        _pending.push((data, 0))
-        _send_pending_writes()
+        _Unreachable()
       end
     end
+
+    _pending_writev_total = _pending_writev_total - bytes_sent
+    _pending_data.trim_in_place(num_fully_sent)
+    _pending_first_buffer_offset = new_offset
+
+    num_fully_sent
 
   fun ref _send_pending_writes() =>
     """
-    Send pending write data.
+    Flush pending write data using writev.
     This is POSIX only.
     """
     ifdef posix then
-      while _writeable and _has_pending_writes() do
+      let writev_batch_size: USize = PonyTCP.writev_max().usize()
+
+      while _writeable and (_pending_writev_total > 0) do
         try
-          let node = _pending.head()?
-          (let data, let offset) = node()?
+          // Determine batch size and byte count
+          let num_to_send: USize =
+            _pending_data.size().min(writev_batch_size)
 
-          let len = PonyTCP.send(_event, data, offset)?
+          let bytes_to_send: USize =
+            if num_to_send == _pending_data.size() then
+              _pending_writev_total
+            else
+              var total: USize = 0
+              var i: USize = 0
+              while i < num_to_send do
+                let s = _pending_data(i)?.size()
+                total = total +
+                  if i == 0 then s - _pending_first_buffer_offset else s end
+                i = i + 1
+              end
+              total
+            end
 
-          if (len + offset) < data.size() then
-            // not all data was sent
-            node()? = (data, offset + len)
+          // writev syscall — returns bytes sent, 0 on EWOULDBLOCK
+          let len = PonyTCP.writev(_event, _pending_data,
+            0, num_to_send, _pending_first_buffer_offset)?
+
+          if len < bytes_to_send then
+            _manage_pending_buffer(len)
             _apply_backpressure()
           else
-            _pending.shift()?
+            _manage_pending_buffer(bytes_to_send)
           end
         else
-          // Non-graceful shutdown on error.
+          // writev error — non-graceful shutdown
           hard_close()
+          return
         end
       end
 
-      if not _has_pending_writes() then
-        // Release backpressure before deferring _on_sent so the
-        // application sees settled backpressure state when the
-        // callback fires.
+      if _pending_writev_total == 0 then
         _release_backpressure()
 
         match _pending_token
@@ -558,20 +657,77 @@ class TCPConnection
       _Unreachable()
     end
 
+  fun ref _iocp_submit_pending() =>
+    """
+    Submit all pending write buffers to IOCP in a single WSASend.
+    Only one IOCP write is outstanding at a time — if a previous WSASend
+    hasn't completed yet, this is a no-op and the data waits in
+    `_pending_data` until `_write_completed` resubmits.
+    This is Windows only.
+    """
+    ifdef windows then
+      if _pending_sent > 0 then return end
+
+      let num_to_send = _pending_data.size()
+      if num_to_send == 0 then return end
+
+      try
+        let len = PonyTCP.writev(_event, _pending_data,
+          0, num_to_send, _pending_first_buffer_offset)?
+
+        if len == 0 then
+          _apply_backpressure()
+        else
+          _pending_sent = len
+        end
+      else
+        hard_close()
+      end
+    else
+      _Unreachable()
+    end
+
   fun ref _write_completed(len: U32) =>
     """
     The OS has informed us that `len` bytes of pending writes have completed.
     This occurs only with IOCP on Windows.
+
+    A single WSASend call covers all submitted entries. When the IOCP
+    completion fires, the entire operation is done — none of the entries
+    are in-flight anymore. We reset `_pending_sent` to 0 and resubmit
+    any remaining data.
     """
     ifdef windows then
       if len == 0 then
-        // Chunk failed to write
-        close()
+        hard_close()
         return
       end
 
-      // TODO we have no way to report if a write was successful or not
-      None
+      _manage_pending_buffer(len.usize())
+      // The WSASend IOCP operation has completed. All entries covered by
+      // this operation are no longer in-flight.
+      _pending_sent = 0
+
+      if _pending_writev_total == 0 then
+        _release_backpressure()
+
+        match _pending_token
+        | let t: SendToken =>
+          _pending_token = None
+          match _enclosing
+          | let e: TCPConnectionActor ref =>
+            e._notify_sent(t)
+          | None =>
+            _Unreachable()
+          end
+        end
+      else
+        // Resubmit remaining data
+        _iocp_submit_pending()
+        if _pending_sent < 16 then
+          _release_backpressure()
+        end
+      end
     else
       _Unreachable()
     end
@@ -791,13 +947,19 @@ class TCPConnection
     """
     Flush any pending encrypted data from the SSL session to the wire.
     Called after SSL operations that may produce output (handshake, write).
+    Enqueues all SSL chunks, then flushes once via writev.
     """
     match _ssl
     | let ssl: SSL ref =>
       try
         while ssl.can_send() do
-          _send_final(ssl.send()?)
+          _enqueue(ssl.send()?)
         end
+      end
+      ifdef windows then
+        _iocp_submit_pending()
+      else
+        _send_pending_writes()
       end
     end
 
@@ -848,7 +1010,7 @@ class TCPConnection
     end
 
   fun _has_pending_writes(): Bool =>
-    _pending.size() != 0
+    _pending_writev_total > 0
 
   fun ref _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
     if event is _event then

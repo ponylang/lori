@@ -37,24 +37,24 @@ trait ServerLifecycleEventReceiver
 
   fun ref _on_sent(token: SendToken) =>
     """
-    Called when data from a successful send() has been fully handed to the
-    OS. The token matches the one returned by send().
+    Called when data from a successful `send()` has been fully handed to
+    the OS. The token matches the one returned by the `send()` call.
 
     Always fires in a subsequent behavior turn, never synchronously during
-    send(). This guarantees the caller has received and processed the
-    SendToken return value before the callback arrives.
+    `send()`. This guarantees the caller has received and processed the
+    `SendToken` return value before the callback arrives.
     """
     None
 
   fun ref _on_send_failed(token: SendToken) =>
     """
-    Called when data from a successful send() could not be delivered to the
-    OS. The token matches the one returned by send(). This happens when a
-    connection closes while a partial write is still pending.
+    Called when data from a successful `send()` could not be delivered to
+    the OS. The token matches the one returned by the `send()` call. This
+    happens when a connection closes while a partial write is still pending.
 
     Always fires in a subsequent behavior turn, never synchronously during
-    hard_close(). Always arrives after _on_closed, which fires synchronously
-    during hard_close().
+    `hard_close()`. Always arrives after `_on_closed`, which fires
+    synchronously during `hard_close()`.
     """
     None
 
@@ -143,24 +143,24 @@ trait ClientLifecycleEventReceiver
 
   fun ref _on_sent(token: SendToken) =>
     """
-    Called when data from a successful send() has been fully handed to the
-    OS. The token matches the one returned by send().
+    Called when data from a successful `send()` has been fully handed to
+    the OS. The token matches the one returned by the `send()` call.
 
     Always fires in a subsequent behavior turn, never synchronously during
-    send(). This guarantees the caller has received and processed the
-    SendToken return value before the callback arrives.
+    `send()`. This guarantees the caller has received and processed the
+    `SendToken` return value before the callback arrives.
     """
     None
 
   fun ref _on_send_failed(token: SendToken) =>
     """
-    Called when data from a successful send() could not be delivered to the
-    OS. The token matches the one returned by send(). This happens when a
-    connection closes while a partial write is still pending.
+    Called when data from a successful `send()` could not be delivered to
+    the OS. The token matches the one returned by the `send()` call. This
+    happens when a connection closes while a partial write is still pending.
 
     Always fires in a subsequent behavior turn, never synchronously during
-    hard_close(). Always arrives after _on_closed, which fires synchronously
-    during hard_close().
+    `hard_close()`. Always arrives after `_on_closed`, which fires
+    synchronously during `hard_close()`.
     """
     None
 

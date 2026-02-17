@@ -24,6 +24,10 @@ actor \nodoc\ Main is TestList
     test(_TestStartTLSPreconditions)
     test(_TestHardCloseWhileConnecting)
     test(_TestCloseWhileConnecting)
+    test(_TestSendv)
+    test(_TestSendvEmpty)
+    test(_TestSendvMixedEmpty)
+    test(_TestSSLSendv)
 
 class \nodoc\ iso _TestOutgoingFails is UnitTest
   """
@@ -1482,3 +1486,427 @@ actor \nodoc\ _TestCloseWhileConnectingListener is TCPListenerActor
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestCloseWhileConnectingListener")
+
+class \nodoc\ iso _TestSendv is UnitTest
+  """
+  Test that send() with multiple buffers delivers them as a single contiguous
+  stream and that _on_sent fires with the matching token.
+  """
+  fun name(): String => "Sendv"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("server listening")
+    h.expect_action("client connected")
+    h.expect_action("data verified")
+    h.expect_action("on_sent fired")
+
+    let s = _TestSendvListener(h)
+    h.dispose_when_done(s)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSendvListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSendvClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      "7893",
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSendvServer =>
+    _TestSendvServer(fd, _h)
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendvClient).dispose() end
+
+  fun ref _on_listening() =>
+    _h.complete_action("server listening")
+    _client = _TestSendvClient(_h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSendvListener")
+
+actor \nodoc\ _TestSendvClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _expected_token: (SendToken | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(_h.env.root),
+      "localhost",
+      "7893",
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _h.complete_action("client connected")
+    match _tcp_connection.send(
+      recover val [as ByteSeq: "Hello"; ", "; "world!"] end)
+    | let token: SendToken =>
+      _expected_token = token
+    | let _: SendError =>
+      _h.fail("send() returned an error")
+      _h.complete(false)
+    end
+
+  fun ref _on_sent(token: SendToken) =>
+    match _expected_token
+    | let expected: SendToken =>
+      _h.assert_true(token == expected, "token mismatch")
+      _h.complete_action("on_sent fired")
+    | None =>
+      _h.fail("_on_sent fired but no token was expected")
+    end
+
+actor \nodoc\ _TestSendvServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.server(
+      TCPServerAuth(_h.env.root),
+      fd,
+      this,
+      this)
+    try _tcp_connection.expect(13)? end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    _h.assert_eq[String]("Hello, world!", String.from_array(consume data))
+    _h.complete_action("data verified")
+    _tcp_connection.close()
+
+class \nodoc\ iso _TestSendvEmpty is UnitTest
+  """
+  Test that send() with an empty ByteSeqIter returns a SendToken and that
+  _on_sent fires.
+  """
+  fun name(): String => "SendvEmpty"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("server listening")
+    h.expect_action("client connected")
+    h.expect_action("on_sent fired")
+
+    let s = _TestSendvEmptyListener(h)
+    h.dispose_when_done(s)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSendvEmptyListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSendvEmptyClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      "7894",
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestDoNothingServerActor =>
+    _TestDoNothingServerActor(fd, _h)
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendvEmptyClient).dispose() end
+
+  fun ref _on_listening() =>
+    _h.complete_action("server listening")
+    _client = _TestSendvEmptyClient(_h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSendvEmptyListener")
+
+actor \nodoc\ _TestSendvEmptyClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _expected_token: (SendToken | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(_h.env.root),
+      "localhost",
+      "7894",
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _h.complete_action("client connected")
+    match _tcp_connection.send(
+      recover val Array[ByteSeq] end)
+    | let token: SendToken =>
+      _expected_token = token
+    | let _: SendError =>
+      _h.fail("send() returned an error for empty array")
+      _h.complete(false)
+    end
+
+  fun ref _on_sent(token: SendToken) =>
+    match _expected_token
+    | let expected: SendToken =>
+      _h.assert_true(token == expected, "token mismatch")
+      _h.complete_action("on_sent fired")
+    | None =>
+      _h.fail("_on_sent fired but no token was expected")
+    end
+
+class \nodoc\ iso _TestSendvMixedEmpty is UnitTest
+  """
+  Test that send() with multiple buffers correctly skips empty buffers.
+  Sends ["Hello"; ""; "world"] and verifies the server receives "Helloworld".
+  """
+  fun name(): String => "SendvMixedEmpty"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("server listening")
+    h.expect_action("client connected")
+    h.expect_action("data verified")
+
+    let s = _TestSendvMixedEmptyListener(h)
+    h.dispose_when_done(s)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSendvMixedEmptyListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSendvMixedEmptyClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      "7895",
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSendvMixedEmptyServer =>
+    _TestSendvMixedEmptyServer(fd, _h)
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendvMixedEmptyClient).dispose() end
+
+  fun ref _on_listening() =>
+    _h.complete_action("server listening")
+    _client = _TestSendvMixedEmptyClient(_h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSendvMixedEmptyListener")
+
+actor \nodoc\ _TestSendvMixedEmptyClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(_h.env.root),
+      "localhost",
+      "7895",
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _h.complete_action("client connected")
+    _tcp_connection.send(
+      recover val [as ByteSeq: "Hello"; ""; "world"] end)
+
+actor \nodoc\ _TestSendvMixedEmptyServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.server(
+      TCPServerAuth(_h.env.root),
+      fd,
+      this,
+      this)
+    try _tcp_connection.expect(10)? end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    _h.assert_eq[String]("Helloworld", String.from_array(consume data))
+    _h.complete_action("data verified")
+    _tcp_connection.close()
+
+class \nodoc\ iso _TestSSLSendv is UnitTest
+  """
+  Test send() with multiple buffers over an SSL connection. Client sends
+  multiple buffers, server verifies the received data.
+  """
+  fun name(): String => "SSLSendv"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "7896"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("server listening")
+    h.expect_action("client connected")
+    h.expect_action("data verified")
+    h.expect_action("on_sent fired")
+
+    let listener = _TestSSLSendvListener(
+      port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSSLSendvListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSSLSendvClient | None) = None
+
+  new create(port: String,
+    sslctx: SSLContext val,
+    h: TestHelper)
+  =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSSLSendvServer =>
+    _TestSSLSendvServer(_sslctx, fd, _h)
+
+  fun ref _on_closed() =>
+    try (_client as _TestSSLSendvClient).dispose() end
+
+  fun ref _on_listening() =>
+    _h.complete_action("server listening")
+    _client = _TestSSLSendvClient(_port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSSLSendvListener")
+
+actor \nodoc\ _TestSSLSendvClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _expected_token: (SendToken | None) = None
+
+  new create(port: String,
+    sslctx: SSLContext val,
+    h: TestHelper)
+  =>
+    _h = h
+
+    _tcp_connection = TCPConnection.ssl_client(
+      TCPConnectAuth(h.env.root),
+      sslctx,
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _h.complete_action("client connected")
+    match _tcp_connection.send(
+      recover val [as ByteSeq: "SSL "; "Hello"; " World"] end)
+    | let token: SendToken =>
+      _expected_token = token
+    | let _: SendError =>
+      _h.fail("send() returned an error")
+      _h.complete(false)
+    end
+
+  fun ref _on_sent(token: SendToken) =>
+    match _expected_token
+    | let expected: SendToken =>
+      _h.assert_true(token == expected, "token mismatch")
+      _h.complete_action("on_sent fired")
+    | None =>
+      _h.fail("_on_sent fired but no token was expected")
+    end
+
+actor \nodoc\ _TestSSLSendvServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(sslctx: SSLContext val,
+    fd: U32,
+    h: TestHelper)
+  =>
+    _h = h
+
+    _tcp_connection = TCPConnection.ssl_server(
+      TCPServerAuth(_h.env.root),
+      sslctx,
+      fd,
+      this,
+      this)
+    try _tcp_connection.expect(15)? end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    _h.assert_eq[String]("SSL Hello World", String.from_array(consume data))
+    _h.complete_action("data verified")
+    _tcp_connection.close()

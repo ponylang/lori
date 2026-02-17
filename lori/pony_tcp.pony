@@ -18,6 +18,13 @@ use @pony_os_send[USize](event: AsioEventID,
 use @pony_os_socket_close[None](fd: U32)
 use @pony_os_socket_shutdown[None](fd: U32)
 use @pony_os_sockname[Bool](fd: U32, ip: net.NetAddress tag)
+use @pony_os_writev[USize](ev: AsioEventID,
+  wsa: Pointer[(USize, Pointer[U8] tag)] tag,
+  wsacnt: I32) ? if windows
+use @pony_os_writev[USize](ev: AsioEventID,
+  iov: Pointer[(Pointer[U8] tag, USize)] tag,
+  iovcnt: I32) ? if not windows
+use @pony_os_writev_max[I32]()
 
 use net = "net"
 
@@ -75,3 +82,54 @@ primitive PonyTCP
 
   fun sockname(fd: U32, ip: net.NetAddress tag): Bool =>
     @pony_os_sockname(fd, ip)
+
+  fun writev(event: AsioEventID, data: Array[ByteSeq] box,
+    from: USize, count: USize,
+    first_buffer_byte_offset: USize = 0): USize ?
+  =>
+    """
+    Send `count` buffers from `data` starting at index `from` via writev.
+    Builds the platform-specific IOV array (iovec on POSIX, WSABUF on
+    Windows) internally.
+
+    `first_buffer_byte_offset` skips bytes in `data(from)` for partial
+    write resume.
+
+    Returns bytes sent (POSIX) or buffer count submitted (Windows).
+    """
+    ifdef windows then
+      let wsa = Array[(USize, Pointer[U8] tag)](count)
+      var i = from
+      while i < (from + count) do
+        let entry = data(i)?
+        if (i == from) and (first_buffer_byte_offset > 0) then
+          wsa.push((entry.size() - first_buffer_byte_offset,
+            entry.cpointer(first_buffer_byte_offset)))
+        else
+          wsa.push((entry.size(), entry.cpointer()))
+        end
+        i = i + 1
+      end
+      @pony_os_writev(event, wsa.cpointer(), count.i32())?
+    else
+      let iov = Array[(Pointer[U8] tag, USize)](count)
+      var i = from
+      while i < (from + count) do
+        let entry = data(i)?
+        if (i == from) and (first_buffer_byte_offset > 0) then
+          iov.push((entry.cpointer(first_buffer_byte_offset),
+            entry.size() - first_buffer_byte_offset))
+        else
+          iov.push((entry.cpointer(), entry.size()))
+        end
+        i = i + 1
+      end
+      @pony_os_writev(event, iov.cpointer(), count.i32())?
+    end
+
+  fun writev_max(): I32 =>
+    """
+    Maximum number of IOV entries per writev call. IOV_MAX on POSIX, 1 on
+    Windows (Windows submits all entries at once, not in batches).
+    """
+    @pony_os_writev_max()

@@ -1,5 +1,6 @@
 """
-Demonstrates lori's expect() for length-prefixed message framing.
+Demonstrates lori's expect() for length-prefixed message framing and
+multi-buffer send() for sending header + payload in a single writev syscall.
 
 A framed client connects to an echo server and exchanges messages using a
 simple protocol: each message is preceded by a 4-byte big-endian length
@@ -79,7 +80,7 @@ actor FramedServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
       let len = payload.size()
       _out.print("Server: echoing \"" + String.from_array(payload) + "\"")
 
-      // Echo back with same framing: 4-byte header + payload
+      // Echo back with same framing: header + payload in one writev syscall
       let header = recover val
         let h = Array[U8](4)
         h.push((len >> 24).u8())
@@ -88,8 +89,7 @@ actor FramedServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
         h.push(len.u8())
         h
       end
-      _tcp_connection.send(header)
-      _tcp_connection.send(payload)
+      _tcp_connection.send(recover val [as ByteSeq: header; payload] end)
 
       _reading_header = true
       try _tcp_connection.expect(4)? end
@@ -135,7 +135,8 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
 
   fun ref _send_framed(msg: String) =>
     """
-    Send a message with a 4-byte big-endian length prefix.
+    Send a message with a 4-byte big-endian length prefix, sending both
+    header and payload in a single writev syscall.
     """
     let len = msg.size()
     let header = recover val
@@ -146,8 +147,7 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
       h.push(len.u8())
       h
     end
-    _tcp_connection.send(header)
-    _tcp_connection.send(msg)
+    _tcp_connection.send(recover val [as ByteSeq: header; msg] end)
 
   fun ref _on_received(data: Array[U8] iso) =>
     if _reading_header then
