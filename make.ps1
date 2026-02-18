@@ -224,8 +224,21 @@ switch ($Command.ToLower())
   {
     $testFile = (BuildTest)[-1]
     Write-Host "$testFile --sequential"
-    & "$testFile"
-    if ($LastExitCode -ne 0) { throw "Error" }
+    $rawOutput = & "$testFile" 2>&1
+    $exitCode = $LastExitCode
+    foreach ($line in $rawOutput) { Write-Host $line }
+    if ($exitCode -ne 0)
+    {
+      $stderrLines = @($rawOutput |
+        Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } |
+        ForEach-Object { $_.ToString() })
+      $details = ""
+      if ($stderrLines.Count -gt 0)
+      {
+        $details = "`n" + ($stderrLines -join "`n")
+      }
+      throw "Test failed with exit code ${exitCode}${details}"
+    }
     break
   }
 
