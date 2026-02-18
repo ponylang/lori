@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 
+- Widen send() to accept multiple buffers via writev ([PR #190](https://github.com/ponylang/lori/pull/190))
 
 ### Changed
 
