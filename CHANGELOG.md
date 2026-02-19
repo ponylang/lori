@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/) and [Keep a CHANGELOG](http://keepachangelog.com/).
 
-## [unreleased] - unreleased
+## [0.8.3] - 2026-02-19
 
 ### Fixed
 
@@ -11,9 +11,6 @@ All notable changes to this project will be documented in this file. This projec
 ### Added
 
 - Widen send() to accept multiple buffers via writev ([PR #190](https://github.com/ponylang/lori/pull/190))
-
-### Changed
-
 
 ## [0.8.2] - 2026-02-17
 
