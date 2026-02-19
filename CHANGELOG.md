@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 
+- Fix FFI declarations for exit() and pony_os_stderr() ([PR #191](https://github.com/ponylang/lori/pull/191))
 
 ### Added
 
