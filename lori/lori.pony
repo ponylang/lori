@@ -253,6 +253,37 @@ data or pending writes. During the handshake, `send()` returns
 `SendErrorNotConnected`. When the handshake completes, `_on_tls_ready()` fires.
 If it fails, `_on_tls_failure()` fires followed by `_on_closed()`.
 
+## Idle Timeout
+
+`idle_timeout()` sets a per-connection timer that fires when no data is sent
+or received for the configured duration. Idle timeout is disabled by default. The duration is an
+[`IdleTimeout`](/lori/lori-IdleTimeout/) value — a constrained type that
+guarantees a non-zero millisecond count. Pass `None` to disable:
+
+```pony
+fun ref _on_started() =>
+  // Close connections idle for more than 30 seconds
+  match MakeIdleTimeout(30_000)
+  | let t: IdleTimeout =>
+    _tcp_connection.idle_timeout(t)
+  end
+
+fun ref _on_idle_timeout() =>
+  _tcp_connection.close()
+```
+
+The timer resets on every successful `send()` and every received data event.
+It automatically re-arms after each firing — the application decides what to
+do (close, send a keepalive, log, etc.). Call `idle_timeout(None)` to disable.
+
+Idle timeout uses a per-connection ASIO timer event, requiring no extra actors
+or shared state. This avoids the muting-livelock problem that occurs with
+shared `Timers` actors under backpressure.
+
+This is independent of TCP keepalive (`keepalive()`). TCP keepalive is a
+transport-level dead-peer probe. Idle timeout is application-level inactivity
+detection.
+
 ## Connection Limits
 
 `TCPListener` accepts an optional `limit` parameter to cap the number of

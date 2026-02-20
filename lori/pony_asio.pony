@@ -7,6 +7,7 @@ use @pony_asio_event_resubscribe_read[None](event: AsioEventID)
 use @pony_asio_event_resubscribe_write[None](event: AsioEventID)
 use @pony_asio_event_set_readable[None](event: AsioEventID, readable: Bool)
 use @pony_asio_event_set_writeable[None](event: AsioEventID, writeable: Bool)
+use @pony_asio_event_setnsec[U32](event: AsioEventID, nsec: U64)
 use @pony_asio_event_unsubscribe[None](event: AsioEventID)
 
 primitive PonyAsio
@@ -45,6 +46,12 @@ primitive PonyAsio
 
   fun set_unwriteable(event: AsioEventID) =>
     @pony_asio_event_set_writeable(event, false)
+
+  fun create_timer_event(the_actor: AsioEventNotify, nsec: U64): AsioEventID =>
+    @pony_asio_event_create(the_actor, 0, AsioEvent.timer(), nsec, true)
+
+  fun set_timer(event: AsioEventID, nsec: U64) =>
+    @pony_asio_event_setnsec(event, nsec)
 
   fun unsubscribe(event: AsioEventID) =>
     @pony_asio_event_unsubscribe(event)

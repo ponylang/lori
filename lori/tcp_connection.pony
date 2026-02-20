@@ -45,6 +45,10 @@ class TCPConnection
   // _on_connected/_on_started/_on_connection_failure/_on_start_failure).
   var _tls_upgrade: Bool = false
 
+  // Per-connection idle timeout via ASIO timer
+  var _timer_event: AsioEventID = AsioEvent.none()
+  var _idle_timeout_nsec: U64 = 0
+
   // client startup state
   var _host: String = ""
   var _port: String = ""
@@ -149,6 +153,43 @@ class TCPConnection
       PonyTCP.keepalive(_fd, secs)
     end
 
+  fun ref idle_timeout(duration: (IdleTimeout | None)) =>
+    """
+    Set or disable the idle timeout. Idle timeout is disabled by default.
+
+    When `duration` is an `IdleTimeout`, the timer fires when no successful
+    send or receive occurs for that duration, delivering
+    `_on_idle_timeout()` to the lifecycle event receiver. When `duration`
+    is `None`, the idle timeout is disabled.
+
+    The timer automatically re-arms after each firing until disabled or
+    the connection closes.
+
+    Can be called before the connection is established — the value is
+    stored and the timer starts when the connection is ready.
+
+    This is independent of TCP keepalive (`keepalive()`). TCP keepalive
+    is a transport-level probe that detects dead peers. Idle timeout is
+    application-level inactivity detection — it fires whether or not the
+    peer is alive.
+    """
+    match duration
+    | let t: IdleTimeout =>
+      _idle_timeout_nsec = t() * 1_000_000
+      if _connected and not _closed then
+        if _timer_event.is_null() then
+          _arm_idle_timer()
+        else
+          _reset_idle_timer()
+        end
+      end
+    | None =>
+      _idle_timeout_nsec = 0
+      if _connected and not _closed then
+        _cancel_idle_timer()
+      end
+    end
+
   fun local_address(): net.NetAddress =>
     """
     Return the local IP address. If this TCPConnection is closed then the
@@ -248,6 +289,7 @@ class TCPConnection
           c._on_connection_failure()
         end
       end
+      _cancel_idle_timer()
       return
     end
 
@@ -272,6 +314,7 @@ class TCPConnection
     end
     _pending_token = None
 
+    _cancel_idle_timer()
     PonyAsio.unsubscribe(_event)
     _set_unreadable()
     _set_unwriteable()
@@ -483,6 +526,8 @@ class TCPConnection
         _send_pending_writes()
       end
     end
+
+    _reset_idle_timer()
 
     // Determine when to fire _on_sent
     if not _has_pending_writes() then
@@ -749,6 +794,7 @@ class TCPConnection
 
   fun ref _read() =>
     ifdef posix then
+      _reset_idle_timer()
       match _lifecycle_event_receiver
       | let s: EitherLifecycleEventReceiver ref =>
         try
@@ -828,6 +874,7 @@ class TCPConnection
     available.
     """
     ifdef windows then
+      _reset_idle_timer()
       match _lifecycle_event_receiver
       | let s: EitherLifecycleEventReceiver ref =>
         if len == 0 then
@@ -943,6 +990,59 @@ class TCPConnection
       _Unreachable()
     end
 
+  fun ref _arm_idle_timer() =>
+    """
+    Create the ASIO timer event for idle timeout. Called when the connection
+    establishes and `_idle_timeout_nsec > 0`, or when `idle_timeout()` is
+    called on an established connection.
+    """
+    if _idle_timeout_nsec == 0 then return end
+    match _enclosing
+    | let e: TCPConnectionActor ref =>
+      _timer_event = PonyAsio.create_timer_event(e, _idle_timeout_nsec)
+    | None =>
+      _Unreachable()
+    end
+
+  fun ref _reset_idle_timer() =>
+    """
+    Reset the idle timer to the configured duration. Called on I/O activity
+    (successful send, data received). Only resets an existing timer — does
+    not create one.
+    """
+    if not _timer_event.is_null() then
+      PonyAsio.set_timer(_timer_event, _idle_timeout_nsec)
+    end
+
+  fun ref _cancel_idle_timer() =>
+    """
+    Cancel the idle timer. Unsubscribes and clears `_timer_event`
+    immediately. The stale disposable notification (if any) is handled by
+    the catch-all disposable handler in `_event_notify`'s else branch,
+    which destroys any unrecognized disposable event.
+    """
+    if not _timer_event.is_null() then
+      PonyAsio.unsubscribe(_timer_event)
+      _timer_event = AsioEvent.none()
+      _idle_timeout_nsec = 0
+    end
+
+  fun ref _fire_idle_timeout() =>
+    """
+    Dispatch _on_idle_timeout to the lifecycle event receiver, then re-arm
+    the timer if the connection is still open and the timeout is still
+    configured.
+    """
+    match _lifecycle_event_receiver
+    | let s: EitherLifecycleEventReceiver ref =>
+      s._on_idle_timeout()
+    | None =>
+      _Unreachable()
+    end
+    if is_open() and (_idle_timeout_nsec > 0) then
+      _reset_idle_timer()
+    end
+
   fun ref _ssl_flush_sends() =>
     """
     Flush any pending encrypted data from the SSL session to the wire.
@@ -1013,6 +1113,15 @@ class TCPConnection
     _pending_writev_total > 0
 
   fun ref _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
+    // Timer fired. Disposable events for cancelled timers never reach here
+    // because _cancel_idle_timer() clears _timer_event synchronously.
+    // Stale timer disposables route through the catch-all at the end of
+    // this method.
+    if event is _timer_event then
+      _fire_idle_timeout()
+      return
+    end
+
     if event is _event then
       if AsioEvent.writeable(flags) then
         _set_writeable()
@@ -1053,6 +1162,7 @@ class TCPConnection
               _connected = true
               _set_writeable()
               _set_readable()
+              _arm_idle_timer()
 
               match _ssl
               | let _: SSL ref =>
@@ -1187,6 +1297,7 @@ class TCPConnection
       _connected = true
       _set_readable()
       _set_writeable()
+      _arm_idle_timer()
 
       match _ssl
       | let _: SSL ref =>

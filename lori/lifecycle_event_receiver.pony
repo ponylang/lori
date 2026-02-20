@@ -85,6 +85,19 @@ trait ServerLifecycleEventReceiver
     """
     None
 
+  fun ref _on_idle_timeout() =>
+    """
+    Called when no successful send or receive has occurred for the duration
+    configured by `idle_timeout()`. This measures application-level inactivity,
+    not wire-level: pending OS write buffer drains and failed sends
+    (`SendErrorNotWriteable`) do not count as activity.
+
+    The timer automatically re-arms after each firing. Call
+    `idle_timeout(None)` to disable it. The application decides what action
+    to take — close the connection, send a keepalive, log a warning, etc.
+    """
+    None
+
 trait ClientLifecycleEventReceiver
   """
   Application-level callbacks for client-side TCP connections.
@@ -179,6 +192,19 @@ trait ClientLifecycleEventReceiver
     The connection was already established (the application received
     `_on_connected` earlier), so `_on_closed` always follows to signal
     connection teardown.
+    """
+    None
+
+  fun ref _on_idle_timeout() =>
+    """
+    Called when no successful send or receive has occurred for the duration
+    configured by `idle_timeout()`. This measures application-level inactivity,
+    not wire-level: pending OS write buffer drains and failed sends
+    (`SendErrorNotWriteable`) do not count as activity.
+
+    The timer automatically re-arms after each firing. Call
+    `idle_timeout(None)` to disable it. The application decides what action
+    to take — close the connection, send a keepalive, log a warning, etc.
     """
     None
 

@@ -14,6 +14,12 @@ Client and server exchanging messages in a loop. Adds a `ClientLifecycleEventRec
 
 Length-prefixed message framing with `expect()`. Each message has a 4-byte big-endian length header followed by a variable-length payload. Both sides use `expect()` to switch between reading the header and reading the payload, demonstrating how to build a protocol parser on top of lori's read chunking.
 
+## [idle-timeout](idle-timeout/)
+
+Server that closes connections after 10 seconds of inactivity. Demonstrates
+`idle_timeout()` for setting a per-connection timer and `_on_idle_timeout()`
+for handling the expiration — no extra actors or shared timers needed.
+
 ## [backpressure](backpressure/)
 
 Handling `send()` errors and throttle/unthrottle callbacks. A flood client sends 200 chunks of 64KB as fast as possible, demonstrating what happens when the OS send buffer fills: `send()` returns `SendErrorNotWriteable`, `_on_throttled` fires, and the client waits for `_on_unthrottled` to resume. Also shows `_on_sent` for tracking write completion.
