@@ -185,7 +185,7 @@ Design: Discussion #150.
 
 ### Idle timeout
 
-Per-connection idle timeout via ASIO timer events. The duration is an `IdleTimeout` constrained type (from `constrained_types` stdlib package) that guarantees a non-zero millisecond value (converted to nanoseconds internally). `idle_timeout()` accepts `(IdleTimeout | None)` where `None` disables the timer. Fields:
+Per-connection idle timeout via ASIO timer events. The duration is an `IdleTimeout` constrained type (from `constrained_types` stdlib package) that guarantees a millisecond value in the range 1 to 18,446,744,073,709 (`U64.max_value() / 1_000_000`). The upper bound prevents overflow when converting to nanoseconds internally. `idle_timeout()` accepts `(IdleTimeout | None)` where `None` disables the timer. Fields:
 
 - `_timer_event: AsioEventID` — the ASIO timer event, `AsioEvent.none()` when inactive.
 - `_idle_timeout_nsec: U64` — configured timeout duration in nanoseconds, 0 when disabled.
