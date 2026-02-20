@@ -10,29 +10,29 @@ primitive IdleTimeoutValidator is Validator[U64]
 
   Used by `MakeIdleTimeout` to construct `IdleTimeout` values.
   """
-  fun max_millis(): U64 =>
-    """
-    The maximum idle timeout in milliseconds. Values above this would
-    overflow U64 when converted to nanoseconds internally.
-    """
-    U64.max_value() / 1_000_000
-
   fun apply(value: U64): ValidationResult =>
     if value == 0 then
       recover val
         ValidationFailure(
           "idle timeout must be greater than zero")
       end
-    elseif value > max_millis() then
+    elseif value > _max_millis() then
       recover val
         ValidationFailure(
           "idle timeout must be at most "
-            + max_millis().string()
+            + _max_millis().string()
             + " milliseconds")
       end
     else
       ValidationSuccess
     end
+
+  fun _max_millis(): U64 =>
+    """
+    The maximum idle timeout in milliseconds. Values above this would
+    overflow U64 when converted to nanoseconds internally.
+    """
+    U64.max_value() / 1_000_000
 
 type IdleTimeout is Constrained[U64, IdleTimeoutValidator]
   """
