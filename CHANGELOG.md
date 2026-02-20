@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 
+- Fix wraparound error going from milli to nano in IdleTimeout ([PR #196](https://github.com/ponylang/lori/pull/196))
 
 ### Added
 
