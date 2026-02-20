@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 
+- Add per-connection idle timeout ([PR #194](https://github.com/ponylang/lori/pull/194))
 
 ### Changed
 
