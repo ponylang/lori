@@ -258,7 +258,7 @@ If it fails, `_on_tls_failure()` fires followed by `_on_closed()`.
 `idle_timeout()` sets a per-connection timer that fires when no data is sent
 or received for the configured duration. Idle timeout is disabled by default. The duration is an
 [`IdleTimeout`](/lori/lori-IdleTimeout/) value — a constrained type that
-guarantees a non-zero millisecond count. Pass `None` to disable:
+guarantees a millisecond value in the range 1 to 18,446,744,073,709. Pass `None` to disable:
 
 ```pony
 fun ref _on_started() =>
