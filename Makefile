@@ -56,7 +56,7 @@ endif
 PONYC := $(PONYC) $(SSL) $(LINKER)
 
 SOURCE_FILES := $(shell find $(SRC_DIR) -name *.pony)
-EXAMPLES := $(notdir $(shell find $(EXAMPLES_DIR)/* -type d))
+EXAMPLES := $(notdir $(shell find $(EXAMPLES_DIR)/* -maxdepth 0 -type d))
 EXAMPLES_SOURCE_FILES := $(shell find $(EXAMPLES_DIR) -name *.pony)
 EXAMPLES_BINARIES := $(addprefix $(BUILD_DIR)/,$(EXAMPLES))
 STRESS_TESTS := $(notdir $(shell find $(STRESS_TESTS_DIR)/* -type d))
