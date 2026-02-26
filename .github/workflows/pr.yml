@@ -71,6 +71,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4.1.1
+      - name: Runner info
+        run: |
+          Write-Host "RUNNER_NAME: $env:RUNNER_NAME"
+          Write-Host "ImageOS: $env:ImageOS"
+          Write-Host "ImageVersion: $env:ImageVersion"
+          systeminfo
       - name: Tune Windows Networking
         run: .ci-scripts\windows-configure-networking.ps1
       - name: Install Pony tools
