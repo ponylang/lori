@@ -84,20 +84,23 @@ jobs:
       - name: build SSL libs
         if: steps.restore-libs.outputs.cache-hit != 'true'
         run: .\make.ps1 -Command libs  2>&1;
+      - name: Install LLDB
+        run: |
+          function msys() { C:\msys64\usr\bin\bash.exe @('-lc') + @Args }; msys ' '; msys 'pacman --noconfirm -Syuu'; msys 'pacman --noconfirm -Syuu'; msys 'pacman --noconfirm -S --needed base-devel mingw-w64-x86_64-lldb'; msys 'pacman --noconfirm -Scc'
       - name: config=debug
         run: |
           $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
-          .\make.ps1 -Command test -Config Debug 2>&1;
-          .\make.ps1 -Command examples -Config Debug 2>&1;
+          .\make.ps1 -Command test -Config Debug -Uselldb yes 2>&1;
+          .\make.ps1 -Command examples -Config Debug -Uselldb yes 2>&1;
       - name: config=release
         run: |
           $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
-          .\make.ps1 -Command test -Config Release 2>&1;
-          .\make.ps1 -Command examples -Config Release 2>&1;
+          .\make.ps1 -Command test -Config Release -Uselldb yes 2>&1;
+          .\make.ps1 -Command examples -Config Release -Uselldb yes 2>&1;
       - name: build stress tests
         run: |
           $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
-          .\make.ps1 -Command stress-tests -Config Debug 2>&1;
+          .\make.ps1 -Command stress-tests -Config Debug -Uselldb yes 2>&1;
       - name: open/close stress test
         run: |
           $env:PATH = 'C:\ponyc\bin;' + $env:PATH;

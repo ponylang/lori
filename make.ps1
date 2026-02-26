@@ -68,10 +68,23 @@ function BuildTest
   {
     if ($testTimestamp -lt $file.LastWriteTimeUtc)
     {
-      Write-Host "corral fetch"
-      $output = (corral fetch)
-      $output | ForEach-Object { Write-Host $_ }
-      if ($LastExitCode -ne 0) { throw "Error" }
+      if ($Uselldb -eq "yes")
+      {
+        $lldbcmd = 'C:\msys64\mingw64\bin\lldb.exe'
+        $lldbargs = @('--batch', '--one-line', 'run', '--one-line-on-crash', '"frame variable"', '--one-line-on-crash', '"register read"', '--one-line-on-crash', '"bt all"', '--one-line-on-crash', '"quit 1"', '--')
+        Write-Host "corral fetch (via lldb)"
+        $lldboutput = & $lldbcmd $lldbargs 'C:\ponyc\bin\corral.exe' 'fetch'
+        Write-Output $lldboutput
+        $err = Get-ProcessExitCodeFromLLDB -LLDBOutput $lldboutput
+        if ($err -ne 0) { throw "Error during corral fetch (exit code: $err)" }
+      }
+      else
+      {
+        Write-Host "corral fetch"
+        $output = (corral fetch)
+        $output | ForEach-Object { Write-Host $_ }
+        if ($LastExitCode -ne 0) { throw "Error" }
+      }
 
       $testDir = Join-Path -Path $srcDir -ChildPath $testPath
       Write-Host "corral run -- ponyc $configFlag $ponyArgs --output `"$buildDir`" `"$testDir`""
@@ -161,10 +174,23 @@ function BuildExamples
         }
 
         if ($needsRebuild) {
-            Write-Host "corral fetch"
-            $output = (corral fetch)
-            $output | ForEach-Object { Write-Host $_ }
-            if ($LastExitCode -ne 0) { throw "Error during corral fetch" }
+            if ($Uselldb -eq "yes")
+            {
+                $lldbcmd = 'C:\msys64\mingw64\bin\lldb.exe'
+                $lldbargs = @('--batch', '--one-line', 'run', '--one-line-on-crash', '"frame variable"', '--one-line-on-crash', '"register read"', '--one-line-on-crash', '"bt all"', '--one-line-on-crash', '"quit 1"', '--')
+                Write-Host "corral fetch (via lldb)"
+                $lldboutput = & $lldbcmd $lldbargs 'C:\ponyc\bin\corral.exe' 'fetch'
+                Write-Output $lldboutput
+                $err = Get-ProcessExitCodeFromLLDB -LLDBOutput $lldboutput
+                if ($err -ne 0) { throw "Error during corral fetch (exit code: $err)" }
+            }
+            else
+            {
+                Write-Host "corral fetch"
+                $output = (corral fetch)
+                $output | ForEach-Object { Write-Host $_ }
+                if ($LastExitCode -ne 0) { throw "Error during corral fetch" }
+            }
 
             Write-Host "corral run -- ponyc $configFlag $ponyArgs --output `"$buildDir`" `"$($example.FullName)`""
             $output = (corral run -- ponyc $configFlag $ponyArgs --output "$buildDir" "$($example.FullName)")
