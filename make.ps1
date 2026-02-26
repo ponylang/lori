@@ -5,10 +5,29 @@ Param(
 
   [Parameter(HelpMessage="The build configuration (Release, Debug).")]
   [string]
-  $Config = "Release"
+  $Config = "Release",
+
+  [Parameter(HelpMessage="Whether or not to run corral fetch in LLDB debugger")]
+  [string]
+  $Uselldb = "no"
 )
 
 $ErrorActionPreference = "Stop"
+
+# Function to extract process exit code from LLDB output
+function Get-ProcessExitCodeFromLLDB {
+    param (
+        [string[]]$LLDBOutput
+    )
+
+    $processExitMatch = $LLDBOutput | Select-String -Pattern 'Process \d+ exited with status = (\d+)'
+    if ($processExitMatch.Matches.Count -gt 0) {
+        return [int]$processExitMatch.Matches[0].Groups[1].Value
+    } else {
+        # If we can't find the pattern, return LLDB's exit code
+        return $LastExitCode
+    }
+}
 
 $target = "lori"
 $testPath = "."
@@ -193,10 +212,23 @@ function BuildStressTests
         }
 
         if ($needsRebuild) {
-            Write-Host "corral fetch"
-            $output = (corral fetch)
-            $output | ForEach-Object { Write-Host $_ }
-            if ($LastExitCode -ne 0) { throw "Error during corral fetch" }
+            if ($Uselldb -eq "yes")
+            {
+                $lldbcmd = 'C:\msys64\mingw64\bin\lldb.exe'
+                $lldbargs = @('--batch', '--one-line', 'run', '--one-line-on-crash', '"frame variable"', '--one-line-on-crash', '"register read"', '--one-line-on-crash', '"bt all"', '--one-line-on-crash', '"quit 1"', '--')
+                Write-Host "corral fetch (via lldb)"
+                $lldboutput = & $lldbcmd $lldbargs 'C:\ponyc\bin\corral.exe' 'fetch'
+                Write-Output $lldboutput
+                $err = Get-ProcessExitCodeFromLLDB -LLDBOutput $lldboutput
+                if ($err -ne 0) { throw "Error during corral fetch (exit code: $err)" }
+            }
+            else
+            {
+                Write-Host "corral fetch"
+                $output = (corral fetch)
+                $output | ForEach-Object { Write-Host $_ }
+                if ($LastExitCode -ne 0) { throw "Error during corral fetch" }
+            }
 
             Write-Host "corral run -- ponyc $configFlag $ponyArgs --output `"$buildDir`" `"$($test.FullName)`""
             $output = (corral run -- ponyc $configFlag $ponyArgs --output "$buildDir" "$($test.FullName)")

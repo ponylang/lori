@@ -82,10 +82,13 @@ jobs:
       - name: Build SSL libs
         if: steps.restore-libs.outputs.cache-hit != 'true'
         run: .\make.ps1 -Command libs  2>&1;
+      - name: Install LLDB
+        run: |
+          function msys() { C:\msys64\usr\bin\bash.exe @('-lc') + @Args }; msys ' '; msys 'pacman --noconfirm -Syuu'; msys 'pacman --noconfirm -Syuu'; msys 'pacman --noconfirm -S --needed base-devel mingw-w64-x86_64-lldb'; msys 'pacman --noconfirm -Scc'
       - name: Build
         run: |
           $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
-          .\make.ps1 -Command stress-tests -Config Debug 2>&1;
+          .\make.ps1 -Command stress-tests -Config Debug -Uselldb yes 2>&1;
       - name: Run
         run: |
           $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
