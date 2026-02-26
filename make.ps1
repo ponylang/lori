@@ -73,7 +73,7 @@ function BuildTest
         $lldbcmd = 'C:\msys64\mingw64\bin\lldb.exe'
         $lldbargs = @('--batch', '--one-line', 'run', '--one-line-on-crash', 'frame variable', '--one-line-on-crash', 'register read', '--one-line-on-crash', 'bt all', '--one-line-on-crash', 'quit 1', '--')
         Write-Host "corral fetch (via lldb)"
-        $lldboutput = & $lldbcmd $lldbargs 'C:\ponyc\bin\corral.exe' 'fetch'
+        $lldboutput = & $lldbcmd $lldbargs 'C:\ponyc\bin\corral.exe' 'fetch' 2>&1
         Write-Output $lldboutput
         $err = Get-ProcessExitCodeFromLLDB -LLDBOutput $lldboutput
         if ($err -ne 0) { throw "Error during corral fetch (exit code: $err)" }
@@ -179,7 +179,7 @@ function BuildExamples
                 $lldbcmd = 'C:\msys64\mingw64\bin\lldb.exe'
                 $lldbargs = @('--batch', '--one-line', 'run', '--one-line-on-crash', 'frame variable', '--one-line-on-crash', 'register read', '--one-line-on-crash', 'bt all', '--one-line-on-crash', 'quit 1', '--')
                 Write-Host "corral fetch (via lldb)"
-                $lldboutput = & $lldbcmd $lldbargs 'C:\ponyc\bin\corral.exe' 'fetch'
+                $lldboutput = & $lldbcmd $lldbargs 'C:\ponyc\bin\corral.exe' 'fetch' 2>&1
                 Write-Output $lldboutput
                 $err = Get-ProcessExitCodeFromLLDB -LLDBOutput $lldboutput
                 if ($err -ne 0) { throw "Error during corral fetch (exit code: $err)" }
@@ -243,7 +243,7 @@ function BuildStressTests
                 $lldbcmd = 'C:\msys64\mingw64\bin\lldb.exe'
                 $lldbargs = @('--batch', '--one-line', 'run', '--one-line-on-crash', 'frame variable', '--one-line-on-crash', 'register read', '--one-line-on-crash', 'bt all', '--one-line-on-crash', 'quit 1', '--')
                 Write-Host "corral fetch (via lldb)"
-                $lldboutput = & $lldbcmd $lldbargs 'C:\ponyc\bin\corral.exe' 'fetch'
+                $lldboutput = & $lldbcmd $lldbargs 'C:\ponyc\bin\corral.exe' 'fetch' 2>&1
                 Write-Output $lldboutput
                 $err = Get-ProcessExitCodeFromLLDB -LLDBOutput $lldboutput
                 if ($err -ne 0) { throw "Error during corral fetch (exit code: $err)" }
