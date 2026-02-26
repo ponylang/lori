@@ -71,7 +71,7 @@ function BuildTest
       if ($Uselldb -eq "yes")
       {
         $lldbcmd = 'C:\msys64\mingw64\bin\lldb.exe'
-        $lldbargs = @('--batch', '--one-line', 'run', '--one-line-on-crash', '"frame variable"', '--one-line-on-crash', '"register read"', '--one-line-on-crash', '"bt all"', '--one-line-on-crash', '"quit 1"', '--')
+        $lldbargs = @('--batch', '--one-line', 'run', '--one-line-on-crash', 'frame variable', '--one-line-on-crash', 'register read', '--one-line-on-crash', 'bt all', '--one-line-on-crash', 'quit 1', '--')
         Write-Host "corral fetch (via lldb)"
         $lldboutput = & $lldbcmd $lldbargs 'C:\ponyc\bin\corral.exe' 'fetch'
         Write-Output $lldboutput
@@ -177,7 +177,7 @@ function BuildExamples
             if ($Uselldb -eq "yes")
             {
                 $lldbcmd = 'C:\msys64\mingw64\bin\lldb.exe'
-                $lldbargs = @('--batch', '--one-line', 'run', '--one-line-on-crash', '"frame variable"', '--one-line-on-crash', '"register read"', '--one-line-on-crash', '"bt all"', '--one-line-on-crash', '"quit 1"', '--')
+                $lldbargs = @('--batch', '--one-line', 'run', '--one-line-on-crash', 'frame variable', '--one-line-on-crash', 'register read', '--one-line-on-crash', 'bt all', '--one-line-on-crash', 'quit 1', '--')
                 Write-Host "corral fetch (via lldb)"
                 $lldboutput = & $lldbcmd $lldbargs 'C:\ponyc\bin\corral.exe' 'fetch'
                 Write-Output $lldboutput
@@ -241,7 +241,7 @@ function BuildStressTests
             if ($Uselldb -eq "yes")
             {
                 $lldbcmd = 'C:\msys64\mingw64\bin\lldb.exe'
-                $lldbargs = @('--batch', '--one-line', 'run', '--one-line-on-crash', '"frame variable"', '--one-line-on-crash', '"register read"', '--one-line-on-crash', '"bt all"', '--one-line-on-crash', '"quit 1"', '--')
+                $lldbargs = @('--batch', '--one-line', 'run', '--one-line-on-crash', 'frame variable', '--one-line-on-crash', 'register read', '--one-line-on-crash', 'bt all', '--one-line-on-crash', 'quit 1', '--')
                 Write-Host "corral fetch (via lldb)"
                 $lldboutput = & $lldbcmd $lldbargs 'C:\ponyc\bin\corral.exe' 'fetch'
                 Write-Output $lldboutput
