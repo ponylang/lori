@@ -1,0 +1,4 @@
+[language-server.pony-lsp.config]
+defines = [
+  "openssl_3.0.x",
+]
