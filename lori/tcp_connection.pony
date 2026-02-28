@@ -966,12 +966,15 @@ class TCPConnection
     might be never.
 
     Called from the `_read_again()` behavior, which is deferred — the
-    connection may have closed between the yield and the resume. The `_closed`
-    guard handles this (mirrors the `_readable`/`_shutdown_peer` guard in
-    POSIX `_read()`).
+    connection may have fully closed between the yield and the resume. The
+    `_connected` guard catches the post-`hard_close()` case (where
+    `_on_closed` has already fired and we must not deliver `_on_received`).
+    We intentionally do NOT check `_closed` here: after a graceful `close()`,
+    `_closed` is true but `_connected` is still true — we still need to
+    submit an IOCP read to detect the peer's FIN and finish shutdown.
     """
     ifdef windows then
-      if _closed then return end
+      if not _connected then return end
       match _lifecycle_event_receiver
       | let s: EitherLifecycleEventReceiver ref =>
         while not _muted and _there_is_buffered_read_data() do
