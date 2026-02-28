@@ -284,6 +284,32 @@ This is independent of TCP keepalive (`keepalive()`). TCP keepalive is a
 transport-level dead-peer probe. Idle timeout is application-level inactivity
 detection.
 
+## Read Yielding
+
+Under sustained inbound traffic, a single connection's read loop can
+monopolize the Pony scheduler. `yield_read()` lets the application exit the
+read loop cooperatively, giving other actors a chance to run. Reading resumes
+automatically in the next scheduler turn — no explicit `unmute()` is needed.
+
+```pony
+fun ref _on_received(data: Array[U8] iso) =>
+  _received_count = _received_count + 1
+
+  // Yield every 10 messages to let other actors run
+  if (_received_count % 10) == 0 then
+    _tcp_connection.yield_read()
+  end
+```
+
+Unlike `mute()`/`unmute()`, which persistently stop reading until reversed,
+`yield_read()` is a one-shot pause: the read loop resumes on its own. The
+application calls it from `_on_received()` and can implement any yield policy
+(message count, byte threshold, time-based, etc.).
+
+For SSL connections, `yield_read()` operates at TCP-read granularity. All
+SSL-decrypted messages from a single TCP read are delivered before the yield
+takes effect.
+
 ## Connection Limits
 
 `TCPListener` accepts an optional `limit` parameter to cap the number of

@@ -52,6 +52,7 @@ examples/
   net-ssl-echo-server/      -- SSL echo server
   net-ssl-infinite-ping-pong/ -- SSL ping-pong
   starttls-ping-pong/       -- STARTTLS upgrade from plaintext to TLS
+  yield-read/               -- Cooperative scheduler fairness with yield_read()
 stress-tests/
   open-close/               -- Connection open/close stress test
 ```
@@ -197,13 +198,27 @@ Lifecycle:
 - **Cancel point**: `hard_close()` in both the not-connected branch (before `return`) and the connected branch (before `PonyAsio.unsubscribe(_event)`).
 - **Event dispatch**: Identity check `event is _timer_event` at the top of `_event_notify`, before the main `event is _event` check. Returns immediately after firing. `_timer_event` is cleared synchronously in `_cancel_idle_timer()`, so stale disposable events for cancelled timers route through the existing catch-all at the end of `_event_notify` (which calls `PonyAsio.destroy`).
 
+### Read yielding
+
+`yield_read()` lets the application exit the read loop cooperatively, giving other actors a chance to run. Reading resumes automatically in the next scheduler turn via `_read_again()`. Field:
+
+- `_yield_read: Bool` — set by `yield_read()`, cleared by the yield check in the dispatch loop.
+
+The yield check is placed immediately after `_deliver_received()` in three locations:
+
+- **POSIX `_read()`**: Inside the inner `while not _muted and _there_is_buffered_read_data()` loop. When triggered, calls `e._read_again()` and returns, exiting both inner and outer loops. On resume, `_read()` re-enters and processes remaining buffered data before reading from the socket.
+- **Windows `_read_completed()`**: Same position. The return skips the `_queue_read()` at the end — resumption happens via `_read_again()` instead.
+- **Windows `_windows_resume_read()`**: Mirrors the `_read_completed()` dispatch loop. Needed because on Windows, yielding with unprocessed buffered data and just calling `_queue_read()` (which submits an IOCP read) would leave the buffered data unprocessed until new data arrives from the peer. `_windows_resume_read()` processes buffered data first, then submits the IOCP read.
+
+**SSL granularity**: `yield_read()` operates at TCP-read granularity. All SSL-decrypted messages from a single `ssl.receive()` call are delivered inside `_ssl_poll()` before the yield check fires. Per-SSL-message yielding would require changes to `_ssl_poll()` and handling partially-consumed SSL buffers on resume.
+
 ### Platform differences
 
 POSIX and Windows (IOCP) have distinct code paths throughout `TCPConnection`, guarded by `ifdef posix`/`ifdef windows`. POSIX uses edge-triggered oneshot events with resubscription; Windows uses IOCP completion callbacks.
 
 ## Future Work
 
-- **TCPConnection refactoring**: `tcp_connection.pony` has multiple interleaved state machines encoded as boolean flags (`_connected`, `_closed`, `_shutdown`, `_shutdown_peer`, `_ssl_ready`, `_ssl_failed`, `_throttled`, `_readable`, `_writeable`, `_muted`). Valid state combinations aren't obvious and invalid combinations aren't prevented. `_event_notify` is particularly dense — it handles own-event vs Happy Eyeballs events with nested platform and SSL branching. Design: Discussion #174 — proposes explicit connection lifecycle state objects (inspired by ponylang/postgres) to replace the lifecycle boolean flags. Decisions recorded as comments on the discussion. Readable/writeable/throttled remain as flags (flow control, not lifecycle gates). SSL state deferred to a future iteration.
+- **TCPConnection refactoring**: `tcp_connection.pony` has multiple interleaved state machines encoded as boolean flags (`_connected`, `_closed`, `_shutdown`, `_shutdown_peer`, `_ssl_ready`, `_ssl_failed`, `_throttled`, `_readable`, `_writeable`, `_muted`, `_yield_read`). Valid state combinations aren't obvious and invalid combinations aren't prevented. `_event_notify` is particularly dense — it handles own-event vs Happy Eyeballs events with nested platform and SSL branching. Design: Discussion #174 — proposes explicit connection lifecycle state objects (inspired by ponylang/postgres) to replace the lifecycle boolean flags. Decisions recorded as comments on the discussion. Readable/writeable/throttled remain as flags (flow control, not lifecycle gates). SSL state deferred to a future iteration.
 
 
 ## Conventions

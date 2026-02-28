@@ -12,10 +12,14 @@ trait tag TCPConnectionActor is AsioEventNotify
 
   be _read_again() =>
     """
-    Resume reading
+    Resume reading. On POSIX, re-enters the read loop which processes buffered
+    data and reads from the socket. On Windows, processes buffered data first
+    then submits a new IOCP read.
     """
     ifdef posix then
       _connection()._read()
+    else
+      _connection()._windows_resume_read()
     end
 
   be _register_spawner(listener: TCPListenerActor) =>
