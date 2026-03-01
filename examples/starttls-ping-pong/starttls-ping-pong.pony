@@ -103,7 +103,7 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
     if msg == "STARTTLS" then
       _out.print("Server: received STARTTLS, sending OK and upgrading")
       _tcp_connection.send("OK")
-      match \exhaustive\ _tcp_connection.start_tls(_sslctx)
+      match _tcp_connection.start_tls(_sslctx)
       | let err: StartTLSError =>
         _out.print("Server: start_tls failed")
       end
@@ -145,7 +145,7 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
     let msg = String.from_array(consume data)
     if msg == "OK" then
       _out.print("Client: received OK, upgrading to TLS")
-      match \exhaustive\ _tcp_connection.start_tls(_sslctx, "127.0.0.1")
+      match _tcp_connection.start_tls(_sslctx, "127.0.0.1")
       | let err: StartTLSError =>
         _out.print("Client: start_tls failed")
       end
