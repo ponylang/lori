@@ -58,7 +58,7 @@ actor IdleTimeoutEchoer
 
   fun ref _on_started() =>
     _out.print("Connection established. 10-second idle timeout active.")
-    match MakeIdleTimeout(10_000)
+    match \exhaustive\ MakeIdleTimeout(10_000)
     | let t: IdleTimeout =>
       _tcp_connection.idle_timeout(t)
     end

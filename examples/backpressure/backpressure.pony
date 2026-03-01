@@ -107,7 +107,7 @@ actor Flood is (TCPConnectionActor & ClientLifecycleEventReceiver)
     when backpressure makes the socket unwriteable.
     """
     while _sends_accepted < _total_to_send do
-      match _tcp_connection.send(_chunk)
+      match \exhaustive\ _tcp_connection.send(_chunk)
       | let token: SendToken =>
         _sends_accepted = _sends_accepted + 1
       | SendErrorNotWriteable =>

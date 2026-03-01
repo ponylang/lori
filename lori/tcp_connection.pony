@@ -182,7 +182,7 @@ class TCPConnection
     application-level inactivity detection — it fires whether or not the
     peer is alive.
     """
-    match duration
+    match \exhaustive\ duration
     | let t: IdleTimeout =>
       _idle_timeout_nsec = t() * 1_000_000
       if _connected and not _closed then
@@ -252,9 +252,9 @@ class TCPConnection
     _yield_read = true
 
   fun ref expect(qty: USize) ? =>
-    match _lifecycle_event_receiver
+    match \exhaustive\ _lifecycle_event_receiver
     | let _: EitherLifecycleEventReceiver =>
-      let final_qty = match _ssl
+      let final_qty = match \exhaustive\ _ssl
       | let _: SSL ref =>
         // Store the application's expect value for SSL read chunking.
         // Tell the TCP read layer to read all available (0) since SSL
@@ -361,9 +361,9 @@ class TCPConnection
       ssl.dispose()
     end
 
-    match _lifecycle_event_receiver
+    match \exhaustive\ _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
-      match _ssl
+      match \exhaustive\ _ssl
       | let _: SSL ref =>
         if not _ssl_ready then
           // _tls_upgrade distinguishes initial SSL (constructor) from
@@ -385,7 +385,7 @@ class TCPConnection
             // Initial SSL handshake never completed. For clients, the
             // application never learned the connection existed. For servers,
             // the connection never started.
-            match s
+            match \exhaustive\ s
             | let c: ClientLifecycleEventReceiver ref =>
               c._on_connection_failure(ConnectionFailedSSL)
             | let srv: ServerLifecycleEventReceiver ref =>
@@ -404,7 +404,7 @@ class TCPConnection
 
     match _lifecycle_event_receiver
     | let e: ServerLifecycleEventReceiver ref =>
-      match _spawned_by
+      match \exhaustive\ _spawned_by
       | let spawner: TCPListenerActor =>
         spawner._connection_closed()
         _spawned_by = None
@@ -431,7 +431,7 @@ class TCPConnection
       return false
     end
 
-    match _ssl
+    match \exhaustive\ _ssl
     | let _: SSL box => _ssl_ready
     | None => true
     end
@@ -483,7 +483,7 @@ class TCPConnection
     end
 
     let ssl = try
-      match _lifecycle_event_receiver
+      match \exhaustive\ _lifecycle_event_receiver
       | let _: ClientLifecycleEventReceiver ref =>
         ssl_ctx.client(host)?
       | let _: ServerLifecycleEventReceiver ref =>
@@ -533,9 +533,9 @@ class TCPConnection
     _next_token_id = _next_token_id + 1
     let token = SendToken._create(_next_token_id)
 
-    match _ssl
+    match \exhaustive\ _ssl
     | let ssl: SSL ref =>
-      match data
+      match \exhaustive\ data
       | let d: ByteSeq =>
         try ssl.write(d)? end
       | let d: ByteSeqIter =>
@@ -550,7 +550,7 @@ class TCPConnection
         return SendErrorNotConnected
       end
     | None =>
-      match data
+      match \exhaustive\ data
       | let d: ByteSeq =>
         _enqueue(d)
       | let d: ByteSeqIter =>
@@ -570,7 +570,7 @@ class TCPConnection
     // Determine when to fire _on_sent
     if not _has_pending_writes() then
       // All data sent to OS immediately; defer _on_sent
-      match _enclosing
+      match \exhaustive\ _enclosing
       | let e: TCPConnectionActor ref =>
         e._notify_sent(token)
       | None =>
@@ -733,7 +733,7 @@ class TCPConnection
         match _pending_token
         | let t: SendToken =>
           _pending_token = None
-          match _enclosing
+          match \exhaustive\ _enclosing
           | let e: TCPConnectionActor ref =>
             e._notify_sent(t)
           | None =>
@@ -802,7 +802,7 @@ class TCPConnection
         match _pending_token
         | let t: SendToken =>
           _pending_token = None
-          match _enclosing
+          match \exhaustive\ _enclosing
           | let e: TCPConnectionActor ref =>
             e._notify_sent(t)
           | None =>
@@ -827,7 +827,7 @@ class TCPConnection
     Route incoming data through SSL decryption (if present) or directly
     to the lifecycle event receiver.
     """
-    match _ssl
+    match \exhaustive\ _ssl
     | let ssl: SSL ref =>
       ssl.receive(consume data)
       _ssl_poll(s)
@@ -838,7 +838,7 @@ class TCPConnection
   fun ref _read() =>
     ifdef posix then
       _reset_idle_timer()
-      match _lifecycle_event_receiver
+      match \exhaustive\ _lifecycle_event_receiver
       | let s: EitherLifecycleEventReceiver ref =>
         try
           var total_bytes_read: USize = 0
@@ -870,7 +870,7 @@ class TCPConnection
               // takes effect relative to application callbacks.
               if _yield_read then
                 _yield_read = false
-                match _enclosing
+                match \exhaustive\ _enclosing
                 | let e: TCPConnectionActor ref => e._read_again()
                 | None => _Unreachable()
                 end
@@ -930,7 +930,7 @@ class TCPConnection
     """
     ifdef windows then
       _reset_idle_timer()
-      match _lifecycle_event_receiver
+      match \exhaustive\ _lifecycle_event_receiver
       | let s: EitherLifecycleEventReceiver ref =>
         if len == 0 then
           // The socket has been closed from the other side, or a hard close has
@@ -962,7 +962,7 @@ class TCPConnection
           // takes effect relative to application callbacks.
           if _yield_read then
             _yield_read = false
-            match _enclosing
+            match \exhaustive\ _enclosing
             | let e: TCPConnectionActor ref => e._read_again()
             | None => _Unreachable()
             end
@@ -998,7 +998,7 @@ class TCPConnection
     """
     ifdef windows then
       if not _connected then return end
-      match _lifecycle_event_receiver
+      match \exhaustive\ _lifecycle_event_receiver
       | let s: EitherLifecycleEventReceiver ref =>
         while not _muted and _there_is_buffered_read_data() do
           let chop_at = if _expect == 0 then
@@ -1016,7 +1016,7 @@ class TCPConnection
           // takes effect relative to application callbacks.
           if _yield_read then
             _yield_read = false
-            match _enclosing
+            match \exhaustive\ _enclosing
             | let e: TCPConnectionActor ref => e._read_again()
             | None => _Unreachable()
             end
@@ -1048,7 +1048,7 @@ class TCPConnection
   fun ref _queue_read() =>
     ifdef posix then
       // Trigger a read in case we ignored any previous ASIO notifications
-      match _enclosing
+      match \exhaustive\ _enclosing
       | let e: TCPConnectionActor ref =>
         e._read_again()
         return
@@ -1060,7 +1060,7 @@ class TCPConnection
     end
 
   fun ref _apply_backpressure() =>
-    match _lifecycle_event_receiver
+    match \exhaustive\ _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver =>
       if not _throttled then
         _throttled = true
@@ -1077,7 +1077,7 @@ class TCPConnection
     end
 
   fun ref _release_backpressure() =>
-    match _lifecycle_event_receiver
+    match \exhaustive\ _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver =>
       if _throttled then
         _throttled = false
@@ -1092,7 +1092,7 @@ class TCPConnection
     Dispatch _on_sent to the lifecycle event receiver. Called from
     _notify_sent behavior on TCPConnectionActor.
     """
-    match _lifecycle_event_receiver
+    match \exhaustive\ _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
       s._on_sent(token)
     | None =>
@@ -1104,7 +1104,7 @@ class TCPConnection
     Dispatch _on_send_failed to the lifecycle event receiver. Called from
     _notify_send_failed behavior on TCPConnectionActor.
     """
-    match _lifecycle_event_receiver
+    match \exhaustive\ _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
       s._on_send_failed(token)
     | None =>
@@ -1118,7 +1118,7 @@ class TCPConnection
     called on an established connection.
     """
     if _idle_timeout_nsec == 0 then return end
-    match _enclosing
+    match \exhaustive\ _enclosing
     | let e: TCPConnectionActor ref =>
       _timer_event = PonyAsio.create_timer_event(e, _idle_timeout_nsec)
     | None =>
@@ -1154,7 +1154,7 @@ class TCPConnection
     the timer if the connection is still open and the timeout is still
     configured.
     """
-    match _lifecycle_event_receiver
+    match \exhaustive\ _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
       s._on_idle_timeout()
     | None =>
@@ -1202,7 +1202,7 @@ class TCPConnection
           if _tls_upgrade then
             s._on_tls_ready()
           else
-            match s
+            match \exhaustive\ s
             | let c: ClientLifecycleEventReceiver ref =>
               c._on_connected()
             | let srv: ServerLifecycleEventReceiver ref =>
@@ -1221,7 +1221,7 @@ class TCPConnection
 
       // Read all available decrypted data
       while true do
-        match ssl.read(_ssl_expect)
+        match \exhaustive\ ssl.read(_ssl_expect)
         | let d: Array[U8] iso => s._on_received(consume d)
         | None => break
         end
@@ -1286,7 +1286,7 @@ class TCPConnection
               _set_readable()
               _arm_idle_timer()
 
-              match _ssl
+              match \exhaustive\ _ssl
               | let _: SSL ref =>
                 // Flush ClientHello to initiate SSL handshake
                 _ssl_flush_sends()
@@ -1332,7 +1332,7 @@ class TCPConnection
     end
 
   fun ref _connecting_callback() =>
-    match _lifecycle_event_receiver
+    match \exhaustive\ _lifecycle_event_receiver
     | let c: ClientLifecycleEventReceiver ref =>
       if _inflight_connections > 0 then
         c._on_connecting(_inflight_connections)
@@ -1371,7 +1371,7 @@ class TCPConnection
     end
 
   fun ref _finish_initialization() =>
-    match _lifecycle_event_receiver
+    match \exhaustive\ _lifecycle_event_receiver
     | let s: ServerLifecycleEventReceiver ref =>
       _complete_server_initialization(s)
     | let c: ClientLifecycleEventReceiver ref =>
@@ -1388,7 +1388,7 @@ class TCPConnection
       return
     end
 
-    match _enclosing
+    match \exhaustive\ _enclosing
     | let e: TCPConnectionActor ref =>
       let asio_flags = ifdef windows then
         AsioEvent.read_write()
@@ -1414,7 +1414,7 @@ class TCPConnection
       return
     end
 
-    match _enclosing
+    match \exhaustive\ _enclosing
     | let e: TCPConnectionActor ref =>
       _event = PonyAsio.create_event(e, _fd)
       _connected = true
@@ -1422,7 +1422,7 @@ class TCPConnection
       _set_writeable()
       _arm_idle_timer()
 
-      match _ssl
+      match \exhaustive\ _ssl
       | let _: SSL ref =>
         // Flush any initial SSL data (usually no-op for servers)
         _ssl_flush_sends()

@@ -709,7 +709,7 @@ actor \nodoc\ _TestSendTokenClient
 
   fun ref _on_connected() =>
     _h.complete_action("client connected")
-    match _tcp_connection.send("hello")
+    match \exhaustive\ _tcp_connection.send("hello")
     | let token: SendToken =>
       _expected_token = token
     | let _: SendError =>
@@ -718,7 +718,7 @@ actor \nodoc\ _TestSendTokenClient
     end
 
   fun ref _on_sent(token: SendToken) =>
-    match _expected_token
+    match \exhaustive\ _expected_token
     | let expected: SendToken =>
       _h.assert_true(token == expected, "token mismatch")
       _h.complete_action("on_sent fired")
@@ -809,7 +809,7 @@ actor \nodoc\ _TestSendAfterCloseClient
   fun ref _on_connected() =>
     _h.complete_action("client connected")
     _tcp_connection.close()
-    match _tcp_connection.send("should fail")
+    match \exhaustive\ _tcp_connection.send("should fail")
     | let _: SendToken =>
       _h.fail("send() should have returned an error after close")
       _h.complete(false)
@@ -1560,7 +1560,7 @@ actor \nodoc\ _TestSendvClient
 
   fun ref _on_connected() =>
     _h.complete_action("client connected")
-    match _tcp_connection.send(
+    match \exhaustive\ _tcp_connection.send(
       recover val [as ByteSeq: "Hello"; ", "; "world!"] end)
     | let token: SendToken =>
       _expected_token = token
@@ -1570,7 +1570,7 @@ actor \nodoc\ _TestSendvClient
     end
 
   fun ref _on_sent(token: SendToken) =>
-    match _expected_token
+    match \exhaustive\ _expected_token
     | let expected: SendToken =>
       _h.assert_true(token == expected, "token mismatch")
       _h.complete_action("on_sent fired")
@@ -1667,7 +1667,7 @@ actor \nodoc\ _TestSendvEmptyClient
 
   fun ref _on_connected() =>
     _h.complete_action("client connected")
-    match _tcp_connection.send(
+    match \exhaustive\ _tcp_connection.send(
       recover val Array[ByteSeq] end)
     | let token: SendToken =>
       _expected_token = token
@@ -1677,7 +1677,7 @@ actor \nodoc\ _TestSendvEmptyClient
     end
 
   fun ref _on_sent(token: SendToken) =>
-    match _expected_token
+    match \exhaustive\ _expected_token
     | let expected: SendToken =>
       _h.assert_true(token == expected, "token mismatch")
       _h.complete_action("on_sent fired")
@@ -1871,7 +1871,7 @@ actor \nodoc\ _TestSSLSendvClient
 
   fun ref _on_connected() =>
     _h.complete_action("client connected")
-    match _tcp_connection.send(
+    match \exhaustive\ _tcp_connection.send(
       recover val [as ByteSeq: "SSL "; "Hello"; " World"] end)
     | let token: SendToken =>
       _expected_token = token
@@ -1881,7 +1881,7 @@ actor \nodoc\ _TestSSLSendvClient
     end
 
   fun ref _on_sent(token: SendToken) =>
-    match _expected_token
+    match \exhaustive\ _expected_token
     | let expected: SendToken =>
       _h.assert_true(token == expected, "token mismatch")
       _h.complete_action("on_sent fired")
