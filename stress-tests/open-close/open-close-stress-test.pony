@@ -254,7 +254,7 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
     _logger(ll.Fine) and _logger.log("Client Connected.")
     _tcp_connection.send("Hi there!")
 
-  fun ref _on_connection_failure() =>
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     _logger(ll.Fine) and _logger.log("Client Connection Failure.")
     _spawner.failed(this)
 

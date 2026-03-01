@@ -183,7 +183,7 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
       end
     end
 
-  fun ref _on_connection_failure() =>
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     _out.print("Client: connection failed")
 
   fun ref _on_closed() =>

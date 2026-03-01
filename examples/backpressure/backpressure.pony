@@ -150,7 +150,7 @@ actor Flood is (TCPConnectionActor & ClientLifecycleEventReceiver)
   fun ref _on_send_failed(token: SendToken) =>
     _out.print("Flood: send failed (connection closed with pending write)")
 
-  fun ref _on_connection_failure() =>
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     _out.print("Flood: connection failed")
 
   fun ref _on_closed() =>

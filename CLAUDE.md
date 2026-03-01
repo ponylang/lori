@@ -35,6 +35,9 @@ lori/
   lifecycle_event_receiver.pony -- Client/ServerLifecycleEventReceiver traits
   send_token.pony           -- SendToken class, SendError primitives and type alias
   start_tls_error.pony      -- StartTLSError primitives and type alias
+  connection_failure_reason.pony -- ConnectionFailureReason primitives and type alias
+  start_failure_reason.pony -- StartFailureReason primitive and type alias
+  tls_failure_reason.pony   -- TLSFailureReason primitives and type alias
   idle_timeout.pony         -- IdleTimeout constrained type and validator
   auth.pony                 -- Auth primitives (NetAuth, TCPAuth, TCPListenAuth, etc.)
   pony_tcp.pony             -- FFI wrappers for pony_os_* TCP functions
@@ -65,7 +68,7 @@ Lori separates connection logic (class) from actor scheduling (trait):
 
 1. **`TCPConnection`** (class) — All TCP state and I/O logic including SSL. Created with `TCPConnection.client(...)`, `TCPConnection.server(...)`, `TCPConnection.ssl_client(...)`, or `TCPConnection.ssl_server(...)`. Existing plaintext connections can be upgraded to TLS via `start_tls()`. Not an actor itself.
 2. **`TCPConnectionActor`** (trait) — The actor trait users implement. Requires `fun ref _connection(): TCPConnection`. Provides behaviors that delegate to the TCPConnection: `_event_notify`, `_read_again`, `dispose`, etc.
-3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_start_failure`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_throttled`/`_on_unthrottled`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure`, `_on_idle_timeout`.
+3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure(reason)`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure(reason)`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_start_failure(reason)`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure(reason)`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_throttled`/`_on_unthrottled`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure`, `_on_idle_timeout`.
 
 ### How to implement a server
 
@@ -126,17 +129,17 @@ actor MySSLClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
   fun ref _on_connected() => // SSL handshake complete, ready for data
 ```
 
-SSL is handled internally by `TCPConnection`. The `ssl_client`/`ssl_server` constructors create an `SSL` session from the provided `SSLContext val`, perform the handshake transparently, and deliver `_on_connected`/`_on_started` only after the handshake completes. If SSL session creation fails, `_on_connection_failure()` (client) or `_on_start_failure()` (server) fires asynchronously. If the handshake fails, `hard_close()` triggers the same failure callbacks.
+SSL is handled internally by `TCPConnection`. The `ssl_client`/`ssl_server` constructors create an `SSL` session from the provided `SSLContext val`, perform the handshake transparently, and deliver `_on_connected`/`_on_started` only after the handshake completes. If SSL session creation fails, `_on_connection_failure(ConnectionFailedSSL)` (client) or `_on_start_failure(StartFailedSSL)` (server) fires asynchronously. If the handshake fails, `hard_close()` triggers the same failure callbacks.
 
 ### SSL internals
 
-SSL state lives directly in `TCPConnection` (fields `_ssl`, `_ssl_ready`, `_ssl_failed`, `_ssl_expect`). Key behaviors:
+SSL state lives directly in `TCPConnection` (fields `_ssl`, `_ssl_ready`, `_ssl_failed`, `_ssl_expect`, `_ssl_auth_failed`). Key behaviors:
 
 - **0-to-N output per input on both sides:** Both read and write can produce zero, one, or many output chunks per input chunk. During handshake, output may be zero (buffered). A single TCP read containing multiple SSL records produces multiple decrypted chunks.
 - **`_ssl_poll()` pump:** Called after `ssl.receive()` in `_deliver_received()`. Checks SSL state, delivers decrypted data to the lifecycle event receiver, and flushes encrypted protocol data (handshake responses, etc.) via `_ssl_flush_sends()`.
 - **Client handshake initiation:** When TCP connects, `_ssl_flush_sends()` sends the ClientHello. The handshake proceeds via `_deliver_received()` → `ssl.receive()` → `_ssl_poll()`.
 - **Ready signaling:** `_ssl_ready` is set when `ssl.state()` returns `SSLReady`, which triggers `_on_connected`/`_on_started` delivery.
-- **Error handling:** `SSLAuthFail` or `SSLError` states trigger `hard_close()`. If the handshake never completed, clients get `_on_connection_failure()` and servers get `_on_start_failure()`.
+- **Error handling:** `SSLAuthFail` sets `_ssl_auth_failed = true` then triggers `hard_close()`. `SSLError` triggers `hard_close()` directly. `hard_close()` reads `_ssl_auth_failed` to pass `TLSAuthFailed` vs `TLSGeneralError` to `_on_tls_failure` (for TLS upgrades), or `ConnectionFailedSSL`/`StartFailedSSL` to `_on_connection_failure`/`_on_start_failure` (for initial SSL). If the handshake never completed, clients get `_on_connection_failure(ConnectionFailedSSL)` and servers get `_on_start_failure(StartFailedSSL)`.
 - **Expect handling:** The application's `expect()` value is stored in `_ssl_expect` and used when chunking decrypted data via `ssl.read()`. The TCP read layer uses 0 (read all available) since SSL record framing doesn't align with application framing.
 
 ### TLS upgrade (STARTTLS)
@@ -144,7 +147,7 @@ SSL state lives directly in `TCPConnection` (fields `_ssl`, `_ssl_ready`, `_ssl_
 `start_tls(ssl_ctx, host)` upgrades an established plaintext connection to TLS. It creates an SSL session, migrates expect state (`_ssl_expect = _expect; _expect = 0`), sets `_tls_upgrade = true`, and flushes the ClientHello. The `_tls_upgrade` flag distinguishes "initial SSL from constructor" vs "upgraded SSL from start_tls()":
 
 - **`_ssl_poll()`**: When `SSLReady` is reached and `_tls_upgrade` is true, calls `_on_tls_ready()` instead of `_on_connected()`/`_on_started()`.
-- **`hard_close()`**: When SSL handshake is incomplete and `_tls_upgrade` is true, calls `_on_tls_failure()` then `_on_closed()` (the application already knew about the plaintext connection). Without `_tls_upgrade`, the initial-SSL path fires `_on_connection_failure()`/`_on_start_failure()` instead.
+- **`hard_close()`**: When SSL handshake is incomplete and `_tls_upgrade` is true, calls `_on_tls_failure(reason)` (where `reason` is `TLSAuthFailed` or `TLSGeneralError` based on `_ssl_auth_failed`) then `_on_closed()` (the application already knew about the plaintext connection). Without `_tls_upgrade`, the initial-SSL path fires `_on_connection_failure(ConnectionFailedSSL)`/`_on_start_failure(StartFailedSSL)` instead.
 
 Preconditions enforced synchronously: connection must be open, not already TLS, not muted, no buffered read data (CVE-2021-23222), no pending writes. Returns `StartTLSError` on failure (connection unchanged). The "no pending writes" check is platform-aware: on POSIX it checks `_has_pending_writes()` (any unconfirmed bytes); on Windows IOCP it checks for un-submitted data only (`_pending_data.size() > _pending_sent`), since submitted-but-unconfirmed writes are already in the kernel's send buffer.
 
@@ -183,6 +186,16 @@ The write path uses an enqueue-then-flush pattern:
 `PonyTCP.writev` takes `Array[ByteSeq] box` and builds `iovec` (POSIX) or `WSABUF` (Windows) arrays internally, hiding the platform-specific tuple layout. Returns bytes sent (POSIX) or buffer count submitted (Windows).
 
 Design: Discussion #150.
+
+### Failure reason types
+
+Failure callbacks carry a reason parameter identifying the failure cause. Three type aliases, each following the `start_tls_error.pony` pattern (primitives + type alias):
+
+- **`ConnectionFailureReason`** (`_on_connection_failure`): `ConnectionFailedDNS` (name resolution failed, no TCP attempts), `ConnectionFailedTCP` (resolved but all TCP connections failed), `ConnectionFailedSSL` (TCP connected but SSL handshake failed). The DNS/TCP distinction uses `_had_inflight` (set after `PonyTCP.connect` returns > 0).
+- **`StartFailureReason`** (`_on_start_failure`): `StartFailedSSL` (SSL session creation or handshake failure). Currently a single-variant type — future reasons (e.g. resource limits) can be added without breaking the type alias.
+- **`TLSFailureReason`** (`_on_tls_failure`): `TLSAuthFailed` (certificate/auth error), `TLSGeneralError` (protocol error). The distinction uses `_ssl_auth_failed` (set by `_ssl_poll()` on `SSLAuthFail` before calling `hard_close()`).
+
+Design: Discussion #201.
 
 ### Idle timeout
 

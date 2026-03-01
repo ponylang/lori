@@ -115,7 +115,7 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _on_tls_ready() =>
     _out.print("Server: TLS handshake complete")
 
-  fun ref _on_tls_failure() =>
+  fun ref _on_tls_failure(reason: TLSFailureReason) =>
     _out.print("Server: TLS handshake failed")
 
 actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
@@ -158,5 +158,5 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
     _out.print("Client: TLS handshake complete, sending first Ping")
     _tcp_connection.send("Ping")
 
-  fun ref _on_tls_failure() =>
+  fun ref _on_tls_failure(reason: TLSFailureReason) =>
     _out.print("Client: TLS handshake failed")

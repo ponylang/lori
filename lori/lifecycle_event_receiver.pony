@@ -58,12 +58,16 @@ trait ServerLifecycleEventReceiver
     """
     None
 
-  fun ref _on_start_failure() =>
+  fun ref _on_start_failure(reason: StartFailureReason) =>
     """
     Called when a server connection fails to start. This covers failures
     that occur before _on_started would have fired, such as an SSL
     handshake failure. The application was never notified of the connection
     via _on_started.
+
+    The `reason` parameter identifies the cause of the failure. Currently
+    the only reason is `StartFailedSSL` (SSL session creation or handshake
+    failure).
     """
     None
 
@@ -75,13 +79,16 @@ trait ServerLifecycleEventReceiver
     """
     None
 
-  fun ref _on_tls_failure() =>
+  fun ref _on_tls_failure(reason: TLSFailureReason) =>
     """
     Called when a TLS handshake initiated by `start_tls()` fails. Fires
     synchronously during `hard_close()`, immediately before `_on_closed()`.
     The connection was already established (the application received
     `_on_started` earlier), so `_on_closed` always follows to signal
     connection teardown.
+
+    The `reason` parameter distinguishes authentication failures
+    (`TLSAuthFailed`) from other protocol errors (`TLSGeneralError`).
     """
     None
 
@@ -110,7 +117,7 @@ trait ClientLifecycleEventReceiver
     Called if name resolution succeeded for a TCPConnection and we are now
     waiting for a connection to the server to succeed. The count is the number
     of connections we're trying. This callback will be called each time the
-    count changes, until a connection is made or _on_connection_failure() is
+    count changes, until a connection is made or _on_connection_failure is
     called.
     """
     None
@@ -121,12 +128,17 @@ trait ClientLifecycleEventReceiver
     """
     None
 
-  fun ref _on_connection_failure() =>
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     """
     Called when a connection fails to open. For SSL connections, this is
     also called when the SSL handshake fails before _on_connected would
     have been delivered, since the application was never notified of the
     connection.
+
+    The `reason` parameter identifies the failure stage:
+    `ConnectionFailedDNS` (name resolution failed), `ConnectionFailedTCP`
+    (resolved but all TCP attempts failed), or `ConnectionFailedSSL`
+    (TCP connected but SSL handshake failed).
     """
     None
 
@@ -185,13 +197,16 @@ trait ClientLifecycleEventReceiver
     """
     None
 
-  fun ref _on_tls_failure() =>
+  fun ref _on_tls_failure(reason: TLSFailureReason) =>
     """
     Called when a TLS handshake initiated by `start_tls()` fails. Fires
     synchronously during `hard_close()`, immediately before `_on_closed()`.
     The connection was already established (the application received
     `_on_connected` earlier), so `_on_closed` always follows to signal
     connection teardown.
+
+    The `reason` parameter distinguishes authentication failures
+    (`TLSAuthFailed`) from other protocol errors (`TLSGeneralError`).
     """
     None
 

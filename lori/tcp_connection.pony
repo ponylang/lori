@@ -45,6 +45,13 @@ class TCPConnection
   // correct callbacks (_on_tls_ready/_on_tls_failure vs
   // _on_connected/_on_started/_on_connection_failure/_on_start_failure).
   var _tls_upgrade: Bool = false
+  // Set when PonyTCP.connect returned > 0, meaning at least one TCP
+  // connection attempt was made. Used by the failure callback to distinguish
+  // DNS failure (no attempts) from TCP failure (all attempts failed).
+  var _had_inflight: Bool = false
+  // Set when _ssl_poll() sees SSLAuthFail before calling hard_close().
+  // hard_close() reads this to pass TLSAuthFailed vs TLSGeneralError.
+  var _ssl_auth_failed: Bool = false
 
   // Per-connection idle timeout via ASIO timer
   var _timer_event: AsioEventID = AsioEvent.none()
@@ -96,7 +103,7 @@ class TCPConnection
     """
     Create a client-side SSL connection. The SSL session is created from the
     provided SSLContext. If session creation fails, the connection reports
-    failure asynchronously via _on_connection_failure().
+    failure asynchronously via _on_connection_failure(ConnectionFailedSSL).
     """
     _lifecycle_event_receiver = ler
     _enclosing = enclosing
@@ -123,7 +130,8 @@ class TCPConnection
     """
     Create a server-side SSL connection. The SSL session is created from the
     provided SSLContext. If session creation fails, the connection reports
-    failure asynchronously via _on_start_failure() and closes the fd.
+    failure asynchronously via _on_start_failure(StartFailedSSL) and closes the
+    fd.
     """
     _fd = fd'
     _lifecycle_event_receiver = ler
@@ -276,7 +284,7 @@ class TCPConnection
     During the connecting phase (Happy Eyeballs in progress), marks the
     connection as closed so straggler events clean up instead of establishing
     a connection. Once all in-flight connections have drained,
-    `_on_connection_failure()` fires.
+    `_on_connection_failure` fires.
 
     If the connection is established and not muted, we won't finish closing
     until we get a zero length read. If the connection is muted, perform a
@@ -306,7 +314,12 @@ class TCPConnection
         end
         match _lifecycle_event_receiver
         | let c: ClientLifecycleEventReceiver ref =>
-          c._on_connection_failure()
+          let reason = if _had_inflight then
+            ConnectionFailedTCP
+          else
+            ConnectionFailedDNS
+          end
+          c._on_connection_failure(reason)
         end
       end
       _cancel_idle_timer()
@@ -361,7 +374,12 @@ class TCPConnection
             // TLS upgrade handshake failed. The application already received
             // _on_connected/_on_started for the original plaintext connection,
             // so _on_closed must follow for cleanup.
-            s._on_tls_failure()
+            let reason = if _ssl_auth_failed then
+              TLSAuthFailed
+            else
+              TLSGeneralError
+            end
+            s._on_tls_failure(reason)
             s._on_closed()
           else
             // Initial SSL handshake never completed. For clients, the
@@ -369,9 +387,9 @@ class TCPConnection
             // the connection never started.
             match s
             | let c: ClientLifecycleEventReceiver ref =>
-              c._on_connection_failure()
+              c._on_connection_failure(ConnectionFailedSSL)
             | let srv: ServerLifecycleEventReceiver ref =>
-              srv._on_start_failure()
+              srv._on_start_failure(StartFailedSSL)
             end
           end
         else
@@ -433,7 +451,7 @@ class TCPConnection
 
     On success, `_on_tls_ready()` fires when the handshake completes. During
     the handshake, `send()` returns `SendErrorNotConnected`. If the handshake
-    fails, `_on_tls_failure()` fires followed by `_on_closed()`.
+    fails, `_on_tls_failure` fires followed by `_on_closed()`.
 
     The `host` parameter is used for SNI (Server Name Indication) on client
     connections. Pass an empty string for server connections or when SNI is
@@ -594,7 +612,12 @@ class TCPConnection
         end
         match _lifecycle_event_receiver
         | let c: ClientLifecycleEventReceiver ref =>
-          c._on_connection_failure()
+          let reason = if _had_inflight then
+            ConnectionFailedTCP
+          else
+            ConnectionFailedDNS
+          end
+          c._on_connection_failure(reason)
         end
         return
       end
@@ -1188,6 +1211,7 @@ class TCPConnection
           end
         end
       | SSLAuthFail =>
+        _ssl_auth_failed = true
         hard_close()
         return
       | SSLError =>
@@ -1360,7 +1384,7 @@ class TCPConnection
     s: ClientLifecycleEventReceiver ref)
   =>
     if _ssl_failed then
-      s._on_connection_failure()
+      s._on_connection_failure(ConnectionFailedSSL)
       return
     end
 
@@ -1373,6 +1397,7 @@ class TCPConnection
       end
 
       _inflight_connections = PonyTCP.connect(e, _host, _port, _from, asio_flags)
+      _had_inflight = _inflight_connections > 0
       _connecting_callback()
     | None =>
       _Unreachable()
@@ -1385,7 +1410,7 @@ class TCPConnection
       PonyTCP.close(_fd)
       _fd = -1
       _closed = true
-      s._on_start_failure()
+      s._on_start_failure(StartFailedSSL)
       return
     end
 

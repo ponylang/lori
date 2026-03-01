@@ -106,7 +106,7 @@ actor MyClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
   fun ref _on_connected() =>
     _tcp_connection.send("Hello, server!")
 
-  fun ref _on_connection_failure() =>
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     // All connection attempts failed
     None
 
@@ -119,7 +119,9 @@ Clients use `ClientLifecycleEventReceiver` instead of
 `ServerLifecycleEventReceiver`. The key difference is the connection lifecycle:
 clients get `_on_connecting` (called as connection attempts are in progress),
 `_on_connected` (ready for data), and `_on_connection_failure` (all attempts
-failed). Servers get `_on_started` (ready for data) and `_on_start_failure`.
+failed, with a [`ConnectionFailureReason`](/lori/lori-ConnectionFailureReason/)
+indicating the failure stage). Servers get `_on_started` (ready for data) and
+`_on_start_failure`.
 
 ## Sending Data
 
@@ -189,7 +191,7 @@ actor SSLEchoer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _on_received(data: Array[U8] iso) =>
     _tcp_connection.send(consume data)
 
-  fun ref _on_start_failure() =>
+  fun ref _on_start_failure(reason: StartFailureReason) =>
     // SSL handshake failed
     None
 ```
@@ -197,9 +199,11 @@ actor SSLEchoer is (TCPConnectionActor & ServerLifecycleEventReceiver)
 SSL is handled entirely inside `TCPConnection`. The handshake runs
 transparently after the TCP connection is established, and `_on_connected`
 (client) or `_on_started` (server) fires only after the handshake completes. If
-the handshake fails, clients get `_on_connection_failure` and servers get
-`_on_start_failure`. The rest of the application code (sending, receiving,
-closing) is identical to the non-SSL case.
+the handshake fails, clients get `_on_connection_failure` (with
+[`ConnectionFailedSSL`](/lori/lori-ConnectionFailedSSL/)) and servers get
+`_on_start_failure` (with [`StartFailedSSL`](/lori/lori-StartFailedSSL/)).
+The rest of the application code (sending, receiving, closing) is identical
+to the non-SSL case.
 
 ## TLS Upgrade (STARTTLS)
 
@@ -241,7 +245,7 @@ actor MyStartTLSClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
     // TLS handshake complete — now sending encrypted data
     _tcp_connection.send("encrypted payload")
 
-  fun ref _on_tls_failure() =>
+  fun ref _on_tls_failure(reason: TLSFailureReason) =>
     // TLS handshake failed — _on_closed will follow
     None
 ```
@@ -251,7 +255,9 @@ actor MyStartTLSClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
 connection must be open, not already TLS, not muted, and have no buffered read
 data or pending writes. During the handshake, `send()` returns
 `SendErrorNotConnected`. When the handshake completes, `_on_tls_ready()` fires.
-If it fails, `_on_tls_failure()` fires followed by `_on_closed()`.
+If it fails, `_on_tls_failure` fires (with a
+[`TLSFailureReason`](/lori/lori-TLSFailureReason/) distinguishing
+authentication errors from protocol errors) followed by `_on_closed()`.
 
 ## Idle Timeout
 
