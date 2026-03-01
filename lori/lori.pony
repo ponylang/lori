@@ -129,7 +129,7 @@ Unlike many networking libraries, `send()` is fallible. It returns
 `(SendToken | SendError)` rather than silently dropping data:
 
 ```pony
-match \exhaustive\ _tcp_connection.send("some data")
+match _tcp_connection.send("some data")
 | let token: SendToken =>
   // Data accepted. token will arrive in _on_sent when fully written.
   None
@@ -236,7 +236,7 @@ actor MyStartTLSClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
     let msg = String.from_array(consume data)
     if msg == "OK" then
       // Server agreed to upgrade — initiate TLS handshake
-      match \exhaustive\ _tcp_connection.start_tls(_sslctx, "localhost")
+      match _tcp_connection.start_tls(_sslctx, "localhost")
       | let err: StartTLSError => None // handle error
       end
     end
@@ -269,7 +269,7 @@ guarantees a millisecond value in the range 1 to 18,446,744,073,709. Pass `None`
 ```pony
 fun ref _on_started() =>
   // Close connections idle for more than 30 seconds
-  match \exhaustive\ MakeIdleTimeout(30_000)
+  match MakeIdleTimeout(30_000)
   | let t: IdleTimeout =>
     _tcp_connection.idle_timeout(t)
   end
