@@ -28,7 +28,7 @@ class TCPListener
     _enclosing = None
 
   fun ref close() =>
-    match _enclosing
+    match \exhaustive\ _enclosing
     | let e: TCPListenerActor ref =>
       // TODO: when in debug mode we should blow up if listener is closed
       if _listening then
@@ -70,7 +70,7 @@ class TCPListener
     end
 
   fun ref _accept(arg: U32 = 0) =>
-    match _enclosing
+    match \exhaustive\ _enclosing
     | let e: TCPListenerActor ref =>
       if _listening then
         ifdef windows then
@@ -140,7 +140,7 @@ class TCPListener
     end
 
   fun _at_connection_limit(): Bool =>
-    match _limit
+    match \exhaustive\ _limit
     | let l: U32 => _open_connections >= l
     | None => false
     end
@@ -153,7 +153,7 @@ class TCPListener
     end
 
   fun ref _finish_initialization() =>
-    match _enclosing
+    match \exhaustive\ _enclosing
     | let e: TCPListenerActor ref =>
       _event = PonyTCP.listen(e, _host, _port)
       if not _event.is_null() then
