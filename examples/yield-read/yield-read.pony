@@ -103,7 +103,7 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
       i = i + 1
     end
 
-  fun ref _on_connection_failure() =>
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     _out.print("Client: connection failed")
 
   fun ref _on_closed() =>

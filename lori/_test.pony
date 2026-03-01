@@ -68,7 +68,7 @@ actor \nodoc\ _TestOutgoingFailure is (TCPConnectionActor & ClientLifecycleEvent
     _h.fail("_on_connected for a connection that should have failed")
     _h.complete(false)
 
-  fun ref _on_connection_failure() =>
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     _h.complete(true)
 
 class \nodoc\ iso _TestPingPong is UnitTest
@@ -484,7 +484,7 @@ actor \nodoc\ _TestMuteClient
   fun ref _on_connected() =>
     _h.complete_action("client connected")
 
-  fun ref _on_connection_failure() =>
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     _h.fail("client connect failed")
 
   fun ref _on_received(data: Array[U8] iso) =>
@@ -607,7 +607,7 @@ actor \nodoc\ _TestUnmuteClient
   fun ref _on_connected() =>
     _h.complete_action("client connected")
 
-  fun ref _on_connection_failure() =>
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     _h.fail("client connect failed")
 
   fun ref _on_received(data: Array[U8] iso) =>
@@ -1065,7 +1065,7 @@ actor \nodoc\ _TestStartTLSClient
     try _tcp_connection.expect(4)? end
     _tcp_connection.send("Ping")
 
-  fun ref _on_tls_failure() =>
+  fun ref _on_tls_failure(reason: TLSFailureReason) =>
     _h.fail("Client TLS handshake failed")
 
 actor \nodoc\ _TestStartTLSServer
@@ -1110,7 +1110,7 @@ actor \nodoc\ _TestStartTLSServer
     _h.complete_action("server tls ready")
     try _tcp_connection.expect(4)? end
 
-  fun ref _on_tls_failure() =>
+  fun ref _on_tls_failure(reason: TLSFailureReason) =>
     _h.fail("Server TLS handshake failed")
 
 actor \nodoc\ _TestStartTLSListener is TCPListenerActor
@@ -1353,7 +1353,7 @@ actor \nodoc\ _TestStartTLSPreconditionsListener is TCPListenerActor
 class \nodoc\ iso _TestHardCloseWhileConnecting is UnitTest
   """
   Test that hard_close() during the connecting phase fires
-  _on_connection_failure() and prevents the connection from going live.
+  _on_connection_failure and prevents the connection from going live.
   """
   fun name(): String => "HardCloseWhileConnecting"
 
@@ -1390,7 +1390,7 @@ actor \nodoc\ _TestHardCloseWhileConnectingClient
     _h.fail("_on_connected should not fire after hard_close")
     _h.complete(false)
 
-  fun ref _on_connection_failure() =>
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     _h.complete_action("connection failure")
 
 actor \nodoc\ _TestHardCloseWhileConnectingListener is TCPListenerActor
@@ -1424,7 +1424,7 @@ actor \nodoc\ _TestHardCloseWhileConnectingListener is TCPListenerActor
 class \nodoc\ iso _TestCloseWhileConnecting is UnitTest
   """
   Test that close() during the connecting phase fires
-  _on_connection_failure() and prevents the connection from going live.
+  _on_connection_failure and prevents the connection from going live.
   """
   fun name(): String => "CloseWhileConnecting"
 
@@ -1461,7 +1461,7 @@ actor \nodoc\ _TestCloseWhileConnectingClient
     _h.fail("_on_connected should not fire after close")
     _h.complete(false)
 
-  fun ref _on_connection_failure() =>
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     _h.complete_action("connection failure")
 
 actor \nodoc\ _TestCloseWhileConnectingListener is TCPListenerActor
