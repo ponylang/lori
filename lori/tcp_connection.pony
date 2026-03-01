@@ -10,6 +10,7 @@ class TCPConnection
   var _readable: Bool = false
   var _writeable: Bool = false
   var _muted: Bool = false
+  var _yield_read: Bool = false
   // Happy Eyeballs
   var _inflight_connections: U32 = 0
 
@@ -222,6 +223,25 @@ class TCPConnection
     _muted = false
     // Trigger a read in case we ignored any previous ASIO notifications
     _queue_read()
+
+  fun ref yield_read() =>
+    """
+    Request the read loop to exit after the current `_on_received` callback
+    returns, giving other actors a chance to run. Reading resumes automatically
+    in the next scheduler turn — no explicit `unmute()` is needed.
+
+    Call this from within `_on_received()` to implement application-level yield
+    policies (e.g. yield after N messages, after N bytes, or after a time
+    threshold). Unlike `mute()`/`unmute()`, which persistently stop reading
+    until reversed, `yield_read()` is a one-shot pause: the read loop resumes
+    on its own.
+
+    For SSL connections, `yield_read()` operates at TCP-read granularity. All
+    SSL-decrypted messages from a single TCP read are delivered before the yield
+    takes effect, because the inner dispatch loop runs exactly once per TCP read
+    when SSL is active.
+    """
+    _yield_read = true
 
   fun ref expect(qty: USize) ? =>
     match _lifecycle_event_receiver
@@ -821,6 +841,18 @@ class TCPConnection
               _bytes_in_read_buffer = _bytes_in_read_buffer - bytes_to_consume
 
               _deliver_received(s, consume data')
+
+              // COUPLING: This check must remain immediately after
+              // _deliver_received() — moving it would change when the yield
+              // takes effect relative to application callbacks.
+              if _yield_read then
+                _yield_read = false
+                match _enclosing
+                | let e: TCPConnectionActor ref => e._read_again()
+                | None => _Unreachable()
+                end
+                return
+              end
             end
 
             if total_bytes_read >= _read_buffer_size then
@@ -901,6 +933,72 @@ class TCPConnection
           _bytes_in_read_buffer = _bytes_in_read_buffer - chop_at
 
           _deliver_received(s, consume data)
+
+          // COUPLING: This check must remain immediately after
+          // _deliver_received() — moving it would change when the yield
+          // takes effect relative to application callbacks.
+          if _yield_read then
+            _yield_read = false
+            match _enclosing
+            | let e: TCPConnectionActor ref => e._read_again()
+            | None => _Unreachable()
+            end
+            return
+          end
+
+          _resize_read_buffer_if_needed()
+        end
+
+        _queue_read()
+      | None =>
+        _Unreachable()
+      end
+    else
+      _Unreachable()
+    end
+
+  fun ref _windows_resume_read() =>
+    """
+    Resume reading after a yield on Windows. Processes any buffered data first,
+    then submits an IOCP read for new data. Without this, yielding with
+    unprocessed buffered data and calling `_queue_read()` directly would leave
+    the buffered data unprocessed until new data arrives from the peer — which
+    might be never.
+
+    Called from the `_read_again()` behavior, which is deferred — the
+    connection may have fully closed between the yield and the resume. The
+    `_connected` guard catches the post-`hard_close()` case (where
+    `_on_closed` has already fired and we must not deliver `_on_received`).
+    We intentionally do NOT check `_closed` here: after a graceful `close()`,
+    `_closed` is true but `_connected` is still true — we still need to
+    submit an IOCP read to detect the peer's FIN and finish shutdown.
+    """
+    ifdef windows then
+      if not _connected then return end
+      match _lifecycle_event_receiver
+      | let s: EitherLifecycleEventReceiver ref =>
+        while not _muted and _there_is_buffered_read_data() do
+          let chop_at = if _expect == 0 then
+            _bytes_in_read_buffer
+          else
+            _expect
+          end
+          (let data, _read_buffer) = (consume _read_buffer).chop(chop_at)
+          _bytes_in_read_buffer = _bytes_in_read_buffer - chop_at
+
+          _deliver_received(s, consume data)
+
+          // COUPLING: This check must remain immediately after
+          // _deliver_received() — moving it would change when the yield
+          // takes effect relative to application callbacks.
+          if _yield_read then
+            _yield_read = false
+            match _enclosing
+            | let e: TCPConnectionActor ref => e._read_again()
+            | None => _Unreachable()
+            end
+            return
+          end
 
           _resize_read_buffer_if_needed()
         end
