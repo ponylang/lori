@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 
+- Allow yielding during socket reads ([PR #200](https://github.com/ponylang/lori/pull/200))
 
 ### Changed
 
