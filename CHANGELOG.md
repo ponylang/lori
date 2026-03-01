@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Changed
 
+- Add structured failure reasons to connection callbacks ([PR #202](https://github.com/ponylang/lori/pull/202))
 
 ## [0.8.5] - 2026-02-20
 
