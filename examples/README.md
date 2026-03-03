@@ -6,6 +6,10 @@ Ordered from simplest to most involved. The plain TCP examples come first; the S
 
 Minimal lori server. Shows the `TCPListenerActor` + `TCPConnectionActor` + `ServerLifecycleEventReceiver` pattern: accept a connection, receive data, send it back. Start here to understand how lori's pieces fit together.
 
+## [ip-version](ip-version/)
+
+IPv4-only echo server with a built-in client. Shows how to use the `ip_version` parameter on both `TCPListener` and `TCPConnection.client` to restrict connections to a specific protocol version. The same approach works with `IP6` for IPv6-only connections.
+
 ## [infinite-ping-pong](infinite-ping-pong/)
 
 Client and server exchanging messages in a loop. Adds a `ClientLifecycleEventReceiver` client that connects, sends "Ping", and responds to every "Pong" — showing both sides of a TCP conversation.

@@ -81,8 +81,7 @@ actor Listener is TCPListenerActor
       _auth,
       host,
       port,
-      this,
-      _max_concurrent_connections)
+      this where limit = _max_concurrent_connections)
 
   be spawner_done() =>
     _tcp_listener.close()
