@@ -99,21 +99,17 @@ class TCPListener
           while not _at_connection_limit() do
             var fd = PonyTCP.accept(_event)
 
-            match fd
-            | -1 =>
-              // Wouldn't block but we got an error. Keep trying.
-              None
-            | 0 =>
-              // Would block. Bail out.
+            // 0: would block, -1: error
+            if fd <= 0 then
               return
+            end
+
+            try
+              let opened = e._on_accept(fd.u32())?
+              opened._register_spawner(e)
+              _open_connections = _open_connections + 1
             else
-              try
-                let opened = e._on_accept(fd)?
-                opened._register_spawner(e)
-                _open_connections = _open_connections + 1
-              else
-                PonyTCP.close(fd)
-              end
+              PonyTCP.close(fd.u32())
             end
           end
 

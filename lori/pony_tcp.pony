@@ -1,4 +1,4 @@
-use @pony_os_accept[U32](event: AsioEventID)
+use @pony_os_accept[I32](event: AsioEventID)
 use @pony_os_connect_tcp[U32](the_actor: AsioEventNotify,
   host: Pointer[U8] tag,
   port: Pointer[U8] tag,
@@ -36,7 +36,7 @@ primitive PonyTCP
   =>
     @pony_os_listen_tcp(the_actor, host.cstring(), port.cstring())
 
-  fun accept(event: AsioEventID): U32 =>
+  fun accept(event: AsioEventID): I32 =>
     @pony_os_accept(event)
 
   fun close(fd: U32) =>
