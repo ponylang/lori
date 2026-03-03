@@ -4,8 +4,24 @@ use @pony_os_connect_tcp[U32](the_actor: AsioEventNotify,
   port: Pointer[U8] tag,
   from: Pointer[U8] tag,
   asio_flags: U32)
+use @pony_os_connect_tcp4[U32](the_actor: AsioEventNotify,
+  host: Pointer[U8] tag,
+  port: Pointer[U8] tag,
+  from: Pointer[U8] tag,
+  asio_flags: U32)
+use @pony_os_connect_tcp6[U32](the_actor: AsioEventNotify,
+  host: Pointer[U8] tag,
+  port: Pointer[U8] tag,
+  from: Pointer[U8] tag,
+  asio_flags: U32)
 use @pony_os_keepalive[None](fd: U32, secs: U32)
 use @pony_os_listen_tcp[AsioEventID](the_actor: AsioEventNotify,
+  host: Pointer[U8] tag,
+  port: Pointer[U8] tag)
+use @pony_os_listen_tcp4[AsioEventID](the_actor: AsioEventNotify,
+  host: Pointer[U8] tag,
+  port: Pointer[U8] tag)
+use @pony_os_listen_tcp6[AsioEventID](the_actor: AsioEventNotify,
   host: Pointer[U8] tag,
   port: Pointer[U8] tag)
 use @pony_os_peername[Bool](fd: U32, ip: net.NetAddress tag)
@@ -31,10 +47,18 @@ use net = "net"
 primitive PonyTCP
   fun listen(the_actor: AsioEventNotify,
     host: String,
-    port: String)
+    port: String,
+    ip_version: IPVersion = DualStack)
     : AsioEventID
   =>
-    @pony_os_listen_tcp(the_actor, host.cstring(), port.cstring())
+    match ip_version
+    | IP4 =>
+      @pony_os_listen_tcp4(the_actor, host.cstring(), port.cstring())
+    | IP6 =>
+      @pony_os_listen_tcp6(the_actor, host.cstring(), port.cstring())
+    | DualStack =>
+      @pony_os_listen_tcp(the_actor, host.cstring(), port.cstring())
+    end
 
   fun accept(event: AsioEventID): I32 =>
     @pony_os_accept(event)
@@ -46,14 +70,30 @@ primitive PonyTCP
     host: String,
     port: String,
     from: String,
-    asio_flags: U32)
+    asio_flags: U32,
+    ip_version: IPVersion = DualStack)
     : U32
   =>
-    @pony_os_connect_tcp(the_actor,
-      host.cstring(),
-      port.cstring(),
-      from.cstring(),
-      asio_flags)
+    match ip_version
+    | IP4 =>
+      @pony_os_connect_tcp4(the_actor,
+        host.cstring(),
+        port.cstring(),
+        from.cstring(),
+        asio_flags)
+    | IP6 =>
+      @pony_os_connect_tcp6(the_actor,
+        host.cstring(),
+        port.cstring(),
+        from.cstring(),
+        asio_flags)
+    | DualStack =>
+      @pony_os_connect_tcp(the_actor,
+        host.cstring(),
+        port.cstring(),
+        from.cstring(),
+        asio_flags)
+    end
 
   fun keepalive(fd: U32, secs: U32) =>
     @pony_os_keepalive(fd, secs)

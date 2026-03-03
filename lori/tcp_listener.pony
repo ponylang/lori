@@ -7,6 +7,7 @@ class TCPListener
   let _host: String
   let _port: String
   let _limit: MaxSpawn
+  let _ip_version: IPVersion
   var _open_connections: U32 = 0
   var _paused: Bool = false
   var _event: AsioEventID = AsioEvent.none()
@@ -14,9 +15,13 @@ class TCPListener
   var _listening: Bool = false
   var _enclosing: (TCPListenerActor ref | None)
 
-  new create(auth: TCPListenAuth, host: String, port: String, enclosing: TCPListenerActor ref, limit: MaxSpawn = None) =>
+  new create(auth: TCPListenAuth, host: String, port: String,
+    enclosing: TCPListenerActor ref, ip_version: IPVersion = DualStack,
+    limit: MaxSpawn = None)
+  =>
     _host = host
     _port = port
+    _ip_version = ip_version
     _limit = limit
     _enclosing = enclosing
     enclosing._finish_initialization()
@@ -25,6 +30,7 @@ class TCPListener
     _host = ""
     _port = ""
     _limit = None
+    _ip_version = DualStack
     _enclosing = None
 
   fun ref close() =>
@@ -151,7 +157,7 @@ class TCPListener
   fun ref _finish_initialization() =>
     match \exhaustive\ _enclosing
     | let e: TCPListenerActor ref =>
-      _event = PonyTCP.listen(e, _host, _port)
+      _event = PonyTCP.listen(e, _host, _port where ip_version = _ip_version)
       if not _event.is_null() then
         _fd = PonyAsio.event_fd(_event)
         _listening = true

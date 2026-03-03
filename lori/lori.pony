@@ -323,11 +323,41 @@ concurrent connections:
 
 ```pony
 // Accept at most 100 connections at a time
-_tcp_listener = TCPListener(listen_auth, host, port, this, 100)
+_tcp_listener = TCPListener(listen_auth, host, port, this where limit = 100)
 ```
 
 When the limit is reached, the listener pauses accepting. As connections close,
 it resumes automatically. The default is no limit.
+
+## IP Version
+
+By default, lori uses dual-stack connections (both IPv4 and IPv6). To restrict
+a client or listener to a specific protocol version, pass an
+[`IPVersion`](/lori/lori-IPVersion/) parameter:
+
+```pony
+// IPv4-only listener
+_tcp_listener = TCPListener(listen_auth, "127.0.0.1", "7669", this
+  where ip_version = IP4)
+
+// IPv6-only client
+_tcp_connection = TCPConnection.client(auth, "::1", "7669", "", this, this
+  where ip_version = IP6)
+```
+
+[`IP4`](/lori/lori-IP4/) restricts to IPv4 only,
+[`IP6`](/lori/lori-IP6/) restricts to IPv6 only, and
+[`DualStack`](/lori/lori-DualStack/) (the default) allows both. The same
+parameter works on `ssl_client`:
+
+```pony
+_tcp_connection = TCPConnection.ssl_client(auth, sslctx, "127.0.0.1", "7669",
+  "", this, this where ip_version = IP4)
+```
+
+Server-side constructors (`server`, `ssl_server`) don't need this parameter —
+they accept an already-connected fd whose protocol version was determined by the
+listener.
 
 ## Auth Hierarchy
 

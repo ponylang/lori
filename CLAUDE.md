@@ -30,7 +30,7 @@ lori/
   lori.pony                 -- Package docstring (entry point for API documentation)
   tcp_connection.pony       -- TCPConnection class (core: read/write/connect/close/SSL)
   tcp_connection_actor.pony -- TCPConnectionActor trait (actor wrapper)
-  tcp_listener.pony         -- TCPListener class (accept loop, connection limits)
+  tcp_listener.pony         -- TCPListener class (accept loop, connection limits, ip_version)
   tcp_listener_actor.pony   -- TCPListenerActor trait (actor wrapper)
   lifecycle_event_receiver.pony -- Client/ServerLifecycleEventReceiver traits
   send_token.pony           -- SendToken class, SendError primitives and type alias
@@ -39,6 +39,7 @@ lori/
   start_failure_reason.pony -- StartFailureReason primitive and type alias
   tls_failure_reason.pony   -- TLSFailureReason primitives and type alias
   idle_timeout.pony         -- IdleTimeout constrained type and validator
+  ip_version.pony           -- IP4, IP6, DualStack primitives and IPVersion type alias
   auth.pony                 -- Auth primitives (NetAuth, TCPAuth, TCPListenAuth, etc.)
   pony_tcp.pony             -- FFI wrappers for pony_os_* TCP functions
   pony_asio.pony            -- FFI wrappers for pony_asio_event_* functions
@@ -52,6 +53,7 @@ examples/
   framed-protocol/          -- Length-prefixed framing with expect()
   idle-timeout/             -- Per-connection idle timeout
   infinite-ping-pong/       -- Ping-pong client+server
+  ip-version/               -- IPv4-only echo server
   net-ssl-echo-server/      -- SSL echo server
   net-ssl-infinite-ping-pong/ -- SSL ping-pong
   starttls-ping-pong/       -- STARTTLS upgrade from plaintext to TLS
@@ -66,7 +68,7 @@ stress-tests/
 
 Lori separates connection logic (class) from actor scheduling (trait):
 
-1. **`TCPConnection`** (class) — All TCP state and I/O logic including SSL. Created with `TCPConnection.client(...)`, `TCPConnection.server(...)`, `TCPConnection.ssl_client(...)`, or `TCPConnection.ssl_server(...)`. Existing plaintext connections can be upgraded to TLS via `start_tls()`. Not an actor itself.
+1. **`TCPConnection`** (class) — All TCP state and I/O logic including SSL. Created with `TCPConnection.client(...)`, `TCPConnection.server(...)`, `TCPConnection.ssl_client(...)`, or `TCPConnection.ssl_server(...)`. Client and SSL client constructors accept an optional `ip_version: IPVersion = DualStack` parameter to restrict to IPv4 (`IP4`) or IPv6 (`IP6`). Existing plaintext connections can be upgraded to TLS via `start_tls()`. Not an actor itself.
 2. **`TCPConnectionActor`** (trait) — The actor trait users implement. Requires `fun ref _connection(): TCPConnection`. Provides behaviors that delegate to the TCPConnection: `_event_notify`, `_read_again`, `dispose`, etc.
 3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure(reason)`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure(reason)`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_start_failure(reason)`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure(reason)`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_throttled`/`_on_unthrottled`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure`, `_on_idle_timeout`.
 

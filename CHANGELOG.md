@@ -11,8 +11,11 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 
+- Add IPv4-only and IPv6-only support ([PR #205](https://github.com/ponylang/lori/pull/205))
 
 ### Changed
+
+- Change TCPListener parameter order ([PR #205](https://github.com/ponylang/lori/pull/205))
 
 
 ## [0.9.0] - 2026-03-02

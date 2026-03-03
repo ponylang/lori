@@ -61,19 +61,22 @@ class TCPConnection
   var _host: String = ""
   var _port: String = ""
   var _from: String = ""
+  var _ip_version: IPVersion = DualStack
 
   new client(auth: TCPConnectAuth,
     host: String,
     port: String,
     from: String,
     enclosing: TCPConnectionActor ref,
-    ler: ClientLifecycleEventReceiver ref)
+    ler: ClientLifecycleEventReceiver ref,
+    ip_version: IPVersion = DualStack)
   =>
     _lifecycle_event_receiver = ler
     _enclosing = enclosing
     _host = host
     _port = port
     _from = from
+    _ip_version = ip_version
 
     _resize_read_buffer_if_needed()
 
@@ -98,7 +101,8 @@ class TCPConnection
     port: String,
     from: String,
     enclosing: TCPConnectionActor ref,
-    ler: ClientLifecycleEventReceiver ref)
+    ler: ClientLifecycleEventReceiver ref,
+    ip_version: IPVersion = DualStack)
   =>
     """
     Create a client-side SSL connection. The SSL session is created from the
@@ -110,6 +114,7 @@ class TCPConnection
     _host = host
     _port = port
     _from = from
+    _ip_version = ip_version
 
     try
       _ssl = ssl_ctx.client(host)?
@@ -1400,7 +1405,8 @@ class TCPConnection
         AsioEvent.read_write_oneshot()
       end
 
-      _inflight_connections = PonyTCP.connect(e, _host, _port, _from, asio_flags)
+      _inflight_connections = PonyTCP.connect(e, _host, _port, _from,
+        asio_flags where ip_version = _ip_version)
       _had_inflight = _inflight_connections > 0
       _connecting_callback()
     | None =>
