@@ -878,8 +878,12 @@ class TCPConnection
               end
             end
 
+            // Yield after reading a buffer's worth of data to allow GC and
+            // other actors to run. _queue_read() schedules _read_again to
+            // resume.
             if total_bytes_read >= _read_buffer_size then
               _queue_read()
+              return
             end
 
             _resize_read_buffer_if_needed()
