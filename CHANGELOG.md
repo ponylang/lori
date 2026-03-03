@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file. This projec
 ### Changed
 
 - Change TCPListener parameter order ([PR #205](https://github.com/ponylang/lori/pull/205))
+- Change MaxSpawn to a constrained type ([PR #210](https://github.com/ponylang/lori/pull/210))
+- Change default connection limit to 100,000 ([PR #210](https://github.com/ponylang/lori/pull/210))
 
 
 ## [0.9.0] - 2026-03-02

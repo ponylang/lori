@@ -45,5 +45,35 @@ If you were passing `limit` positionally:
 _tcp_listener = TCPListener(listen_auth, host, port, this, 100)
 
 // After
+match MakeMaxSpawn(100)
+| let limit: MaxSpawn =>
+  _tcp_listener = TCPListener(listen_auth, host, port, this where limit = limit)
+end
+```
+
+## Change MaxSpawn to a constrained type
+
+`MaxSpawn` is now a constrained type that rejects invalid values at construction time. Previously it was a bare `(U32 | None)` type alias, which meant a limit of 0 would silently create a listener that refused every connection. The new type guarantees the value is at least 1.
+
+```pony
+// Before — bare U32
 _tcp_listener = TCPListener(listen_auth, host, port, this where limit = 100)
+
+// After — construct via MakeMaxSpawn
+match MakeMaxSpawn(100)
+| let limit: MaxSpawn =>
+  _tcp_listener = TCPListener(listen_auth, host, port, this where limit = limit)
+end
+```
+
+## Change default connection limit to 100,000
+
+Listeners without an explicit `limit` parameter now cap at 100,000 concurrent connections (`DefaultMaxSpawn`) rather than having no limit. This is a safer default for production systems. Pass `None` to restore the old unlimited behavior:
+
+```pony
+// New default — 100,000 connections (no code change needed)
+_tcp_listener = TCPListener(listen_auth, host, port, this)
+
+// Restore old unlimited behavior
+_tcp_listener = TCPListener(listen_auth, host, port, this where limit = None)
 ```
