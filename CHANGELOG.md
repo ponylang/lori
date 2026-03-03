@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file. This projec
 ### Fixed
 
 - Fix accept loop spinning on persistent errors ([PR #208](https://github.com/ponylang/lori/pull/208))
+- Fix read loop not yielding after byte threshold ([PR #209](https://github.com/ponylang/lori/pull/209))
 
 ### Added
 
