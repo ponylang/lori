@@ -19,8 +19,13 @@ actor Main
     // this on macOS. See macOS-configure-networking.bash.
     let host = "localhost"
     let port = "7669"
-    let max_concurrent_connections =
-      Scheduler.schedulers(SchedulerInfoAuth(env.root))
+    let max_concurrent_connections = match MakeMaxSpawn(
+      Scheduler.schedulers(SchedulerInfoAuth(env.root)))
+    | let m: MaxSpawn => m
+    else
+      env.exitcode(1)
+      return
+    end
     let total_clients_to_spawn = try
       env.args(1)?.usize()?
     else
@@ -39,9 +44,9 @@ actor Main
       + total_clients_to_spawn.string()
       + " clients.")
     logger(ll.Info) and logger.log("Max concurrent connections is "
-      + max_concurrent_connections.string())
+      + max_concurrent_connections().string())
 
-    let spawner = ClientSpawner(max_concurrent_connections,
+    let spawner = ClientSpawner(max_concurrent_connections(),
       total_clients_to_spawn,
       TCPConnectAuth(env.root),
       host,
@@ -60,7 +65,7 @@ actor Main
      rto.ponynoscale = true
 
 actor Listener is TCPListenerActor
-  let _max_concurrent_connections: U32
+  let _max_concurrent_connections: MaxSpawn
   let _auth: TCPListenAuth
   let _logger: ll.Logger[String]
   let _spawner: ClientSpawner
@@ -70,7 +75,7 @@ actor Listener is TCPListenerActor
     host: String,
     port: String,
     logger: ll.Logger[String],
-    max_concurrent_connections: U32,
+    max_concurrent_connections: MaxSpawn,
     spawner: ClientSpawner)
   =>
     _logger = logger

@@ -40,6 +40,7 @@ lori/
   tls_failure_reason.pony   -- TLSFailureReason primitives and type alias
   idle_timeout.pony         -- IdleTimeout constrained type and validator
   ip_version.pony           -- IP4, IP6, DualStack primitives and IPVersion type alias
+  max_spawn.pony            -- MaxSpawn constrained type, validator, and default
   auth.pony                 -- Auth primitives (NetAuth, TCPAuth, TCPListenAuth, etc.)
   pony_tcp.pony             -- FFI wrappers for pony_os_* TCP functions
   pony_asio.pony            -- FFI wrappers for pony_asio_event_* functions

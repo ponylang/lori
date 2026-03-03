@@ -1,12 +1,10 @@
 use "collections"
 use net = "net"
 
-type MaxSpawn is (U32 | None)
-
 class TCPListener
   let _host: String
   let _port: String
-  let _limit: MaxSpawn
+  let _limit: (MaxSpawn | None)
   let _ip_version: IPVersion
   var _open_connections: U32 = 0
   var _paused: Bool = false
@@ -17,7 +15,7 @@ class TCPListener
 
   new create(auth: TCPListenAuth, host: String, port: String,
     enclosing: TCPListenerActor ref, ip_version: IPVersion = DualStack,
-    limit: MaxSpawn = None)
+    limit: (MaxSpawn | None) = DefaultMaxSpawn())
   =>
     _host = host
     _port = port
@@ -143,7 +141,7 @@ class TCPListener
 
   fun _at_connection_limit(): Bool =>
     match \exhaustive\ _limit
-    | let l: U32 => _open_connections >= l
+    | let l: MaxSpawn => _open_connections >= l()
     | None => false
     end
 

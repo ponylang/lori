@@ -319,15 +319,23 @@ takes effect.
 ## Connection Limits
 
 `TCPListener` accepts an optional `limit` parameter to cap the number of
-concurrent connections:
+concurrent connections. The default limit is 100,000 connections
+([`DefaultMaxSpawn`](/lori/lori-DefaultMaxSpawn/)). Pass `None` to disable the
+limit entirely:
 
 ```pony
-// Accept at most 100 connections at a time
-_tcp_listener = TCPListener(listen_auth, host, port, this where limit = 100)
+// Use a custom limit
+match MakeMaxSpawn(100)
+| let limit: MaxSpawn =>
+  _tcp_listener = TCPListener(listen_auth, host, port, this where limit = limit)
+end
+
+// No connection limit
+_tcp_listener = TCPListener(listen_auth, host, port, this where limit = None)
 ```
 
 When the limit is reached, the listener pauses accepting. As connections close,
-it resumes automatically. The default is no limit.
+it resumes automatically.
 
 ## IP Version
 

@@ -45,5 +45,8 @@ If you were passing `limit` positionally:
 _tcp_listener = TCPListener(listen_auth, host, port, this, 100)
 
 // After
-_tcp_listener = TCPListener(listen_auth, host, port, this where limit = 100)
+match MakeMaxSpawn(100)
+| let limit: MaxSpawn =>
+  _tcp_listener = TCPListener(listen_auth, host, port, this where limit = limit)
+end
 ```

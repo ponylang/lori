@@ -1,3 +1,4 @@
+use "constrained_types"
 use "pony_test"
 use "files"
 use "ssl/net"
@@ -35,6 +36,9 @@ actor \nodoc\ Main is TestList
     test(_TestYieldRead)
     test(_TestIP4PingPong)
     test(_TestIP6PingPong)
+    test(_TestMaxSpawnRejectsZero)
+    test(_TestMaxSpawnAcceptsBoundary)
+    test(_TestDefaultMaxSpawn)
 
 class \nodoc\ iso _TestOutgoingFails is UnitTest
   """
@@ -2591,3 +2595,38 @@ actor \nodoc\ _TestIP6PongerListener is TCPListenerActor
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestIP6PongerListener")
+
+class \nodoc\ iso _TestMaxSpawnRejectsZero is UnitTest
+  fun name(): String => "MaxSpawnRejectsZero"
+
+  fun apply(h: TestHelper) =>
+    match MakeMaxSpawn(0)
+    | let _: MaxSpawn =>
+      h.fail("MakeMaxSpawn(0) should return ValidationFailure")
+    | let _: ValidationFailure =>
+      h.assert_true(true)
+    end
+
+class \nodoc\ iso _TestMaxSpawnAcceptsBoundary is UnitTest
+  fun name(): String => "MaxSpawnAcceptsBoundary"
+
+  fun apply(h: TestHelper) =>
+    match MakeMaxSpawn(1)
+    | let m: MaxSpawn =>
+      h.assert_eq[U32](1, m())
+    | let _: ValidationFailure =>
+      h.fail("MakeMaxSpawn(1) should succeed")
+    end
+
+    match MakeMaxSpawn(U32.max_value())
+    | let m: MaxSpawn =>
+      h.assert_eq[U32](U32.max_value(), m())
+    | let _: ValidationFailure =>
+      h.fail("MakeMaxSpawn(U32.max_value()) should succeed")
+    end
+
+class \nodoc\ iso _TestDefaultMaxSpawn is UnitTest
+  fun name(): String => "DefaultMaxSpawn"
+
+  fun apply(h: TestHelper) =>
+    h.assert_eq[U32](100_000, DefaultMaxSpawn()())
