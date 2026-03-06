@@ -29,6 +29,7 @@ class TCPConnection
   var _read_buffer: Array[U8] iso = recover Array[U8] end
   var _bytes_in_read_buffer: USize = 0
   var _read_buffer_size: USize = 16384
+  var _read_buffer_min: USize = 16384
   var _expect: USize = 0
 
   // Send token tracking
@@ -69,6 +70,7 @@ class TCPConnection
     from: String,
     enclosing: TCPConnectionActor ref,
     ler: ClientLifecycleEventReceiver ref,
+    read_buffer_size: ReadBufferSize = DefaultReadBufferSize(),
     ip_version: IPVersion = DualStack)
   =>
     _lifecycle_event_receiver = ler
@@ -76,6 +78,8 @@ class TCPConnection
     _host = host
     _port = port
     _from = from
+    _read_buffer_size = read_buffer_size()
+    _read_buffer_min = read_buffer_size()
     _ip_version = ip_version
 
     _resize_read_buffer_if_needed()
@@ -85,11 +89,14 @@ class TCPConnection
   new server(auth: TCPServerAuth,
     fd': U32,
     enclosing: TCPConnectionActor ref,
-    ler: ServerLifecycleEventReceiver ref)
+    ler: ServerLifecycleEventReceiver ref,
+    read_buffer_size: ReadBufferSize = DefaultReadBufferSize())
   =>
     _fd = fd'
     _lifecycle_event_receiver = ler
     _enclosing = enclosing
+    _read_buffer_size = read_buffer_size()
+    _read_buffer_min = read_buffer_size()
 
     _resize_read_buffer_if_needed()
 
@@ -102,6 +109,7 @@ class TCPConnection
     from: String,
     enclosing: TCPConnectionActor ref,
     ler: ClientLifecycleEventReceiver ref,
+    read_buffer_size: ReadBufferSize = DefaultReadBufferSize(),
     ip_version: IPVersion = DualStack)
   =>
     """
@@ -114,6 +122,8 @@ class TCPConnection
     _host = host
     _port = port
     _from = from
+    _read_buffer_size = read_buffer_size()
+    _read_buffer_min = read_buffer_size()
     _ip_version = ip_version
 
     try
@@ -130,7 +140,8 @@ class TCPConnection
     ssl_ctx: SSLContext val,
     fd': U32,
     enclosing: TCPConnectionActor ref,
-    ler: ServerLifecycleEventReceiver ref)
+    ler: ServerLifecycleEventReceiver ref,
+    read_buffer_size: ReadBufferSize = DefaultReadBufferSize())
   =>
     """
     Create a server-side SSL connection. The SSL session is created from the
@@ -141,6 +152,8 @@ class TCPConnection
     _fd = fd'
     _lifecycle_event_receiver = ler
     _enclosing = enclosing
+    _read_buffer_size = read_buffer_size()
+    _read_buffer_min = read_buffer_size()
 
     try
       _ssl = ssl_ctx.server()?
@@ -204,6 +217,70 @@ class TCPConnection
       end
     end
 
+  fun ref set_read_buffer_minimum(new_min: ReadBufferSize):
+    (ReadBufferResized | ReadBufferResizeBelowExpect)
+  =>
+    """
+    Set the shrink-back floor for the read buffer to exactly `new_min` bytes.
+    When the read buffer is empty and larger than the minimum, it shrinks back
+    to this size automatically. If the current buffer allocation is smaller
+    than `new_min`, the buffer is grown to match.
+
+    Returns `ReadBufferResizeBelowExpect` if `new_min` is less than the
+    current expect value.
+    """
+    let min = new_min()
+
+    if min < _user_expect() then
+      return ReadBufferResizeBelowExpect
+    end
+
+    _read_buffer_min = min
+
+    if _read_buffer_size < min then
+      _read_buffer_size = min
+      _read_buffer.undefined(_read_buffer_size)
+    end
+
+    ReadBufferResized
+
+  fun ref resize_read_buffer(size': ReadBufferSize): ReadBufferResizeResult =>
+    """
+    Force the read buffer to exactly `size'` bytes, reallocating if different.
+    If `size'` is below the current minimum, the minimum is lowered to match.
+
+    Returns `ReadBufferResizeBelowExpect` if `size'` is less than the current
+    expect value, or `ReadBufferResizeBelowUsed` if `size'` is less than the
+    amount of unprocessed data currently in the buffer.
+    """
+    let size = size'()
+
+    if size < _user_expect() then
+      return ReadBufferResizeBelowExpect
+    end
+
+    if size < _bytes_in_read_buffer then
+      return ReadBufferResizeBelowUsed
+    end
+
+    if size < _read_buffer_min then
+      _read_buffer_min = size
+    end
+
+    _read_buffer_size = size
+
+    let old_buffer = _read_buffer = recover Array[U8] end
+    _read_buffer = recover iso
+      let a = Array[U8](size)
+      a.undefined(size)
+      if _bytes_in_read_buffer > 0 then
+        (consume old_buffer).copy_to(a, 0, 0, _bytes_in_read_buffer)
+      end
+      a
+    end
+
+    ReadBufferResized
+
   fun local_address(): net.NetAddress =>
     """
     Return the local IP address. If this TCPConnection is closed then the
@@ -256,31 +333,43 @@ class TCPConnection
     """
     _yield_read = true
 
-  fun ref expect(qty: USize) ? =>
+  fun _user_expect(): USize =>
+    """
+    The user's requested expect value, regardless of whether SSL is active.
+    Internally, expect is split across _expect (non-SSL) and _ssl_expect (SSL),
+    but invariant checks need the user's actual requested value.
+    """
+    _expect.max(_ssl_expect)
+
+  fun ref expect(qty: USize): ExpectResult =>
+    """
+    Set the number of bytes to read before delivering data via
+    `_on_received`. When `qty` is 0, all available data is delivered.
+
+    Returns `ExpectAboveBufferMinimum` if `qty` exceeds the current read
+    buffer minimum. Raise the buffer minimum first, then set expect.
+    """
+    if qty > _read_buffer_min then
+      return ExpectAboveBufferMinimum
+    end
+
     match \exhaustive\ _lifecycle_event_receiver
     | let _: EitherLifecycleEventReceiver =>
-      let final_qty = match \exhaustive\ _ssl
+      match \exhaustive\ _ssl
       | let _: SSL ref =>
         // Store the application's expect value for SSL read chunking.
         // Tell the TCP read layer to read all available (0) since SSL
         // record framing doesn't align with application framing.
         _ssl_expect = qty
-        USize(0)
+        _expect = 0
       | None =>
-        qty
-      end
-
-      if final_qty <= _read_buffer_size then
-        _expect = final_qty
-      else
-        // saying you want a chunk larger than the max size would result
-        // in a livelock of never being able to read it as we won't allow
-        // you to surpass the max buffer size
-        error
+        _expect = qty
       end
     | None =>
       _Unreachable()
     end
+
+    ExpectSet
 
   fun ref close() =>
     """
@@ -981,6 +1070,7 @@ class TCPConnection
           _resize_read_buffer_if_needed()
         end
 
+        _resize_read_buffer_if_needed()
         _queue_read()
       | None =>
         _Unreachable()
@@ -1035,6 +1125,7 @@ class TCPConnection
           _resize_read_buffer_if_needed()
         end
 
+        _resize_read_buffer_if_needed()
         _queue_read()
       | None =>
         _Unreachable()
@@ -1048,10 +1139,20 @@ class TCPConnection
 
   fun ref _resize_read_buffer_if_needed() =>
     """
-    Resize the read buffer if it's empty or smaller than expected data size
+    Resize the read buffer if it's smaller than expected data size, or shrink
+    it back to the minimum when empty and oversized.
     """
     if _read_buffer.size() <= _expect then
       _read_buffer.undefined(_read_buffer_size)
+    elseif (_bytes_in_read_buffer == 0)
+      and (_read_buffer_size > _read_buffer_min)
+    then
+      _read_buffer_size = _read_buffer_min
+      _read_buffer = recover iso
+        let a = Array[U8](_read_buffer_size)
+        a.undefined(_read_buffer_size)
+        a
+      end
     end
 
   fun ref _queue_read() =>

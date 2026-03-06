@@ -39,6 +39,17 @@ actor \nodoc\ Main is TestList
     test(_TestMaxSpawnRejectsZero)
     test(_TestMaxSpawnAcceptsBoundary)
     test(_TestDefaultMaxSpawn)
+    test(_TestReadBufferSizeRejectsZero)
+    test(_TestReadBufferSizeAcceptsBoundary)
+    test(_TestDefaultReadBufferSize)
+    test(_TestReadBufferConstructorSize)
+    test(_TestSetReadBufferMinimumSuccess)
+    test(_TestSetReadBufferMinimumBelowExpect)
+    test(_TestResizeReadBufferSuccess)
+    test(_TestResizeReadBufferBelowExpect)
+    test(_TestResizeReadBufferBelowMinLowersMin)
+    test(_TestExpectAboveBufferMinimum)
+    test(_TestExpectAtBufferMinimum)
 
 class \nodoc\ iso _TestOutgoingFails is UnitTest
   """
@@ -111,7 +122,7 @@ actor \nodoc\ _TestPinger is (TCPConnectionActor & ClientLifecycleEventReceiver)
       "",
       this,
       this)
-    try _tcp_connection.expect(4)? end
+    _tcp_connection.expect(4)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -149,7 +160,7 @@ actor \nodoc\ _TestPonger is (TCPConnectionActor & ServerLifecycleEventReceiver)
       fd,
       this,
       this)
-    try _tcp_connection.expect(4)? end
+    _tcp_connection.expect(4)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -280,7 +291,7 @@ actor \nodoc\ _TestBasicExpectServer is (TCPConnectionActor & ServerLifecycleEve
       fd,
       this,
       this)
-    try _tcp_connection.expect(4)? end
+    _tcp_connection.expect(4)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -893,7 +904,7 @@ actor \nodoc\ _TestSSLPinger
       "",
       this,
       this)
-    try _tcp_connection.expect(4)? end
+    _tcp_connection.expect(4)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -934,7 +945,7 @@ actor \nodoc\ _TestSSLPonger
       fd,
       this,
       this)
-    try _tcp_connection.expect(4)? end
+    _tcp_connection.expect(4)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1044,7 +1055,7 @@ actor \nodoc\ _TestStartTLSClient
       "",
       this,
       this)
-    try _tcp_connection.expect(2)? end
+    _tcp_connection.expect(2)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1068,7 +1079,7 @@ actor \nodoc\ _TestStartTLSClient
 
   fun ref _on_tls_ready() =>
     _h.complete_action("client tls ready")
-    try _tcp_connection.expect(4)? end
+    _tcp_connection.expect(4)
     _tcp_connection.send("Ping")
 
   fun ref _on_tls_failure(reason: TLSFailureReason) =>
@@ -1092,7 +1103,7 @@ actor \nodoc\ _TestStartTLSServer
       fd,
       this,
       this)
-    try _tcp_connection.expect(8)? end
+    _tcp_connection.expect(8)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1114,7 +1125,7 @@ actor \nodoc\ _TestStartTLSServer
 
   fun ref _on_tls_ready() =>
     _h.complete_action("server tls ready")
-    try _tcp_connection.expect(4)? end
+    _tcp_connection.expect(4)
 
   fun ref _on_tls_failure(reason: TLSFailureReason) =>
     _h.fail("Server TLS handshake failed")
@@ -1596,7 +1607,7 @@ actor \nodoc\ _TestSendvServer
       fd,
       this,
       this)
-    try _tcp_connection.expect(13)? end
+    _tcp_connection.expect(13)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1772,7 +1783,7 @@ actor \nodoc\ _TestSendvMixedEmptyServer
       fd,
       this,
       this)
-    try _tcp_connection.expect(10)? end
+    _tcp_connection.expect(10)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1912,7 +1923,7 @@ actor \nodoc\ _TestSSLSendvServer
       fd,
       this,
       this)
-    try _tcp_connection.expect(15)? end
+    _tcp_connection.expect(15)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2334,7 +2345,7 @@ actor \nodoc\ _TestYieldReadServer
       fd,
       this,
       this)
-    try _tcp_connection.expect(4)? end
+    _tcp_connection.expect(4)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2382,7 +2393,7 @@ actor \nodoc\ _TestIP4Pinger is (TCPConnectionActor & ClientLifecycleEventReceiv
       "",
       this,
       this where ip_version = IP4)
-    try _tcp_connection.expect(4)? end
+    _tcp_connection.expect(4)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2420,7 +2431,7 @@ actor \nodoc\ _TestIP4Ponger is (TCPConnectionActor & ServerLifecycleEventReceiv
       fd,
       this,
       this)
-    try _tcp_connection.expect(4)? end
+    _tcp_connection.expect(4)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2506,7 +2517,7 @@ actor \nodoc\ _TestIP6Pinger is (TCPConnectionActor & ClientLifecycleEventReceiv
       "",
       this,
       this where ip_version = IP6)
-    try _tcp_connection.expect(4)? end
+    _tcp_connection.expect(4)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2544,7 +2555,7 @@ actor \nodoc\ _TestIP6Ponger is (TCPConnectionActor & ServerLifecycleEventReceiv
       fd,
       this,
       this)
-    try _tcp_connection.expect(4)? end
+    _tcp_connection.expect(4)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2630,3 +2641,665 @@ class \nodoc\ iso _TestDefaultMaxSpawn is UnitTest
 
   fun apply(h: TestHelper) =>
     h.assert_eq[U32](100_000, DefaultMaxSpawn()())
+
+class \nodoc\ iso _TestReadBufferSizeRejectsZero is UnitTest
+  fun name(): String => "ReadBufferSizeRejectsZero"
+
+  fun apply(h: TestHelper) =>
+    match MakeReadBufferSize(0)
+    | let _: ReadBufferSize =>
+      h.fail("MakeReadBufferSize(0) should return ValidationFailure")
+    | let _: ValidationFailure =>
+      h.assert_true(true)
+    end
+
+class \nodoc\ iso _TestReadBufferSizeAcceptsBoundary is UnitTest
+  fun name(): String => "ReadBufferSizeAcceptsBoundary"
+
+  fun apply(h: TestHelper) =>
+    match MakeReadBufferSize(1)
+    | let r: ReadBufferSize =>
+      h.assert_eq[USize](1, r())
+    | let _: ValidationFailure =>
+      h.fail("MakeReadBufferSize(1) should succeed")
+    end
+
+    match MakeReadBufferSize(USize.max_value())
+    | let r: ReadBufferSize =>
+      h.assert_eq[USize](USize.max_value(), r())
+    | let _: ValidationFailure =>
+      h.fail("MakeReadBufferSize(USize.max_value()) should succeed")
+    end
+
+class \nodoc\ iso _TestDefaultReadBufferSize is UnitTest
+  fun name(): String => "DefaultReadBufferSize"
+
+  fun apply(h: TestHelper) =>
+    h.assert_eq[USize](16384, DefaultReadBufferSize()())
+
+class \nodoc\ iso _TestReadBufferConstructorSize is UnitTest
+  """
+  Test that the constructor parameter sets the initial buffer size and minimum.
+  The server verifies buffer behavior by resizing and checking invariants.
+  """
+  fun name(): String => "ReadBufferConstructorSize"
+
+  fun apply(h: TestHelper) =>
+    let listener = _TestReadBufferConstructorSizeListener(h)
+    h.dispose_when_done(listener)
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestReadBufferConstructorSizeListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(h.env.root), "127.0.0.1", "7700", this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestReadBufferConstructorSizeServer =>
+    _TestReadBufferConstructorSizeServer(fd, _h)
+
+  fun ref _on_listening() =>
+    // Connect a client just to trigger _on_accept
+    _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
+      "127.0.0.1", "7700")
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open listener")
+
+actor \nodoc\ _TestReadBufferConstructorSizeServer is
+  (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    // Use a custom buffer size of 512
+    match MakeReadBufferSize(512)
+    | let rbs: ReadBufferSize =>
+      _tcp_connection = TCPConnection.server(
+        TCPServerAuth(h.env.root), fd, this, this
+        where read_buffer_size = rbs)
+    | let _: ValidationFailure =>
+      _h.fail("MakeReadBufferSize(512) should succeed")
+    end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    // set_read_buffer_minimum to 256 should succeed (lowering the minimum)
+    match MakeReadBufferSize(256)
+    | let rbs: ReadBufferSize =>
+      match _tcp_connection.set_read_buffer_minimum(rbs)
+      | ReadBufferResized => None
+      | ReadBufferResizeBelowExpect =>
+        _h.fail("set_read_buffer_minimum(256) should succeed")
+      end
+
+      // resize_read_buffer to 256 should succeed since minimum is now 256
+      match _tcp_connection.resize_read_buffer(rbs)
+      | ReadBufferResized => None
+      | let _: ReadBufferResizeBelowExpect =>
+        _h.fail("resize_read_buffer(256) should succeed")
+      | let _: ReadBufferResizeBelowUsed =>
+        _h.fail("resize_read_buffer(256) should succeed")
+      end
+    | let _: ValidationFailure =>
+      _h.fail("MakeReadBufferSize(256) should succeed")
+    end
+
+    _h.complete(true)
+    _tcp_connection.close()
+
+class \nodoc\ iso _TestSetReadBufferMinimumSuccess is UnitTest
+  """
+  Test that set_read_buffer_minimum() succeeds and grows the buffer when
+  the new minimum exceeds the current allocation.
+  """
+  fun name(): String => "SetReadBufferMinimumSuccess"
+
+  fun apply(h: TestHelper) =>
+    let listener = _TestSetReadBufferMinSuccessListener(h)
+    h.dispose_when_done(listener)
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSetReadBufferMinSuccessListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(h.env.root), "127.0.0.1", "7701", this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSetReadBufferMinSuccessServer =>
+    _TestSetReadBufferMinSuccessServer(fd, _h)
+
+  fun ref _on_listening() =>
+    _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
+      "127.0.0.1", "7701")
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open listener")
+
+actor \nodoc\ _TestSetReadBufferMinSuccessServer is
+  (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    match MakeReadBufferSize(256)
+    | let rbs: ReadBufferSize =>
+      _tcp_connection = TCPConnection.server(
+        TCPServerAuth(h.env.root), fd, this, this
+        where read_buffer_size = rbs)
+    | let _: ValidationFailure =>
+      _h.fail("MakeReadBufferSize(256) should succeed")
+    end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    // Setting minimum to 512 should succeed and grow the buffer
+    match MakeReadBufferSize(512)
+    | let rbs: ReadBufferSize =>
+      match _tcp_connection.set_read_buffer_minimum(rbs)
+      | ReadBufferResized => None
+      | ReadBufferResizeBelowExpect =>
+        _h.fail("set_read_buffer_minimum(512) should succeed")
+      end
+    | let _: ValidationFailure =>
+      _h.fail("MakeReadBufferSize(512) should succeed")
+    end
+
+    // Setting minimum back to 128 should succeed (lowering is always ok)
+    match MakeReadBufferSize(128)
+    | let rbs: ReadBufferSize =>
+      match _tcp_connection.set_read_buffer_minimum(rbs)
+      | ReadBufferResized => None
+      | ReadBufferResizeBelowExpect =>
+        _h.fail("set_read_buffer_minimum(128) should succeed")
+      end
+    | let _: ValidationFailure =>
+      _h.fail("MakeReadBufferSize(128) should succeed")
+    end
+
+    _h.complete(true)
+    _tcp_connection.close()
+
+class \nodoc\ iso _TestSetReadBufferMinimumBelowExpect is UnitTest
+  """
+  Test that set_read_buffer_minimum() fails when the new minimum is below
+  the current expect value.
+  """
+  fun name(): String => "SetReadBufferMinimumBelowExpect"
+
+  fun apply(h: TestHelper) =>
+    let listener = _TestSetReadBufferMinBelowExpectListener(h)
+    h.dispose_when_done(listener)
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSetReadBufferMinBelowExpectListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(h.env.root), "127.0.0.1", "7702", this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSetReadBufferMinBelowExpectServer =>
+    _TestSetReadBufferMinBelowExpectServer(fd, _h)
+
+  fun ref _on_listening() =>
+    _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
+      "127.0.0.1", "7702")
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open listener")
+
+actor \nodoc\ _TestSetReadBufferMinBelowExpectServer is
+  (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.server(
+      TCPServerAuth(h.env.root), fd, this, this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    // Set expect to 100
+    _tcp_connection.expect(100)
+
+    // Setting minimum below expect should fail
+    match MakeReadBufferSize(50)
+    | let rbs: ReadBufferSize =>
+      match _tcp_connection.set_read_buffer_minimum(rbs)
+      | ReadBufferResized =>
+        _h.fail(
+          "set_read_buffer_minimum(50) should fail when expect is 100")
+      | ReadBufferResizeBelowExpect => None
+      end
+    | let _: ValidationFailure =>
+      _h.fail("MakeReadBufferSize(50) should succeed")
+    end
+
+    // Setting minimum at expect should succeed
+    match MakeReadBufferSize(100)
+    | let rbs: ReadBufferSize =>
+      match _tcp_connection.set_read_buffer_minimum(rbs)
+      | ReadBufferResized => None
+      | ReadBufferResizeBelowExpect =>
+        _h.fail(
+          "set_read_buffer_minimum(100) should succeed when expect is 100")
+      end
+    | let _: ValidationFailure =>
+      _h.fail("MakeReadBufferSize(100) should succeed")
+    end
+
+    _h.complete(true)
+    _tcp_connection.close()
+
+class \nodoc\ iso _TestResizeReadBufferSuccess is UnitTest
+  """
+  Test that resize_read_buffer() succeeds for valid sizes.
+  """
+  fun name(): String => "ResizeReadBufferSuccess"
+
+  fun apply(h: TestHelper) =>
+    let listener = _TestResizeReadBufferSuccessListener(h)
+    h.dispose_when_done(listener)
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestResizeReadBufferSuccessListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(h.env.root), "127.0.0.1", "7703", this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestResizeReadBufferSuccessServer =>
+    _TestResizeReadBufferSuccessServer(fd, _h)
+
+  fun ref _on_listening() =>
+    _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
+      "127.0.0.1", "7703")
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open listener")
+
+actor \nodoc\ _TestResizeReadBufferSuccessServer is
+  (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    match MakeReadBufferSize(1024)
+    | let rbs: ReadBufferSize =>
+      _tcp_connection = TCPConnection.server(
+        TCPServerAuth(h.env.root), fd, this, this
+        where read_buffer_size = rbs)
+    | let _: ValidationFailure =>
+      _h.fail("MakeReadBufferSize(1024) should succeed")
+    end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    // Resize to larger
+    match MakeReadBufferSize(4096)
+    | let rbs: ReadBufferSize =>
+      match _tcp_connection.resize_read_buffer(rbs)
+      | ReadBufferResized => None
+      | let _: ReadBufferResizeBelowExpect =>
+        _h.fail("resize_read_buffer(4096) should succeed")
+      | let _: ReadBufferResizeBelowUsed =>
+        _h.fail("resize_read_buffer(4096) should succeed")
+      end
+    | let _: ValidationFailure =>
+      _h.fail("MakeReadBufferSize(4096) should succeed")
+    end
+
+    // Resize to smaller (also lowers minimum)
+    match MakeReadBufferSize(512)
+    | let rbs: ReadBufferSize =>
+      match _tcp_connection.resize_read_buffer(rbs)
+      | ReadBufferResized => None
+      | let _: ReadBufferResizeBelowExpect =>
+        _h.fail("resize_read_buffer(512) should succeed")
+      | let _: ReadBufferResizeBelowUsed =>
+        _h.fail("resize_read_buffer(512) should succeed")
+      end
+    | let _: ValidationFailure =>
+      _h.fail("MakeReadBufferSize(512) should succeed")
+    end
+
+    _h.complete(true)
+    _tcp_connection.close()
+
+class \nodoc\ iso _TestResizeReadBufferBelowExpect is UnitTest
+  """
+  Test that resize_read_buffer() fails when the size is below the current
+  expect value.
+  """
+  fun name(): String => "ResizeReadBufferBelowExpect"
+
+  fun apply(h: TestHelper) =>
+    let listener = _TestResizeReadBufferBelowExpectListener(h)
+    h.dispose_when_done(listener)
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestResizeReadBufferBelowExpectListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(h.env.root), "127.0.0.1", "7704", this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestResizeReadBufferBelowExpectServer =>
+    _TestResizeReadBufferBelowExpectServer(fd, _h)
+
+  fun ref _on_listening() =>
+    _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
+      "127.0.0.1", "7704")
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open listener")
+
+actor \nodoc\ _TestResizeReadBufferBelowExpectServer is
+  (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.server(
+      TCPServerAuth(h.env.root), fd, this, this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    // Set expect to 200
+    _tcp_connection.expect(200)
+
+    // Resize below expect should fail
+    match MakeReadBufferSize(100)
+    | let rbs: ReadBufferSize =>
+      match _tcp_connection.resize_read_buffer(rbs)
+      | ReadBufferResized =>
+        _h.fail("resize_read_buffer(100) should fail when expect is 200")
+      | let _: ReadBufferResizeBelowExpect => None
+      | let _: ReadBufferResizeBelowUsed =>
+        _h.fail(
+          "should be ReadBufferResizeBelowExpect, not ReadBufferResizeBelowUsed"
+          )
+      end
+    | let _: ValidationFailure =>
+      _h.fail("MakeReadBufferSize(100) should succeed")
+    end
+
+    _h.complete(true)
+    _tcp_connection.close()
+
+class \nodoc\ iso _TestResizeReadBufferBelowMinLowersMin is UnitTest
+  """
+  Test that resize_read_buffer() below the current minimum lowers the minimum.
+  Verified by subsequently setting expect to the old minimum (which would fail
+  if the minimum hadn't been lowered).
+  """
+  fun name(): String => "ResizeReadBufferBelowMinLowersMin"
+
+  fun apply(h: TestHelper) =>
+    let listener = _TestResizeReadBufferBelowMinListener(h)
+    h.dispose_when_done(listener)
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestResizeReadBufferBelowMinListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(h.env.root), "127.0.0.1", "7705", this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestResizeReadBufferBelowMinServer =>
+    _TestResizeReadBufferBelowMinServer(fd, _h)
+
+  fun ref _on_listening() =>
+    _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
+      "127.0.0.1", "7705")
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open listener")
+
+actor \nodoc\ _TestResizeReadBufferBelowMinServer is
+  (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    // Start with buffer size 1024 (min is also 1024)
+    match MakeReadBufferSize(1024)
+    | let rbs: ReadBufferSize =>
+      _tcp_connection = TCPConnection.server(
+        TCPServerAuth(h.env.root), fd, this, this
+        where read_buffer_size = rbs)
+    | let _: ValidationFailure =>
+      _h.fail("MakeReadBufferSize(1024) should succeed")
+    end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    // Resize to 256 — this should lower the minimum from 1024 to 256
+    match MakeReadBufferSize(256)
+    | let rbs: ReadBufferSize =>
+      match _tcp_connection.resize_read_buffer(rbs)
+      | ReadBufferResized => None
+      | let _: ReadBufferResizeBelowExpect =>
+        _h.fail("resize_read_buffer(256) should succeed")
+      | let _: ReadBufferResizeBelowUsed =>
+        _h.fail("resize_read_buffer(256) should succeed")
+      end
+    | let _: ValidationFailure =>
+      _h.fail("MakeReadBufferSize(256) should succeed")
+    end
+
+    // Now expect(512) should fail because minimum was lowered to 256
+    match _tcp_connection.expect(512)
+    | ExpectSet =>
+      _h.fail("expect(512) should fail when minimum is 256")
+    | ExpectAboveBufferMinimum => None
+    end
+
+    // expect(256) should succeed (at the new minimum)
+    match _tcp_connection.expect(256)
+    | ExpectSet => None
+    | ExpectAboveBufferMinimum =>
+      _h.fail("expect(256) should succeed when minimum is 256")
+    end
+
+    _h.complete(true)
+    _tcp_connection.close()
+
+class \nodoc\ iso _TestExpectAboveBufferMinimum is UnitTest
+  """
+  Test that expect() fails when the requested value exceeds the buffer minimum.
+  """
+  fun name(): String => "ExpectAboveBufferMinimum"
+
+  fun apply(h: TestHelper) =>
+    let listener = _TestExpectAboveBufferMinListener(h)
+    h.dispose_when_done(listener)
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestExpectAboveBufferMinListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(h.env.root), "127.0.0.1", "7706", this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestExpectAboveBufferMinServer =>
+    _TestExpectAboveBufferMinServer(fd, _h)
+
+  fun ref _on_listening() =>
+    _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
+      "127.0.0.1", "7706")
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open listener")
+
+actor \nodoc\ _TestExpectAboveBufferMinServer is
+  (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    // Start with buffer size 128 (min is also 128)
+    match MakeReadBufferSize(128)
+    | let rbs: ReadBufferSize =>
+      _tcp_connection = TCPConnection.server(
+        TCPServerAuth(h.env.root), fd, this, this
+        where read_buffer_size = rbs)
+    | let _: ValidationFailure =>
+      _h.fail("MakeReadBufferSize(128) should succeed")
+    end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    // expect(256) should fail because minimum is 128
+    match _tcp_connection.expect(256)
+    | ExpectSet =>
+      _h.fail("expect(256) should fail when minimum is 128")
+    | ExpectAboveBufferMinimum => None
+    end
+
+    _h.complete(true)
+    _tcp_connection.close()
+
+class \nodoc\ iso _TestExpectAtBufferMinimum is UnitTest
+  """
+  Test that expect() succeeds when the requested value equals the buffer
+  minimum.
+  """
+  fun name(): String => "ExpectAtBufferMinimum"
+
+  fun apply(h: TestHelper) =>
+    let listener = _TestExpectAtBufferMinListener(h)
+    h.dispose_when_done(listener)
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestExpectAtBufferMinListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(h.env.root), "127.0.0.1", "7707", this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestExpectAtBufferMinServer =>
+    _TestExpectAtBufferMinServer(fd, _h)
+
+  fun ref _on_listening() =>
+    _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
+      "127.0.0.1", "7707")
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open listener")
+
+actor \nodoc\ _TestExpectAtBufferMinServer is
+  (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    match MakeReadBufferSize(256)
+    | let rbs: ReadBufferSize =>
+      _tcp_connection = TCPConnection.server(
+        TCPServerAuth(h.env.root), fd, this, this
+        where read_buffer_size = rbs)
+    | let _: ValidationFailure =>
+      _h.fail("MakeReadBufferSize(256) should succeed")
+    end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    // expect(256) should succeed (equals minimum)
+    match _tcp_connection.expect(256)
+    | ExpectSet => None
+    | ExpectAboveBufferMinimum =>
+      _h.fail("expect(256) should succeed when minimum is 256")
+    end
+
+    _h.complete(true)
+    _tcp_connection.close()
+
+actor \nodoc\ _TestReadBufferTriggerClient is
+  (TCPConnectionActor & ClientLifecycleEventReceiver)
+  """
+  Minimal client that connects to trigger a server-side _on_accept, then
+  closes. Used by read buffer tests that only need a server connection.
+  """
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+
+  new create(auth: TCPConnectAuth, host: String, port: String) =>
+    _tcp_connection = TCPConnection.client(auth, host, port, "", this, this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _tcp_connection.close()

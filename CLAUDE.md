@@ -34,6 +34,8 @@ lori/
   tcp_listener_actor.pony   -- TCPListenerActor trait (actor wrapper)
   lifecycle_event_receiver.pony -- Client/ServerLifecycleEventReceiver traits
   send_token.pony           -- SendToken class, SendError primitives and type alias
+  read_buffer.pony          -- Read buffer result types (ReadBufferResized, ExpectSet, etc.)
+  read_buffer_size.pony     -- ReadBufferSize constrained type, validator, and default
   start_tls_error.pony      -- StartTLSError primitives and type alias
   connection_failure_reason.pony -- ConnectionFailureReason primitives and type alias
   start_failure_reason.pony -- StartFailureReason primitive and type alias
@@ -55,6 +57,7 @@ examples/
   idle-timeout/             -- Per-connection idle timeout
   infinite-ping-pong/       -- Ping-pong client+server
   ip-version/               -- IPv4-only echo server
+  read-buffer-size/         -- Configurable read buffer sizing
   net-ssl-echo-server/      -- SSL echo server
   net-ssl-infinite-ping-pong/ -- SSL ping-pong
   starttls-ping-pong/       -- STARTTLS upgrade from plaintext to TLS
@@ -69,7 +72,7 @@ stress-tests/
 
 Lori separates connection logic (class) from actor scheduling (trait):
 
-1. **`TCPConnection`** (class) — All TCP state and I/O logic including SSL. Created with `TCPConnection.client(...)`, `TCPConnection.server(...)`, `TCPConnection.ssl_client(...)`, or `TCPConnection.ssl_server(...)`. Client and SSL client constructors accept an optional `ip_version: IPVersion = DualStack` parameter to restrict to IPv4 (`IP4`) or IPv6 (`IP6`). Existing plaintext connections can be upgraded to TLS via `start_tls()`. Not an actor itself.
+1. **`TCPConnection`** (class) — All TCP state and I/O logic including SSL. Created with `TCPConnection.client(...)`, `TCPConnection.server(...)`, `TCPConnection.ssl_client(...)`, or `TCPConnection.ssl_server(...)`. All four real constructors accept an optional `read_buffer_size: ReadBufferSize = DefaultReadBufferSize()` parameter that sets both the initial buffer allocation and the shrink-back minimum. Client and SSL client constructors also accept an optional `ip_version: IPVersion = DualStack` parameter to restrict to IPv4 (`IP4`) or IPv6 (`IP6`). Existing plaintext connections can be upgraded to TLS via `start_tls()`. Not an actor itself.
 2. **`TCPConnectionActor`** (trait) — The actor trait users implement. Requires `fun ref _connection(): TCPConnection`. Provides behaviors that delegate to the TCPConnection: `_event_notify`, `_read_again`, `dispose`, etc.
 3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure(reason)`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure(reason)`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_start_failure(reason)`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure(reason)`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_throttled`/`_on_unthrottled`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure`, `_on_idle_timeout`.
 
@@ -213,6 +216,28 @@ Lifecycle:
 - **Reset points**: `_read()` (POSIX, once per read event), `_read_completed()` (Windows, once per read event), `send()` success path (after the SSL/plaintext write block).
 - **Cancel point**: `hard_close()` in both the not-connected branch (before `return`) and the connected branch (before `PonyAsio.unsubscribe(_event)`).
 - **Event dispatch**: Identity check `event is _timer_event` at the top of `_event_notify`, before the main `event is _event` check. Returns immediately after firing. `_timer_event` is cleared synchronously in `_cancel_idle_timer()`, so stale disposable events for cancelled timers route through the existing catch-all at the end of `_event_notify` (which calls `PonyAsio.destroy`).
+
+### Read buffer sizing
+
+Configurable read buffer with three interacting values:
+
+- **`_read_buffer_min`**: Shrink-back floor. When buffer is empty and oversized, shrinks to this.
+- **`_read_buffer_size`**: Current buffer allocation size.
+- **expect** (user's requested value): Framing threshold.
+
+Invariant chain: `expect <= _read_buffer_min <= _read_buffer_size`.
+
+API:
+- Constructor parameter `read_buffer_size: ReadBufferSize` (default `DefaultReadBufferSize()`, 16384) sets both `_read_buffer_size` and `_read_buffer_min`.
+- `set_read_buffer_minimum(new_min: ReadBufferSize)` — sets shrink-back floor, grows buffer if needed.
+- `resize_read_buffer(size: ReadBufferSize)` — forces buffer to exact size, lowers minimum if below it.
+- `expect(qty)` — returns `ExpectAboveBufferMinimum` if `qty > _read_buffer_min`.
+
+`_user_expect()` returns `_expect.max(_ssl_expect)` for invariant checks (the user's expect value regardless of SSL state).
+
+Shrink-back happens in `_resize_read_buffer_if_needed()` when `_bytes_in_read_buffer == 0` and `_read_buffer_size > _read_buffer_min`. On Windows, a post-loop call to `_resize_read_buffer_if_needed()` was added in `_read_completed()` and `_windows_resume_read()` because the existing calls inside the `while _there_is_buffered_read_data()` loop can never see `_bytes_in_read_buffer == 0`.
+
+Design: Discussion #212 (implementation plan), Discussion #199 section 11 (design).
 
 ### Read yielding
 

@@ -77,7 +77,7 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
   =>
     _out = out
     _tcp_connection = TCPConnection.ssl_server(auth, sslctx, fd, this, this)
-    try _tcp_connection.expect(4)? end
+    _tcp_connection.expect(4)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -100,7 +100,7 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
     _out = out
     _tcp_connection = TCPConnection.ssl_client(auth, sslctx, host, port, from,
       this, this)
-    try _tcp_connection.expect(4)? end
+    _tcp_connection.expect(4)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection

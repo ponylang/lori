@@ -32,6 +32,10 @@ Handling `send()` errors and throttle/unthrottle callbacks. A flood client sends
 
 Cooperative scheduler fairness with `yield_read()`. A flood client sends 100 four-byte messages and the server yields the read loop every 10 messages, letting other actors run before reading resumes automatically. Shows how to prevent a single connection from monopolizing the scheduler without the persistent pause of `mute()`/`unmute()`.
 
+## [read-buffer-size](read-buffer-size/)
+
+Configurable read buffer sizing with two phases. A server starts with a small 128-byte buffer for a control phase, then switches to an 8192-byte buffer for bulk transfer after receiving a command. Demonstrates `set_read_buffer_minimum()` and `resize_read_buffer()` for tuning buffer allocation at runtime, and the `read_buffer_size` constructor parameter for setting the initial size.
+
 ## [net-ssl-echo-server](net-ssl-echo-server/)
 
 SSL version of the echo server. Demonstrates how to set up an `SSLContext` and use `TCPConnection.ssl_server` — the only change from the plain echo server is the constructor call and SSL context setup.

@@ -52,7 +52,7 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
   new create(auth: TCPServerAuth, fd: U32, out: OutStream) =>
     _out = out
     _tcp_connection =  TCPConnection.server(auth, fd, this, this)
-    try _tcp_connection.expect(4)? end
+    _tcp_connection.expect(4)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -73,7 +73,7 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
   =>
     _out = out
     _tcp_connection = TCPConnection.client(auth, host, port, from, this, this)
-    try _tcp_connection.expect(4)? end
+    _tcp_connection.expect(4)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
