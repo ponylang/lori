@@ -316,6 +316,43 @@ For SSL connections, `yield_read()` operates at TCP-read granularity. All
 SSL-decrypted messages from a single TCP read are delivered before the yield
 takes effect.
 
+## Read Buffer Size
+
+The read buffer defaults to 16KB. To start with a different size, pass a
+[`ReadBufferSize`](/lori/lori-ReadBufferSize/) to the constructor:
+
+```pony
+match MakeReadBufferSize(512)
+| let rbs: ReadBufferSize =>
+  _tcp_connection = TCPConnection.server(auth, fd, this, this
+    where read_buffer_size = rbs)
+end
+```
+
+At runtime, use `set_read_buffer_minimum()` to change the shrink-back floor and
+`resize_read_buffer()` to force the buffer to a specific size:
+
+```pony
+match MakeReadBufferSize(8192)
+| let rbs: ReadBufferSize =>
+  // Raise the minimum for bulk transfer
+  _tcp_connection.set_read_buffer_minimum(rbs)
+  // Resize the buffer to match
+  _tcp_connection.resize_read_buffer(rbs)
+end
+```
+
+The invariant chain is: `expect <= read_buffer_min <= read_buffer_size`. Setting
+expect above the buffer minimum returns
+[`ExpectAboveBufferMinimum`](/lori/lori-ExpectAboveBufferMinimum/) — raise the
+minimum first, then set expect. Resizing below the current expect returns
+[`ReadBufferResizeBelowExpect`](/lori/lori-ReadBufferResizeBelowExpect/).
+Resizing below the amount of unprocessed data in the buffer returns
+[`ReadBufferResizeBelowUsed`](/lori/lori-ReadBufferResizeBelowUsed/).
+
+When the buffer is empty and larger than the minimum, it automatically shrinks
+back to the minimum size.
+
 ## Connection Limits
 
 `TCPListener` accepts an optional `limit` parameter to cap the number of

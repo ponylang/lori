@@ -59,7 +59,7 @@ actor FramedServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   new create(auth: TCPServerAuth, fd: U32, out: OutStream) =>
     _out = out
     _tcp_connection = TCPConnection.server(auth, fd, this, this)
-    try _tcp_connection.expect(4)? end
+    _tcp_connection.expect(4)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -73,7 +73,7 @@ actor FramedServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
           data(3)?.usize()
         _out.print("Server: header says " + len.string() + " byte payload")
         _reading_header = false
-        try _tcp_connection.expect(len)? end
+        _tcp_connection.expect(len)
       end
     else
       let payload: Array[U8] val = consume data
@@ -92,7 +92,7 @@ actor FramedServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
       _tcp_connection.send(recover val [as ByteSeq: header; payload] end)
 
       _reading_header = true
-      try _tcp_connection.expect(4)? end
+      _tcp_connection.expect(4)
     end
 
   fun ref _on_closed() =>
@@ -131,7 +131,7 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
     for msg in _messages.values() do
       _send_framed(msg)
     end
-    try _tcp_connection.expect(4)? end
+    _tcp_connection.expect(4)
 
   fun ref _send_framed(msg: String) =>
     """
@@ -157,7 +157,7 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
           (data(2)?.usize() << 8) or
           data(3)?.usize()
         _reading_header = false
-        try _tcp_connection.expect(len)? end
+        _tcp_connection.expect(len)
       end
     else
       let payload = String.from_array(consume data)
@@ -174,7 +174,7 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
       end
 
       _reading_header = true
-      try _tcp_connection.expect(4)? end
+      _tcp_connection.expect(4)
 
       if _messages_received == _messages.size() then
         _out.print("Client: all " + _messages.size().string()
