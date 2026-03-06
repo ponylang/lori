@@ -9,8 +9,11 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 
+- Add configurable read buffer size ([PR #214](https://github.com/ponylang/lori/pull/214))
 
 ### Changed
+
+- Change expect() to return ExpectResult instead of raising an error ([PR #214](https://github.com/ponylang/lori/pull/214))
 
 
 ## [0.10.0] - 2026-03-03
