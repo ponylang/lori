@@ -34,7 +34,7 @@ lori/
   tcp_listener_actor.pony   -- TCPListenerActor trait (actor wrapper)
   lifecycle_event_receiver.pony -- Client/ServerLifecycleEventReceiver traits
   send_token.pony           -- SendToken class, SendError primitives and type alias
-  read_buffer.pony          -- Read buffer result types (Success, ExpectResult, etc.)
+  read_buffer.pony          -- Read buffer result types (ReadBufferResized, ExpectSet, etc.)
   read_buffer_size.pony     -- ReadBufferSize constrained type, validator, and default
   start_tls_error.pony      -- StartTLSError primitives and type alias
   connection_failure_reason.pony -- ConnectionFailureReason primitives and type alias

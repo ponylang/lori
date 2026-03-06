@@ -218,7 +218,7 @@ class TCPConnection
     end
 
   fun ref set_read_buffer_minimum(new_min: ReadBufferSize):
-    (Success | ReadBufferResizeBelowExpect)
+    (ReadBufferResized | ReadBufferResizeBelowExpect)
   =>
     """
     Set the shrink-back floor for the read buffer to exactly `new_min` bytes.
@@ -242,7 +242,7 @@ class TCPConnection
       _read_buffer.undefined(_read_buffer_size)
     end
 
-    Success
+    ReadBufferResized
 
   fun ref resize_read_buffer(size': ReadBufferSize): ReadBufferResizeResult =>
     """
@@ -279,7 +279,7 @@ class TCPConnection
       a
     end
 
-    Success
+    ReadBufferResized
 
   fun local_address(): net.NetAddress =>
     """
@@ -369,7 +369,7 @@ class TCPConnection
       _Unreachable()
     end
 
-    Success
+    ExpectSet
 
   fun ref close() =>
     """

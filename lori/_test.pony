@@ -2737,14 +2737,14 @@ actor \nodoc\ _TestReadBufferConstructorSizeServer is
     match MakeReadBufferSize(256)
     | let rbs: ReadBufferSize =>
       match _tcp_connection.set_read_buffer_minimum(rbs)
-      | Success => None
+      | ReadBufferResized => None
       | ReadBufferResizeBelowExpect =>
         _h.fail("set_read_buffer_minimum(256) should succeed")
       end
 
       // resize_read_buffer to 256 should succeed since minimum is now 256
       match _tcp_connection.resize_read_buffer(rbs)
-      | Success => None
+      | ReadBufferResized => None
       | let _: ReadBufferResizeBelowExpect =>
         _h.fail("resize_read_buffer(256) should succeed")
       | let _: ReadBufferResizeBelowUsed =>
@@ -2815,7 +2815,7 @@ actor \nodoc\ _TestSetReadBufferMinSuccessServer is
     match MakeReadBufferSize(512)
     | let rbs: ReadBufferSize =>
       match _tcp_connection.set_read_buffer_minimum(rbs)
-      | Success => None
+      | ReadBufferResized => None
       | ReadBufferResizeBelowExpect =>
         _h.fail("set_read_buffer_minimum(512) should succeed")
       end
@@ -2827,7 +2827,7 @@ actor \nodoc\ _TestSetReadBufferMinSuccessServer is
     match MakeReadBufferSize(128)
     | let rbs: ReadBufferSize =>
       match _tcp_connection.set_read_buffer_minimum(rbs)
-      | Success => None
+      | ReadBufferResized => None
       | ReadBufferResizeBelowExpect =>
         _h.fail("set_read_buffer_minimum(128) should succeed")
       end
@@ -2893,7 +2893,7 @@ actor \nodoc\ _TestSetReadBufferMinBelowExpectServer is
     match MakeReadBufferSize(50)
     | let rbs: ReadBufferSize =>
       match _tcp_connection.set_read_buffer_minimum(rbs)
-      | Success =>
+      | ReadBufferResized =>
         _h.fail(
           "set_read_buffer_minimum(50) should fail when expect is 100")
       | ReadBufferResizeBelowExpect => None
@@ -2906,7 +2906,7 @@ actor \nodoc\ _TestSetReadBufferMinBelowExpectServer is
     match MakeReadBufferSize(100)
     | let rbs: ReadBufferSize =>
       match _tcp_connection.set_read_buffer_minimum(rbs)
-      | Success => None
+      | ReadBufferResized => None
       | ReadBufferResizeBelowExpect =>
         _h.fail(
           "set_read_buffer_minimum(100) should succeed when expect is 100")
@@ -2975,7 +2975,7 @@ actor \nodoc\ _TestResizeReadBufferSuccessServer is
     match MakeReadBufferSize(4096)
     | let rbs: ReadBufferSize =>
       match _tcp_connection.resize_read_buffer(rbs)
-      | Success => None
+      | ReadBufferResized => None
       | let _: ReadBufferResizeBelowExpect =>
         _h.fail("resize_read_buffer(4096) should succeed")
       | let _: ReadBufferResizeBelowUsed =>
@@ -2989,7 +2989,7 @@ actor \nodoc\ _TestResizeReadBufferSuccessServer is
     match MakeReadBufferSize(512)
     | let rbs: ReadBufferSize =>
       match _tcp_connection.resize_read_buffer(rbs)
-      | Success => None
+      | ReadBufferResized => None
       | let _: ReadBufferResizeBelowExpect =>
         _h.fail("resize_read_buffer(512) should succeed")
       | let _: ReadBufferResizeBelowUsed =>
@@ -3057,7 +3057,7 @@ actor \nodoc\ _TestResizeReadBufferBelowExpectServer is
     match MakeReadBufferSize(100)
     | let rbs: ReadBufferSize =>
       match _tcp_connection.resize_read_buffer(rbs)
-      | Success =>
+      | ReadBufferResized =>
         _h.fail("resize_read_buffer(100) should fail when expect is 200")
       | let _: ReadBufferResizeBelowExpect => None
       | let _: ReadBufferResizeBelowUsed =>
@@ -3132,7 +3132,7 @@ actor \nodoc\ _TestResizeReadBufferBelowMinServer is
     match MakeReadBufferSize(256)
     | let rbs: ReadBufferSize =>
       match _tcp_connection.resize_read_buffer(rbs)
-      | Success => None
+      | ReadBufferResized => None
       | let _: ReadBufferResizeBelowExpect =>
         _h.fail("resize_read_buffer(256) should succeed")
       | let _: ReadBufferResizeBelowUsed =>
@@ -3144,14 +3144,14 @@ actor \nodoc\ _TestResizeReadBufferBelowMinServer is
 
     // Now expect(512) should fail because minimum was lowered to 256
     match _tcp_connection.expect(512)
-    | Success =>
+    | ExpectSet =>
       _h.fail("expect(512) should fail when minimum is 256")
     | ExpectAboveBufferMinimum => None
     end
 
     // expect(256) should succeed (at the new minimum)
     match _tcp_connection.expect(256)
-    | Success => None
+    | ExpectSet => None
     | ExpectAboveBufferMinimum =>
       _h.fail("expect(256) should succeed when minimum is 256")
     end
@@ -3215,7 +3215,7 @@ actor \nodoc\ _TestExpectAboveBufferMinServer is
   fun ref _on_started() =>
     // expect(256) should fail because minimum is 128
     match _tcp_connection.expect(256)
-    | Success =>
+    | ExpectSet =>
       _h.fail("expect(256) should fail when minimum is 128")
     | ExpectAboveBufferMinimum => None
     end
@@ -3279,7 +3279,7 @@ actor \nodoc\ _TestExpectAtBufferMinServer is
   fun ref _on_started() =>
     // expect(256) should succeed (equals minimum)
     match _tcp_connection.expect(256)
-    | Success => None
+    | ExpectSet => None
     | ExpectAboveBufferMinimum =>
       _h.fail("expect(256) should succeed when minimum is 256")
     end

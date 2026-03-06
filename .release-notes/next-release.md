@@ -24,7 +24,7 @@ The invariant chain `expect <= read_buffer_min <= read_buffer_size` is enforced 
 
 ## Change expect() to return ExpectResult instead of raising an error
 
-`expect()` previously raised an error when the requested value exceeded the buffer size. It now returns `ExpectResult`, which is either `Success` or `ExpectAboveBufferMinimum`. This is a breaking change — all callers using `try expect()? end` must switch to matching on the result.
+`expect()` previously raised an error when the requested value exceeded the buffer size. It now returns `ExpectResult`, which is either `ExpectSet` or `ExpectAboveBufferMinimum`. This is a breaking change — all callers using `try expect()? end` must switch to matching on the result.
 
 Before:
 

@@ -1,5 +1,5 @@
-primitive Success
-  """A successful operation."""
+primitive ReadBufferResized
+  """A successful read buffer operation."""
 
 primitive ReadBufferResizeBelowExpect
   """
@@ -15,7 +15,10 @@ primitive ReadBufferResizeBelowUsed
   """
 
 type ReadBufferResizeResult is
-  (Success | ReadBufferResizeBelowExpect | ReadBufferResizeBelowUsed)
+  (ReadBufferResized | ReadBufferResizeBelowExpect | ReadBufferResizeBelowUsed)
+
+primitive ExpectSet
+  """A successful expect operation."""
 
 primitive ExpectAboveBufferMinimum
   """
@@ -24,4 +27,4 @@ primitive ExpectAboveBufferMinimum
   """
 
 type ExpectResult is
-  (Success | ExpectAboveBufferMinimum)
+  (ExpectSet | ExpectAboveBufferMinimum)
