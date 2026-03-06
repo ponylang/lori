@@ -14,7 +14,7 @@ All notable changes to this project will be documented in this file. This projec
 ### Changed
 
 - Change expect() to return ExpectResult instead of raising an error ([PR #214](https://github.com/ponylang/lori/pull/214))
-
+- Make expect() use a constrained type instead of raw USize ([PR #215](https://github.com/ponylang/lori/pull/215))
 
 ## [0.10.0] - 2026-03-03
 
