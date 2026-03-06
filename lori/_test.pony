@@ -122,7 +122,9 @@ actor \nodoc\ _TestPinger is (TCPConnectionActor & ClientLifecycleEventReceiver)
       "",
       this,
       this)
-    _tcp_connection.expect(4)
+    match MakeExpect(4)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -160,7 +162,9 @@ actor \nodoc\ _TestPonger is (TCPConnectionActor & ServerLifecycleEventReceiver)
       fd,
       this,
       this)
-    _tcp_connection.expect(4)
+    match MakeExpect(4)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -291,7 +295,9 @@ actor \nodoc\ _TestBasicExpectServer is (TCPConnectionActor & ServerLifecycleEve
       fd,
       this,
       this)
-    _tcp_connection.expect(4)
+    match MakeExpect(4)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -904,7 +910,9 @@ actor \nodoc\ _TestSSLPinger
       "",
       this,
       this)
-    _tcp_connection.expect(4)
+    match MakeExpect(4)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -945,7 +953,9 @@ actor \nodoc\ _TestSSLPonger
       fd,
       this,
       this)
-    _tcp_connection.expect(4)
+    match MakeExpect(4)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1055,7 +1065,9 @@ actor \nodoc\ _TestStartTLSClient
       "",
       this,
       this)
-    _tcp_connection.expect(2)
+    match MakeExpect(2)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1079,7 +1091,9 @@ actor \nodoc\ _TestStartTLSClient
 
   fun ref _on_tls_ready() =>
     _h.complete_action("client tls ready")
-    _tcp_connection.expect(4)
+    match MakeExpect(4)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
     _tcp_connection.send("Ping")
 
   fun ref _on_tls_failure(reason: TLSFailureReason) =>
@@ -1103,7 +1117,9 @@ actor \nodoc\ _TestStartTLSServer
       fd,
       this,
       this)
-    _tcp_connection.expect(8)
+    match MakeExpect(8)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1125,7 +1141,9 @@ actor \nodoc\ _TestStartTLSServer
 
   fun ref _on_tls_ready() =>
     _h.complete_action("server tls ready")
-    _tcp_connection.expect(4)
+    match MakeExpect(4)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _on_tls_failure(reason: TLSFailureReason) =>
     _h.fail("Server TLS handshake failed")
@@ -1607,7 +1625,9 @@ actor \nodoc\ _TestSendvServer
       fd,
       this,
       this)
-    _tcp_connection.expect(13)
+    match MakeExpect(13)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1783,7 +1803,9 @@ actor \nodoc\ _TestSendvMixedEmptyServer
       fd,
       this,
       this)
-    _tcp_connection.expect(10)
+    match MakeExpect(10)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1923,7 +1945,9 @@ actor \nodoc\ _TestSSLSendvServer
       fd,
       this,
       this)
-    _tcp_connection.expect(15)
+    match MakeExpect(15)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2345,7 +2369,9 @@ actor \nodoc\ _TestYieldReadServer
       fd,
       this,
       this)
-    _tcp_connection.expect(4)
+    match MakeExpect(4)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2393,7 +2419,9 @@ actor \nodoc\ _TestIP4Pinger is (TCPConnectionActor & ClientLifecycleEventReceiv
       "",
       this,
       this where ip_version = IP4)
-    _tcp_connection.expect(4)
+    match MakeExpect(4)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2431,7 +2459,9 @@ actor \nodoc\ _TestIP4Ponger is (TCPConnectionActor & ServerLifecycleEventReceiv
       fd,
       this,
       this)
-    _tcp_connection.expect(4)
+    match MakeExpect(4)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2517,7 +2547,9 @@ actor \nodoc\ _TestIP6Pinger is (TCPConnectionActor & ClientLifecycleEventReceiv
       "",
       this,
       this where ip_version = IP6)
-    _tcp_connection.expect(4)
+    match MakeExpect(4)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2555,7 +2587,9 @@ actor \nodoc\ _TestIP6Ponger is (TCPConnectionActor & ServerLifecycleEventReceiv
       fd,
       this,
       this)
-    _tcp_connection.expect(4)
+    match MakeExpect(4)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2887,7 +2921,9 @@ actor \nodoc\ _TestSetReadBufferMinBelowExpectServer is
 
   fun ref _on_started() =>
     // Set expect to 100
-    _tcp_connection.expect(100)
+    match MakeExpect(100)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
     // Setting minimum below expect should fail
     match MakeReadBufferSize(50)
@@ -3051,7 +3087,9 @@ actor \nodoc\ _TestResizeReadBufferBelowExpectServer is
 
   fun ref _on_started() =>
     // Set expect to 200
-    _tcp_connection.expect(200)
+    match MakeExpect(200)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
     // Resize below expect should fail
     match MakeReadBufferSize(100)
@@ -3143,17 +3181,23 @@ actor \nodoc\ _TestResizeReadBufferBelowMinServer is
     end
 
     // Now expect(512) should fail because minimum was lowered to 256
-    match _tcp_connection.expect(512)
-    | ExpectSet =>
-      _h.fail("expect(512) should fail when minimum is 256")
-    | ExpectAboveBufferMinimum => None
+    match MakeExpect(512)
+    | let e: Expect =>
+      match _tcp_connection.expect(e)
+      | ExpectSet =>
+        _h.fail("expect(512) should fail when minimum is 256")
+      | ExpectAboveBufferMinimum => None
+      end
     end
 
     // expect(256) should succeed (at the new minimum)
-    match _tcp_connection.expect(256)
-    | ExpectSet => None
-    | ExpectAboveBufferMinimum =>
-      _h.fail("expect(256) should succeed when minimum is 256")
+    match MakeExpect(256)
+    | let e: Expect =>
+      match _tcp_connection.expect(e)
+      | ExpectSet => None
+      | ExpectAboveBufferMinimum =>
+        _h.fail("expect(256) should succeed when minimum is 256")
+      end
     end
 
     _h.complete(true)
@@ -3214,10 +3258,13 @@ actor \nodoc\ _TestExpectAboveBufferMinServer is
 
   fun ref _on_started() =>
     // expect(256) should fail because minimum is 128
-    match _tcp_connection.expect(256)
-    | ExpectSet =>
-      _h.fail("expect(256) should fail when minimum is 128")
-    | ExpectAboveBufferMinimum => None
+    match MakeExpect(256)
+    | let e: Expect =>
+      match _tcp_connection.expect(e)
+      | ExpectSet =>
+        _h.fail("expect(256) should fail when minimum is 128")
+      | ExpectAboveBufferMinimum => None
+      end
     end
 
     _h.complete(true)
@@ -3278,10 +3325,13 @@ actor \nodoc\ _TestExpectAtBufferMinServer is
 
   fun ref _on_started() =>
     // expect(256) should succeed (equals minimum)
-    match _tcp_connection.expect(256)
-    | ExpectSet => None
-    | ExpectAboveBufferMinimum =>
-      _h.fail("expect(256) should succeed when minimum is 256")
+    match MakeExpect(256)
+    | let e: Expect =>
+      match _tcp_connection.expect(e)
+      | ExpectSet => None
+      | ExpectAboveBufferMinimum =>
+        _h.fail("expect(256) should succeed when minimum is 256")
+      end
     end
 
     _h.complete(true)

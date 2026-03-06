@@ -36,6 +36,7 @@ lori/
   send_token.pony           -- SendToken class, SendError primitives and type alias
   read_buffer.pony          -- Read buffer result types (ReadBufferResized, ExpectSet, etc.)
   read_buffer_size.pony     -- ReadBufferSize constrained type, validator, and default
+  expect.pony               -- Expect constrained type and validator
   start_tls_error.pony      -- StartTLSError primitives and type alias
   connection_failure_reason.pony -- ConnectionFailureReason primitives and type alias
   start_failure_reason.pony -- StartFailureReason primitive and type alias
@@ -146,11 +147,11 @@ SSL state lives directly in `TCPConnection` (fields `_ssl`, `_ssl_ready`, `_ssl_
 - **Client handshake initiation:** When TCP connects, `_ssl_flush_sends()` sends the ClientHello. The handshake proceeds via `_deliver_received()` → `ssl.receive()` → `_ssl_poll()`.
 - **Ready signaling:** `_ssl_ready` is set when `ssl.state()` returns `SSLReady`, which triggers `_on_connected`/`_on_started` delivery.
 - **Error handling:** `SSLAuthFail` sets `_ssl_auth_failed = true` then triggers `hard_close()`. `SSLError` triggers `hard_close()` directly. `hard_close()` reads `_ssl_auth_failed` to pass `TLSAuthFailed` vs `TLSGeneralError` to `_on_tls_failure` (for TLS upgrades), or `ConnectionFailedSSL`/`StartFailedSSL` to `_on_connection_failure`/`_on_start_failure` (for initial SSL). If the handshake never completed, clients get `_on_connection_failure(ConnectionFailedSSL)` and servers get `_on_start_failure(StartFailedSSL)`.
-- **Expect handling:** The application's `expect()` value is stored in `_ssl_expect` and used when chunking decrypted data via `ssl.read()`. The TCP read layer uses 0 (read all available) since SSL record framing doesn't align with application framing.
+- **Expect handling:** The application's `expect()` value is stored in `_ssl_expect` as `(Expect | None)` and converted to `USize` at the `ssl.read()` call site (0 for `None`). The TCP read layer uses `None` (read all available) since SSL record framing doesn't align with application framing.
 
 ### TLS upgrade (STARTTLS)
 
-`start_tls(ssl_ctx, host)` upgrades an established plaintext connection to TLS. It creates an SSL session, migrates expect state (`_ssl_expect = _expect; _expect = 0`), sets `_tls_upgrade = true`, and flushes the ClientHello. The `_tls_upgrade` flag distinguishes "initial SSL from constructor" vs "upgraded SSL from start_tls()":
+`start_tls(ssl_ctx, host)` upgrades an established plaintext connection to TLS. It creates an SSL session, migrates expect state (`_ssl_expect = _expect; _expect = None`), sets `_tls_upgrade = true`, and flushes the ClientHello. The `_tls_upgrade` flag distinguishes "initial SSL from constructor" vs "upgraded SSL from start_tls()":
 
 - **`_ssl_poll()`**: When `SSLReady` is reached and `_tls_upgrade` is true, calls `_on_tls_ready()` instead of `_on_connected()`/`_on_started()`.
 - **`hard_close()`**: When SSL handshake is incomplete and `_tls_upgrade` is true, calls `_on_tls_failure(reason)` (where `reason` is `TLSAuthFailed` or `TLSGeneralError` based on `_ssl_auth_failed`) then `_on_closed()` (the application already knew about the plaintext connection). Without `_tls_upgrade`, the initial-SSL path fires `_on_connection_failure(ConnectionFailedSSL)`/`_on_start_failure(StartFailedSSL)` instead.
@@ -231,9 +232,9 @@ API:
 - Constructor parameter `read_buffer_size: ReadBufferSize` (default `DefaultReadBufferSize()`, 16384) sets both `_read_buffer_size` and `_read_buffer_min`.
 - `set_read_buffer_minimum(new_min: ReadBufferSize)` — sets shrink-back floor, grows buffer if needed.
 - `resize_read_buffer(size: ReadBufferSize)` — forces buffer to exact size, lowers minimum if below it.
-- `expect(qty)` — returns `ExpectAboveBufferMinimum` if `qty > _read_buffer_min`.
+- `expect(qty: (Expect | None))` — returns `ExpectAboveBufferMinimum` if `qty` exceeds `_read_buffer_min`. `None` means "deliver all available data."
 
-`_user_expect()` returns `_expect.max(_ssl_expect)` for invariant checks (the user's expect value regardless of SSL state).
+`_user_expect()` returns the unwrapped expect value as `USize` (0 when both `_expect` and `_ssl_expect` are `None`) for invariant checks against buffer sizes.
 
 Shrink-back happens in `_resize_read_buffer_if_needed()` when `_bytes_in_read_buffer == 0` and `_read_buffer_size > _read_buffer_min`. On Windows, a post-loop call to `_resize_read_buffer_if_needed()` was added in `_read_completed()` and `_windows_resume_read()` because the existing calls inside the `while _there_is_buffered_read_data()` loop can never see `_bytes_in_read_buffer == 0`.
 

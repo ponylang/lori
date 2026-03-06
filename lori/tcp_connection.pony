@@ -30,7 +30,7 @@ class TCPConnection
   var _bytes_in_read_buffer: USize = 0
   var _read_buffer_size: USize = 16384
   var _read_buffer_min: USize = 16384
-  var _expect: USize = 0
+  var _expect: (Expect | None) = None
 
   // Send token tracking
   var _next_token_id: USize = 0
@@ -40,7 +40,7 @@ class TCPConnection
   var _ssl: (SSL ref | None) = None
   var _ssl_ready: Bool = false
   var _ssl_failed: Bool = false
-  var _ssl_expect: USize = 0
+  var _ssl_expect: (Expect | None) = None
   // Distinguishes "initial SSL from constructor" vs "upgraded SSL from
   // start_tls()". Used by _ssl_poll() and hard_close() to route to the
   // correct callbacks (_on_tls_ready/_on_tls_failure vs
@@ -337,20 +337,32 @@ class TCPConnection
     """
     The user's requested expect value, regardless of whether SSL is active.
     Internally, expect is split across _expect (non-SSL) and _ssl_expect (SSL),
-    but invariant checks need the user's actual requested value.
+    but invariant checks need the user's actual requested value. Returns 0 when
+    both are None, since 0 < any valid buffer min — the correct behavior for
+    invariant checks when no expect constraint is active.
     """
-    _expect.max(_ssl_expect)
+    match \exhaustive\ _expect
+    | let e: Expect => e()
+    | None =>
+      match \exhaustive\ _ssl_expect
+      | let e: Expect => e()
+      | None => 0
+      end
+    end
 
-  fun ref expect(qty: USize): ExpectResult =>
+  fun ref expect(qty: (Expect | None)): ExpectResult =>
     """
     Set the number of bytes to read before delivering data via
-    `_on_received`. When `qty` is 0, all available data is delivered.
+    `_on_received`. When `qty` is `None`, all available data is delivered.
 
     Returns `ExpectAboveBufferMinimum` if `qty` exceeds the current read
     buffer minimum. Raise the buffer minimum first, then set expect.
     """
-    if qty > _read_buffer_min then
-      return ExpectAboveBufferMinimum
+    match qty
+    | let e: Expect =>
+      if e() > _read_buffer_min then
+        return ExpectAboveBufferMinimum
+      end
     end
 
     match \exhaustive\ _lifecycle_event_receiver
@@ -358,10 +370,10 @@ class TCPConnection
       match \exhaustive\ _ssl
       | let _: SSL ref =>
         // Store the application's expect value for SSL read chunking.
-        // Tell the TCP read layer to read all available (0) since SSL
+        // Tell the TCP read layer to read all available (None) since SSL
         // record framing doesn't align with application framing.
         _ssl_expect = qty
-        _expect = 0
+        _expect = None
       | None =>
         _expect = qty
       end
@@ -591,7 +603,7 @@ class TCPConnection
     end
 
     _ssl_expect = _expect
-    _expect = 0
+    _expect = None
     _tls_upgrade = true
     _ssl = consume ssl
     _ssl_ready = false
@@ -945,12 +957,9 @@ class TCPConnection
 
             // Handle any data already in the read buffer
             while not _muted and _there_is_buffered_read_data() do
-              let bytes_to_consume = if _expect == 0 then
-                // if we aren't getting in `_expect` chunks,
-                // we should grab all the bytes that are currently available
-                _bytes_in_read_buffer
-              else
-                _expect
+              let bytes_to_consume = match \exhaustive\ _expect
+              | let e: Expect => e()
+              | None => _bytes_in_read_buffer
               end
 
               let x = _read_buffer = recover Array[U8] end
@@ -1045,10 +1054,9 @@ class TCPConnection
         while not _muted and _there_is_buffered_read_data()
         do
           // get data to be distributed and update `_bytes_in_read_buffer`
-          let chop_at = if _expect == 0 then
-            _bytes_in_read_buffer
-          else
-            _expect
+          let chop_at = match \exhaustive\ _expect
+          | let e: Expect => e()
+          | None => _bytes_in_read_buffer
           end
           (let data, _read_buffer) = (consume _read_buffer).chop(chop_at)
           _bytes_in_read_buffer = _bytes_in_read_buffer - chop_at
@@ -1100,10 +1108,9 @@ class TCPConnection
       match \exhaustive\ _lifecycle_event_receiver
       | let s: EitherLifecycleEventReceiver ref =>
         while not _muted and _there_is_buffered_read_data() do
-          let chop_at = if _expect == 0 then
-            _bytes_in_read_buffer
-          else
-            _expect
+          let chop_at = match \exhaustive\ _expect
+          | let e: Expect => e()
+          | None => _bytes_in_read_buffer
           end
           (let data, _read_buffer) = (consume _read_buffer).chop(chop_at)
           _bytes_in_read_buffer = _bytes_in_read_buffer - chop_at
@@ -1135,14 +1142,21 @@ class TCPConnection
     end
 
   fun _there_is_buffered_read_data(): Bool =>
-    (_bytes_in_read_buffer >= _expect) and (_bytes_in_read_buffer > 0)
+    match \exhaustive\ _expect
+    | let e: Expect => _bytes_in_read_buffer >= e()
+    | None => _bytes_in_read_buffer > 0
+    end
 
   fun ref _resize_read_buffer_if_needed() =>
     """
     Resize the read buffer if it's smaller than expected data size, or shrink
     it back to the minimum when empty and oversized.
     """
-    if _read_buffer.size() <= _expect then
+    let needs_grow = match \exhaustive\ _expect
+    | let e: Expect => _read_buffer.size() <= e()
+    | None => _read_buffer.size() == 0
+    end
+    if needs_grow then
       _read_buffer.undefined(_read_buffer_size)
     elseif (_bytes_in_read_buffer == 0)
       and (_read_buffer_size > _read_buffer_min)
@@ -1330,8 +1344,12 @@ class TCPConnection
       end
 
       // Read all available decrypted data
+      let ssl_read_expect: USize = match \exhaustive\ _ssl_expect
+      | let e: Expect => e()
+      | None => 0
+      end
       while true do
-        match \exhaustive\ ssl.read(_ssl_expect)
+        match \exhaustive\ ssl.read(ssl_read_expect)
         | let d: Array[U8] iso => s._on_received(consume d)
         | None => break
         end

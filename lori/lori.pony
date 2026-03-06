@@ -342,8 +342,9 @@ match MakeReadBufferSize(8192)
 end
 ```
 
-The invariant chain is: `expect <= read_buffer_min <= read_buffer_size`. Setting
-expect above the buffer minimum returns
+The `expect()` method accepts `(Expect | None)` where `None` means "deliver all
+available data." The invariant chain is: `expect <= read_buffer_min <=
+read_buffer_size`. Setting expect above the buffer minimum returns
 [`ExpectAboveBufferMinimum`](/lori/lori-ExpectAboveBufferMinimum/) — raise the
 minimum first, then set expect. Resizing below the current expect returns
 [`ReadBufferResizeBelowExpect`](/lori/lori-ReadBufferResizeBelowExpect/).
