@@ -22,7 +22,7 @@ primitive ExpectSet
 
 primitive ExpectAboveBufferMinimum
   """
-  The requested expect value exceeds the current read buffer minimum. Raise
+  The requested `Expect` value exceeds the current read buffer minimum. Raise
   the buffer minimum first, then set expect.
   """
 

@@ -12,6 +12,7 @@ echoed responses.
 Expected output shows the client sending several messages and receiving each
 one echoed back, confirming the framing round-trip.
 """
+use "constrained_types"
 use "../../lori"
 
 actor Main
@@ -59,7 +60,9 @@ actor FramedServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   new create(auth: TCPServerAuth, fd: U32, out: OutStream) =>
     _out = out
     _tcp_connection = TCPConnection.server(auth, fd, this, this)
-    _tcp_connection.expect(4)
+    match MakeExpect(4)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -73,7 +76,9 @@ actor FramedServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
           data(3)?.usize()
         _out.print("Server: header says " + len.string() + " byte payload")
         _reading_header = false
-        _tcp_connection.expect(len)
+        match MakeExpect(len)
+        | let e: Expect => _tcp_connection.expect(e)
+        end
       end
     else
       let payload: Array[U8] val = consume data
@@ -92,7 +97,9 @@ actor FramedServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
       _tcp_connection.send(recover val [as ByteSeq: header; payload] end)
 
       _reading_header = true
-      _tcp_connection.expect(4)
+      match MakeExpect(4)
+      | let e: Expect => _tcp_connection.expect(e)
+      end
     end
 
   fun ref _on_closed() =>
@@ -131,7 +138,9 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
     for msg in _messages.values() do
       _send_framed(msg)
     end
-    _tcp_connection.expect(4)
+    match MakeExpect(4)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _send_framed(msg: String) =>
     """
@@ -157,7 +166,9 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
           (data(2)?.usize() << 8) or
           data(3)?.usize()
         _reading_header = false
-        _tcp_connection.expect(len)
+        match MakeExpect(len)
+        | let e: Expect => _tcp_connection.expect(e)
+        end
       end
     else
       let payload = String.from_array(consume data)
@@ -174,7 +185,9 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
       end
 
       _reading_header = true
-      _tcp_connection.expect(4)
+      match MakeExpect(4)
+      | let e: Expect => _tcp_connection.expect(e)
+      end
 
       if _messages_received == _messages.size() then
         _out.print("Client: all " + _messages.size().string()

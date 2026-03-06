@@ -7,9 +7,10 @@ prints each reply and sends "Ping" again, producing an infinite back-and-forth.
 
 Shows both sides of a TCP conversation: ServerLifecycleEventReceiver for the
 server and ClientLifecycleEventReceiver for the client. Both sides use
-`expect(4)` so that each `_on_received` callback delivers exactly one
+`expect()` so that each `_on_received` callback delivers exactly one
 4-byte message ("Ping" or "Pong").
 """
+use "constrained_types"
 use "../../lori"
 
 actor Main
@@ -52,7 +53,9 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
   new create(auth: TCPServerAuth, fd: U32, out: OutStream) =>
     _out = out
     _tcp_connection =  TCPConnection.server(auth, fd, this, this)
-    _tcp_connection.expect(4)
+    match MakeExpect(4)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -73,7 +76,9 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
   =>
     _out = out
     _tcp_connection = TCPConnection.client(auth, host, port, from, this, this)
-    _tcp_connection.expect(4)
+    match MakeExpect(4)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection

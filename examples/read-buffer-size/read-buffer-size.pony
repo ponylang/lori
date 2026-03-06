@@ -62,7 +62,9 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
     | let _: ValidationFailure =>
       _tcp_connection = TCPConnection.server(auth, fd, this, this)
     end
-    _tcp_connection.expect(4)
+    match MakeExpect(4)
+    | let e: Expect => _tcp_connection.expect(e)
+    end
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -81,7 +83,7 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
           _tcp_connection.resize_read_buffer(rbs)
         end
         // Read all available data in bulk mode
-        _tcp_connection.expect(0)
+        _tcp_connection.expect(None)
         _control_phase = false
       end
     else

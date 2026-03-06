@@ -35,7 +35,9 @@ try _tcp_connection.expect(4)? end
 After:
 
 ```pony
-_tcp_connection.expect(4)
+match MakeExpect(4)
+| let e: Expect => _tcp_connection.expect(e)
+end
 ```
 
 The guard now checks against the read buffer minimum rather than the buffer size, enforcing the `expect <= read_buffer_min` invariant.
