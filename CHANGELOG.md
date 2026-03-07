@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file. This projec
 ### Added
 
 - Add configurable read buffer size ([PR #214](https://github.com/ponylang/lori/pull/214))
+- Add TCP_NODELAY and socket buffer size methods ([PR #217](https://github.com/ponylang/lori/pull/217))
 
 ### Changed
 
