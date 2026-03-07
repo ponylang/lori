@@ -354,6 +354,38 @@ Resizing below the amount of unprocessed data in the buffer returns
 When the buffer is empty and larger than the minimum, it automatically shrinks
 back to the minimum size.
 
+## Socket Options
+
+`TCPConnection` exposes commonly-tuned socket options for connected sockets.
+All methods guard with `is_open()` and return an error indicator when the
+connection is not open.
+
+**TCP_NODELAY** disables Nagle's algorithm so small writes are sent immediately:
+
+```pony
+fun ref _on_started() =>
+  // Disable Nagle for low-latency responses
+  _tcp_connection.set_nodelay(true)
+```
+
+**OS buffer sizes** control the kernel's receive and send buffers. The OS may
+round the requested size up to a platform-specific minimum:
+
+```pony
+fun ref _on_started() =>
+  _tcp_connection.set_so_rcvbuf(65536)
+  _tcp_connection.set_so_sndbuf(65536)
+
+  // Read back the actual values
+  (let errno: U32, let actual: U32) = _tcp_connection.get_so_rcvbuf()
+  if errno == 0 then
+    // actual may be >= 65536 due to OS rounding
+  end
+```
+
+All setters return `U32` — 0 on success, or a non-zero errno on failure.
+Getters return `(U32, U32)` — (errno, value).
+
 ## Connection Limits
 
 `TCPListener` accepts an optional `limit` parameter to cap the number of

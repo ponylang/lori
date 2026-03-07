@@ -32,6 +32,10 @@ Handling `send()` errors and throttle/unthrottle callbacks. A flood client sends
 
 Cooperative scheduler fairness with `yield_read()`. A flood client sends 100 four-byte messages and the server yields the read loop every 10 messages, letting other actors run before reading resumes automatically. Shows how to prevent a single connection from monopolizing the scheduler without the persistent pause of `mute()`/`unmute()`.
 
+## [socket-options](socket-options/)
+
+Socket option tuning with `set_nodelay()`, `set_so_rcvbuf()`, `get_so_rcvbuf()`, `set_so_sndbuf()`, and `get_so_sndbuf()`. A server disables Nagle's algorithm and sets OS buffer sizes on each accepted connection, then reads back the actual values (the OS may round up). Shows how to configure commonly-tuned TCP socket options on a live connection.
+
 ## [read-buffer-size](read-buffer-size/)
 
 Configurable read buffer sizing with two phases. A server starts with a small 128-byte buffer for a control phase, then switches to an 8192-byte buffer for bulk transfer after receiving a command. Demonstrates `set_read_buffer_minimum()` and `resize_read_buffer()` for tuning buffer allocation at runtime, and the `read_buffer_size` constructor parameter for setting the initial size.
