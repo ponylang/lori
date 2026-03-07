@@ -49,6 +49,7 @@ lori/
   pony_asio.pony            -- FFI wrappers for pony_asio_event_* functions
   ossocket.pony             -- _OSSocket: getsockopt/setsockopt wrappers
   ossocketopt.pony          -- OSSockOpt: socket option constants (large, generated)
+  _connection_state.pony    -- _ConnectionState trait and lifecycle state classes
   _panics.pony              -- _Unreachable primitive for impossible states
   _test.pony                -- Tests
 examples/
@@ -138,6 +139,34 @@ actor MySSLClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
 ```
 
 SSL is handled internally by `TCPConnection`. The `ssl_client`/`ssl_server` constructors create an `SSL` session from the provided `SSLContext val`, perform the handshake transparently, and deliver `_on_connected`/`_on_started` only after the handshake completes. If SSL session creation fails, `_on_connection_failure(ConnectionFailedSSL)` (client) or `_on_start_failure(StartFailedSSL)` (server) fires asynchronously. If the handshake fails, `hard_close()` triggers the same failure callbacks.
+
+### Connection lifecycle state machine
+
+TCPConnection uses explicit state objects (`_ConnectionState` trait in `_connection_state.pony`) instead of boolean flags to manage the connection lifecycle. The `_state` field holds the current state, and `_event_notify` dispatches events through it:
+
+```
+_ConnectionNone → _ClientConnecting → _Open → _Closing → _Closed
+                                    ↘ _Closed (hard_close)
+_ConnectionNone → _Open (server) → _Closing → _Closed
+```
+
+| State | `is_open()` | `is_closed()` | Description |
+|---|---|---|---|
+| `_ConnectionNone` | false | false | Before `_finish_initialization`. All methods call `_Unreachable()`. |
+| `_ClientConnecting` | false | false | Happy Eyeballs in progress. Has `_pending_close` flag for `close()` during connecting. |
+| `_Open` | true | false | Connection established, I/O active. |
+| `_Closing` | false | true | Graceful shutdown in progress — waiting for peer FIN. Still reads to detect FIN. |
+| `_Closed` | false | true | Fully closed. Handles straggler event cleanup only. |
+
+State classes dispatch lifecycle-gated operations (`send`, `close`, `hard_close`, `start_tls`, `read_again`, `own_event`, `foreign_event`) and delegate to TCPConnection methods for the actual work. All I/O, SSL, buffer, and flow control logic remains on TCPConnection.
+
+**Private field access**: Pony restricts private field access to the defining type. State classes use helper methods on TCPConnection (`_set_state`, `_decrement_inflight`, `_establish_connection`, `_straggler_cleanup`, etc.) rather than accessing fields directly.
+
+**Flags kept on TCPConnection**: `_shutdown` and `_shutdown_peer` remain as data fields (set by I/O methods, checked by `_Closing`). Flow control flags (`_throttled`, `_readable`, `_writeable`, `_muted`, `_yield_read`) are orthogonal to lifecycle state.
+
+**`_event_notify` dispatch**: Timer events and disposable handling stay on TCPConnection. The `is_own_event` check is captured BEFORE dispatch because `_ClientConnecting.foreign_event()` can promote a foreign event to `_event` (Happy Eyeballs winner).
+
+Design: Discussion #219.
 
 ### SSL internals
 
@@ -251,7 +280,7 @@ The yield check is placed immediately after `_deliver_received()` in three locat
 
 - **POSIX `_read()`**: Inside the inner `while not _muted and _there_is_buffered_read_data()` loop. When triggered, calls `e._read_again()` and returns, exiting both inner and outer loops. On resume, `_read()` re-enters and processes remaining buffered data before reading from the socket.
 - **Windows `_read_completed()`**: Same position. The return skips the `_queue_read()` at the end — resumption happens via `_read_again()` instead.
-- **Windows `_windows_resume_read()`**: Mirrors the `_read_completed()` dispatch loop. Needed because on Windows, yielding with unprocessed buffered data and just calling `_queue_read()` (which submits an IOCP read) would leave the buffered data unprocessed until new data arrives from the peer. `_windows_resume_read()` processes buffered data first, then submits the IOCP read. Guards with `not _connected` (not `_closed`) — after a graceful `close()`, `_closed` is true but the connection still needs an IOCP read submitted to detect the peer's FIN. Using `_closed` would skip `_queue_read()`, leaving the connection half-closed permanently. `_connected` is only false after `hard_close()` (full teardown), which is the actual case to guard against.
+- **Windows `_windows_resume_read()`**: Mirrors the `_read_completed()` dispatch loop. Needed because on Windows, yielding with unprocessed buffered data and just calling `_queue_read()` (which submits an IOCP read) would leave the buffered data unprocessed until new data arrives from the peer. `_windows_resume_read()` processes buffered data first, then submits the IOCP read. The state machine guards against calling this after `hard_close()`: `_Closed.read_again()` is a no-op, while `_Closing.read_again()` correctly calls `_windows_resume_read()` because the socket is still connected and needs an IOCP read to detect the peer's FIN.
 
 **SSL granularity**: `yield_read()` operates at TCP-read granularity. All SSL-decrypted messages from a single `ssl.receive()` call are delivered inside `_ssl_poll()` before the yield check fires. Per-SSL-message yielding would require changes to `_ssl_poll()` and handling partially-consumed SSL buffers on resume.
 
@@ -265,7 +294,7 @@ The yield check is placed immediately after `_deliver_received()` in three locat
 
 All methods guard with `is_open()`. Setters return 0 on success or errno on failure. Getters return `(errno, value)`. When the connection is not open, setters return 1 and getters return `(1, 0)`. These delegate to `_OSSocket` methods in `ossocket.pony`.
 
-Note: `keepalive()` predates these methods and uses `if _connected` rather than `is_open()` — a minor inconsistency.
+Note: `keepalive()` predates these methods and uses `_state.is_open()` (updated from the original `_connected` check when the lifecycle state machine was introduced).
 
 ### Platform differences
 
@@ -273,7 +302,7 @@ POSIX and Windows (IOCP) have distinct code paths throughout `TCPConnection`, gu
 
 ## Future Work
 
-- **TCPConnection refactoring**: `tcp_connection.pony` has multiple interleaved state machines encoded as boolean flags (`_connected`, `_closed`, `_shutdown`, `_shutdown_peer`, `_ssl_ready`, `_ssl_failed`, `_throttled`, `_readable`, `_writeable`, `_muted`, `_yield_read`). Valid state combinations aren't obvious and invalid combinations aren't prevented. `_event_notify` is particularly dense — it handles own-event vs Happy Eyeballs events with nested platform and SSL branching. Design: Discussion #174 — proposes explicit connection lifecycle state objects (inspired by ponylang/postgres) to replace the lifecycle boolean flags. Decisions recorded as comments on the discussion. Readable/writeable/throttled remain as flags (flow control, not lifecycle gates). SSL state deferred to a future iteration.
+- **SSL state machine**: The lifecycle boolean flags (`_connected`, `_closed`) have been replaced by explicit state objects (Discussion #219), but SSL state (`_ssl_ready`, `_ssl_failed`, `_ssl_auth_failed`, `_tls_upgrade`) still uses boolean flags. A future iteration could introduce SSL-specific state objects. Design origin: Discussion #174.
 
 
 ## Conventions

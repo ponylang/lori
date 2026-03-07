@@ -16,11 +16,7 @@ trait tag TCPConnectionActor is AsioEventNotify
     data and reads from the socket. On Windows, processes buffered data first
     then submits a new IOCP read.
     """
-    ifdef posix then
-      _connection()._read()
-    else
-      _connection()._windows_resume_read()
-    end
+    _connection().read_again()
 
   be _register_spawner(listener: TCPListenerActor) =>
     """
