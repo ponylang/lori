@@ -2,8 +2,7 @@ use net = "net"
 use "ssl/net"
 
 class TCPConnection
-  var _connected: Bool = false
-  var _closed: Bool = false
+  var _state: _ConnectionState ref = _ConnectionNone
   var _shutdown: Bool = false
   var _shutdown_peer: Bool = false
   var _throttled: Bool = false
@@ -176,7 +175,7 @@ class TCPConnection
     keepalive is disabled by default. This can only be set on a connected
     socket.
     """
-    if _connected then
+    if _state.is_open() then
       PonyTCP.keepalive(_fd, secs)
     end
 
@@ -263,7 +262,7 @@ class TCPConnection
     match \exhaustive\ duration
     | let t: IdleTimeout =>
       _idle_timeout_nsec = t() * 1_000_000
-      if _connected and not _closed then
+      if _state.is_open() then
         if _timer_event.is_null() then
           _arm_idle_timer()
         else
@@ -272,7 +271,7 @@ class TCPConnection
       end
     | None =>
       _idle_timeout_nsec = 0
-      if _connected and not _closed then
+      if _state.is_open() then
         _cancel_idle_timer()
       end
     end
@@ -459,41 +458,47 @@ class TCPConnection
     if _muted then
       hard_close()
     else
-      _close()
+      _state.close(this)
     end
 
   fun ref hard_close() =>
     """
     When an error happens, do a non-graceful close.
     """
-    if not _connected then
-      if not _closed then
-        // Connecting phase (Happy Eyeballs in progress). Mark closed so
-        // straggler events clean up instead of establishing a connection.
-        _closed = true
-        _shutdown = true
-        _shutdown_peer = true
-        match _ssl
-        | let ssl: SSL ref =>
-          ssl.dispose()
-          _ssl = None
-        end
-        match _lifecycle_event_receiver
-        | let c: ClientLifecycleEventReceiver ref =>
-          let reason = if _had_inflight then
-            ConnectionFailedTCP
-          else
-            ConnectionFailedDNS
-          end
-          c._on_connection_failure(reason)
-        end
-      end
-      _cancel_idle_timer()
-      return
-    end
+    _state.hard_close(this)
 
-    _connected = false
-    _closed = true
+  fun ref _hard_close_connecting() =>
+    """
+    Hard close during the connecting phase. Disposes SSL, fires the
+    appropriate failure callback, and cancels the idle timer. The caller
+    must set `_state = _Closed` before calling this.
+    """
+    _shutdown = true
+    _shutdown_peer = true
+    match _ssl
+    | let ssl: SSL ref =>
+      ssl.dispose()
+      _ssl = None
+    end
+    match _lifecycle_event_receiver
+    | let c: ClientLifecycleEventReceiver ref =>
+      let reason = if _had_inflight then
+        ConnectionFailedTCP
+      else
+        ConnectionFailedDNS
+      end
+      c._on_connection_failure(reason)
+    end
+    _cancel_idle_timer()
+
+  fun ref _hard_close_connected() =>
+    """
+    Hard close for an established connection. Fires `_on_send_failed` for
+    any pending token, clears pending buffers, cancels idle timer,
+    unsubscribes the event, closes the fd, disposes SSL, and fires the
+    appropriate lifecycle callbacks. The caller must set `_state = _Closed`
+    before calling this.
+    """
     _shutdown = true
     _shutdown_peer = true
 
@@ -582,10 +587,10 @@ class TCPConnection
     end
 
   fun is_open(): Bool =>
-    _connected and not _closed
+    _state.is_open()
 
   fun is_closed(): Bool =>
-    _closed
+    _state.is_closed()
 
   fun is_writeable(): Bool =>
     """
@@ -623,10 +628,11 @@ class TCPConnection
     connections. Pass an empty string for server connections or when SNI is
     not needed.
     """
-    if not is_open() then
-      return StartTLSNotConnected
-    end
+    _state.start_tls(this, ssl_ctx, host)
 
+  fun ref _do_start_tls(ssl_ctx: SSLContext val, host: String):
+    (None | StartTLSError)
+  =>
     match _ssl
     | let _: SSL ref => return StartTLSAlreadyTLS
     end
@@ -681,10 +687,9 @@ class TCPConnection
     failure. When successful, `_on_sent(token)` will fire in a subsequent
     behavior turn once the data has been fully handed to the OS.
     """
-    if not is_open() then
-      return SendErrorNotConnected
-    end
+    _state.send(this, data)
 
+  fun ref _do_send(data: (ByteSeq | ByteSeqIter)): (SendToken | SendError) =>
     if not _writeable then
       return SendErrorNotWriteable
     end
@@ -749,46 +754,21 @@ class TCPConnection
 
     token
 
-  fun ref _close() =>
-    _closed = true
-    _try_shutdown()
-
-  fun ref _try_shutdown() =>
+  fun ref _initiate_shutdown() =>
     """
-    If we have closed and we have no remaining writes or pending connections,
-    then shutdown.
+    Send FIN to the peer if not already shutdown and no inflight connections
+    remain. Called when entering _Closing or when inflight connections drain
+    during _Closing.
     """
-    if not _closed then
-      return
-    end
-
     if not _shutdown and (_inflight_connections == 0) then
       _shutdown = true
-      if _connected then
-        PonyTCP.shutdown(_fd)
-      else
-        // close() during connecting phase — all inflight connections have
-        // drained without establishing a connection. Dispose SSL and fire
-        // the failure callback.
-        _shutdown_peer = true
-        match _ssl
-        | let ssl: SSL ref =>
-          ssl.dispose()
-          _ssl = None
-        end
-        match _lifecycle_event_receiver
-        | let c: ClientLifecycleEventReceiver ref =>
-          let reason = if _had_inflight then
-            ConnectionFailedTCP
-          else
-            ConnectionFailedDNS
-          end
-          c._on_connection_failure(reason)
-        end
-        return
-      end
+      PonyTCP.shutdown(_fd)
     end
 
+  fun ref _check_shutdown_complete() =>
+    """
+    If both sides have shut down, perform a hard close.
+    """
     if _shutdown and _shutdown_peer then
       hard_close()
     end
@@ -1009,7 +989,7 @@ class TCPConnection
         try
           var total_bytes_read: USize = 0
 
-          while _readable and not _shutdown_peer do
+          while _readable do
             // exit if muted
             if _muted then
               return
@@ -1067,7 +1047,6 @@ class TCPConnection
           end
         else
           // The socket has been closed from the other side.
-          _shutdown_peer = true
           hard_close()
         end
       | None =>
@@ -1155,16 +1134,13 @@ class TCPConnection
     the buffered data unprocessed until new data arrives from the peer — which
     might be never.
 
-    Called from the `_read_again()` behavior, which is deferred — the
-    connection may have fully closed between the yield and the resume. The
-    `_connected` guard catches the post-`hard_close()` case (where
-    `_on_closed` has already fired and we must not deliver `_on_received`).
-    We intentionally do NOT check `_closed` here: after a graceful `close()`,
-    `_closed` is true but `_connected` is still true — we still need to
-    submit an IOCP read to detect the peer's FIN and finish shutdown.
+    Called via `_do_read_again()` from the `_read_again()` behavior, which is
+    deferred. The state machine guards against calling this after hard_close():
+    `_Closed.read_again()` is a no-op. `_Closing.read_again()` correctly
+    calls this because the socket is still connected and we need an IOCP read
+    to detect the peer's FIN.
     """
     ifdef windows then
-      if not _connected then return end
       match \exhaustive\ _lifecycle_event_receiver
       | let s: EitherLifecycleEventReceiver ref =>
         while not _muted and _there_is_buffered_read_data() do
@@ -1422,100 +1398,103 @@ class TCPConnection
   fun _has_pending_writes(): Bool =>
     _pending_writev_total > 0
 
+  fun ref read_again() =>
+    _state.read_again(this)
+
+  fun ref _do_read_again() =>
+    ifdef posix then
+      _read()
+    else
+      _windows_resume_read()
+    end
+
+  fun ref _set_state(state: _ConnectionState ref) =>
+    _state = state
+
+  fun ref _decrement_inflight(): U32 =>
+    _inflight_connections = _inflight_connections - 1
+    _inflight_connections
+
+  fun ref _establish_connection(event: AsioEventID, fd: U32) =>
+    """
+    Called by _ClientConnecting when a Happy Eyeballs connection succeeds.
+    Promotes the event to the connection's own event, transitions to _Open,
+    and sets up the connection for I/O.
+    """
+    _event = event
+    _fd = fd
+    _state = _Open
+    _set_writeable()
+    _set_readable()
+    _arm_idle_timer()
+
+    match \exhaustive\ _ssl
+    | let _: SSL ref =>
+      // Flush ClientHello to initiate SSL handshake
+      _ssl_flush_sends()
+      // _on_connected() deferred until _ssl_ready
+    | None =>
+      match _lifecycle_event_receiver
+      | let c: ClientLifecycleEventReceiver ref =>
+        c._on_connected()
+      end
+    end
+
+    ifdef windows then
+      _queue_read()
+    else
+      _read()
+      if _has_pending_writes() then
+        _send_pending_writes()
+      end
+    end
+
+  fun ref _connecting_event_failed(event: AsioEventID, fd: U32) =>
+    """
+    Called by _ClientConnecting when a Happy Eyeballs connection attempt
+    fails. Unsubscribes the event, closes the fd, and fires the connecting
+    callback.
+    """
+    PonyAsio.unsubscribe(event)
+    PonyTCP.close(fd)
+    _connecting_callback()
+
+  fun ref _straggler_cleanup(event: AsioEventID) =>
+    """
+    Clean up a Happy Eyeballs straggler event after the winner has been
+    chosen. Unsubscribes (if not already disposable) and closes the fd.
+    Does NOT decrement _inflight_connections — caller handles that.
+    """
+    if not PonyAsio.get_disposable(event) then
+      PonyAsio.unsubscribe(event)
+    end
+    PonyTCP.close(PonyAsio.event_fd(event))
+
   fun ref _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
     // Timer fired. Disposable events for cancelled timers never reach here
     // because _cancel_idle_timer() clears _timer_event synchronously.
-    // Stale timer disposables route through the catch-all at the end of
-    // this method.
+    // Stale timer disposables route through the catch-all disposable handler
+    // below.
     if event is _timer_event then
       _fire_idle_timeout()
       return
     end
 
-    if event is _event then
-      if AsioEvent.writeable(flags) then
-        _set_writeable()
-        ifdef windows then
-          _write_completed(arg)
-        else
-          _send_pending_writes()
-        end
-      end
+    // Capture before dispatch: _ClientConnecting.foreign_event() may promote
+    // a foreign event to _event (Happy Eyeballs winner), which would make the
+    // post-dispatch identity check incorrect.
+    let is_own_event = event is _event
 
-      if AsioEvent.readable(flags) then
-        _set_readable()
-        ifdef windows then
-          _read_completed(arg)
-        else
-          _read()
-        end
-      end
-
-      if AsioEvent.disposable(flags) then
-        PonyAsio.destroy(event)
-        _event = AsioEvent.none()
-      end
-
-      _try_shutdown()
+    if is_own_event then
+      _state.own_event(this, flags, arg)
     else
-      if AsioEvent.writeable(flags) then
-        let fd = PonyAsio.event_fd(event)
-        _inflight_connections = _inflight_connections - 1
+      _state.foreign_event(this, event, flags, arg)
+    end
 
-        if not _connected and not _closed then
-          // We don't have a connection yet so we are a client
-          match _lifecycle_event_receiver
-          | let c: ClientLifecycleEventReceiver ref =>
-            if _is_socket_connected(fd) then
-              _event = event
-              _fd = fd
-              _connected = true
-              _set_writeable()
-              _set_readable()
-              _arm_idle_timer()
-
-              match \exhaustive\ _ssl
-              | let _: SSL ref =>
-                // Flush ClientHello to initiate SSL handshake
-                _ssl_flush_sends()
-                // _on_connected() deferred until _ssl_ready
-              | None =>
-                c._on_connected()
-              end
-
-              ifdef windows then
-                _queue_read()
-              else
-                _read()
-                if _has_pending_writes() then
-                  _send_pending_writes()
-                end
-              end
-            else
-              PonyAsio.unsubscribe(event)
-              PonyTCP.close(fd)
-              _connecting_callback()
-            end
-          | None =>
-            _Unreachable()
-          end
-        else
-          // There is a possibility that a non-Windows system has
-          // already unsubscribed this event already.  (Windows might
-          // be vulnerable to this race, too, I'm not sure.) It's a
-          // bug to do a second time.  Look at the disposable status
-          // of the event (not the flags that this behavior's args!)
-          // to see if it's ok to unsubscribe.
-          if not PonyAsio.get_disposable(event) then
-            PonyAsio.unsubscribe(event)
-          end
-          PonyTCP.close(fd)
-          _try_shutdown()
-        end
-      else
-        if AsioEvent.disposable(flags) then
-          PonyAsio.destroy(event)
-        end
+    if AsioEvent.disposable(flags) then
+      PonyAsio.destroy(event)
+      if is_own_event then
+        _event = AsioEvent.none()
       end
     end
 
@@ -1544,7 +1523,7 @@ class TCPConnection
 
   fun ref _register_spawner(listener: TCPListenerActor) =>
     if _spawned_by is None then
-      if not _closed then
+      if not _state.is_closed() then
         // We were connected by the time the spawner was registered,
         // so, let's let it know we were connected
         _spawned_by = listener
@@ -1572,12 +1551,15 @@ class TCPConnection
     s: ClientLifecycleEventReceiver ref)
   =>
     if _ssl_failed then
+      _state = _Closed
       s._on_connection_failure(ConnectionFailedSSL)
       return
     end
 
     match \exhaustive\ _enclosing
     | let e: TCPConnectionActor ref =>
+      _state = _ClientConnecting
+
       let asio_flags = ifdef windows then
         AsioEvent.read_write()
       else
@@ -1598,7 +1580,7 @@ class TCPConnection
     if _ssl_failed then
       PonyTCP.close(_fd)
       _fd = -1
-      _closed = true
+      _state = _Closed
       s._on_start_failure(StartFailedSSL)
       return
     end
@@ -1606,7 +1588,7 @@ class TCPConnection
     match \exhaustive\ _enclosing
     | let e: TCPConnectionActor ref =>
       _event = PonyAsio.create_event(e, _fd)
-      _connected = true
+      _state = _Open
       _set_readable()
       _set_writeable()
       _arm_idle_timer()
