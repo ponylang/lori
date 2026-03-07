@@ -175,8 +175,6 @@ class _Closing is _ConnectionState
       end
     end
 
-    conn._check_shutdown_complete()
-
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
     flags: U32, arg: U32)
   =>
