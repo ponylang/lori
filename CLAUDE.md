@@ -59,6 +59,7 @@ examples/
   infinite-ping-pong/       -- Ping-pong client+server
   ip-version/               -- IPv4-only echo server
   read-buffer-size/         -- Configurable read buffer sizing
+  socket-options/           -- TCP_NODELAY and OS buffer size tuning
   net-ssl-echo-server/      -- SSL echo server
   net-ssl-infinite-ping-pong/ -- SSL ping-pong
   starttls-ping-pong/       -- STARTTLS upgrade from plaintext to TLS
@@ -253,6 +254,18 @@ The yield check is placed immediately after `_deliver_received()` in three locat
 - **Windows `_windows_resume_read()`**: Mirrors the `_read_completed()` dispatch loop. Needed because on Windows, yielding with unprocessed buffered data and just calling `_queue_read()` (which submits an IOCP read) would leave the buffered data unprocessed until new data arrives from the peer. `_windows_resume_read()` processes buffered data first, then submits the IOCP read. Guards with `not _connected` (not `_closed`) — after a graceful `close()`, `_closed` is true but the connection still needs an IOCP read submitted to detect the peer's FIN. Using `_closed` would skip `_queue_read()`, leaving the connection half-closed permanently. `_connected` is only false after `hard_close()` (full teardown), which is the actual case to guard against.
 
 **SSL granularity**: `yield_read()` operates at TCP-read granularity. All SSL-decrypted messages from a single `ssl.receive()` call are delivered inside `_ssl_poll()` before the yield check fires. Per-SSL-message yielding would require changes to `_ssl_poll()` and handling partially-consumed SSL buffers on resume.
+
+### Socket options
+
+`TCPConnection` exposes commonly-tuned socket options as public methods, grouped with `keepalive()`:
+
+- `set_nodelay(state: Bool): U32` — enable/disable TCP_NODELAY (Nagle's algorithm). Uses `OSSockOpt.ipproto_tcp()` as the socket level.
+- `set_so_rcvbuf(bufsize: U32): U32` / `get_so_rcvbuf(): (U32, U32)` — OS receive buffer size.
+- `set_so_sndbuf(bufsize: U32): U32` / `get_so_sndbuf(): (U32, U32)` — OS send buffer size.
+
+All methods guard with `is_open()`. Setters return 0 on success or errno on failure. Getters return `(errno, value)`. When the connection is not open, setters return 1 and getters return `(1, 0)`. These delegate to `_OSSocket` methods in `ossocket.pony`.
+
+Note: `keepalive()` predates these methods and uses `if _connected` rather than `is_open()` — a minor inconsistency.
 
 ### Platform differences
 

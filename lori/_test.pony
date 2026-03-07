@@ -50,6 +50,8 @@ actor \nodoc\ Main is TestList
     test(_TestResizeReadBufferBelowMinLowersMin)
     test(_TestExpectAboveBufferMinimum)
     test(_TestExpectAtBufferMinimum)
+    test(_TestSocketOptionsConnected)
+    test(_TestSocketOptionsNotConnected)
 
 class \nodoc\ iso _TestOutgoingFails is UnitTest
   """
@@ -3353,3 +3355,102 @@ actor \nodoc\ _TestReadBufferTriggerClient is
 
   fun ref _on_connected() =>
     _tcp_connection.close()
+
+class \nodoc\ iso _TestSocketOptionsConnected is UnitTest
+  """
+  Test that set_nodelay, set_so_rcvbuf, get_so_rcvbuf, set_so_sndbuf, and
+  get_so_sndbuf succeed on a connected socket.
+  """
+  fun name(): String => "SocketOptionsConnected"
+
+  fun apply(h: TestHelper) =>
+    let listener = _TestSocketOptionsListener(h)
+    h.dispose_when_done(listener)
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSocketOptionsListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(h.env.root), "127.0.0.1", "7708", this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSocketOptionsServer =>
+    _TestSocketOptionsServer(fd, _h)
+
+  fun ref _on_listening() =>
+    _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
+      "127.0.0.1", "7708")
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open listener")
+
+actor \nodoc\ _TestSocketOptionsServer is
+  (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.server(
+      TCPServerAuth(h.env.root), fd, this, this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    // set_nodelay: enable and disable should both succeed
+    _h.assert_eq[U32](0, _tcp_connection.set_nodelay(true),
+      "set_nodelay(true) should succeed")
+    _h.assert_eq[U32](0, _tcp_connection.set_nodelay(false),
+      "set_nodelay(false) should succeed")
+
+    // set_so_rcvbuf: set then get. OS may round up, so check >= requested.
+    let rcvbuf_result = _tcp_connection.set_so_rcvbuf(8192)
+    _h.assert_eq[U32](0, rcvbuf_result, "set_so_rcvbuf should succeed")
+    (let rcv_errno: U32, let rcv_size: U32) =
+      _tcp_connection.get_so_rcvbuf()
+    _h.assert_eq[U32](0, rcv_errno, "get_so_rcvbuf errno should be 0")
+    _h.assert_true(rcv_size >= 8192,
+      "get_so_rcvbuf should return >= 8192, got " + rcv_size.string())
+
+    // set_so_sndbuf: set then get. OS may round up, so check >= requested.
+    let sndbuf_result = _tcp_connection.set_so_sndbuf(8192)
+    _h.assert_eq[U32](0, sndbuf_result, "set_so_sndbuf should succeed")
+    (let snd_errno: U32, let snd_size: U32) =
+      _tcp_connection.get_so_sndbuf()
+    _h.assert_eq[U32](0, snd_errno, "get_so_sndbuf errno should be 0")
+    _h.assert_true(snd_size >= 8192,
+      "get_so_sndbuf should return >= 8192, got " + snd_size.string())
+
+    _h.complete(true)
+    _tcp_connection.close()
+
+class \nodoc\ iso _TestSocketOptionsNotConnected is UnitTest
+  """
+  Test that socket option methods return non-zero errno on a connection
+  that is not open.
+  """
+  fun name(): String => "SocketOptionsNotConnected"
+
+  fun apply(h: TestHelper) =>
+    let conn = TCPConnection.none()
+
+    h.assert_true(conn.set_nodelay(true) != 0,
+      "set_nodelay on none should return non-zero")
+    h.assert_true(conn.set_so_rcvbuf(8192) != 0,
+      "set_so_rcvbuf on none should return non-zero")
+    h.assert_true(conn.set_so_sndbuf(8192) != 0,
+      "set_so_sndbuf on none should return non-zero")
+
+    (let rcv_errno: U32, _) = conn.get_so_rcvbuf()
+    h.assert_true(rcv_errno != 0,
+      "get_so_rcvbuf on none should return non-zero errno")
+    (let snd_errno: U32, _) = conn.get_so_sndbuf()
+    h.assert_true(snd_errno != 0,
+      "get_so_sndbuf on none should return non-zero errno")

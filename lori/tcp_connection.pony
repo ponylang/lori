@@ -180,6 +180,66 @@ class TCPConnection
       PonyTCP.keepalive(_fd, secs)
     end
 
+  fun set_nodelay(state: Bool): U32 =>
+    """
+    Turn Nagle on/off. Defaults to on (Nagle enabled, nodelay off). When
+    enabled (`state = true`), small writes are sent immediately without
+    waiting to coalesce — useful for latency-sensitive protocols. When
+    disabled (`state = false`), the OS may buffer small writes.
+
+    Returns 0 on success, or a non-zero errno on failure. Only meaningful
+    on a connected socket — returns non-zero if the connection is not open.
+    """
+    if not is_open() then return 1 end
+    _OSSocket.setsockopt_u32(_fd, OSSockOpt.ipproto_tcp(),
+      OSSockOpt.tcp_nodelay(), if state then 1 else 0 end)
+
+  fun get_so_rcvbuf(): (U32, U32) =>
+    """
+    Get the OS receive buffer size for this socket.
+
+    Returns a 2-tuple: (errno, value). On success, errno is 0 and value is
+    the buffer size in bytes. On failure, errno is non-zero and value should
+    be ignored. Only meaningful on a connected socket — returns (1, 0) if
+    the connection is not open.
+    """
+    if not is_open() then return (1, 0) end
+    _OSSocket.get_so_rcvbuf(_fd)
+
+  fun set_so_rcvbuf(bufsize: U32): U32 =>
+    """
+    Set the OS receive buffer size for this socket. The OS may round the
+    requested size up to a minimum or clamp it to a maximum.
+
+    Returns 0 on success, or a non-zero errno on failure. Only meaningful
+    on a connected socket — returns non-zero if the connection is not open.
+    """
+    if not is_open() then return 1 end
+    _OSSocket.set_so_rcvbuf(_fd, bufsize)
+
+  fun get_so_sndbuf(): (U32, U32) =>
+    """
+    Get the OS send buffer size for this socket.
+
+    Returns a 2-tuple: (errno, value). On success, errno is 0 and value is
+    the buffer size in bytes. On failure, errno is non-zero and value should
+    be ignored. Only meaningful on a connected socket — returns (1, 0) if
+    the connection is not open.
+    """
+    if not is_open() then return (1, 0) end
+    _OSSocket.get_so_sndbuf(_fd)
+
+  fun set_so_sndbuf(bufsize: U32): U32 =>
+    """
+    Set the OS send buffer size for this socket. The OS may round the
+    requested size up to a minimum or clamp it to a maximum.
+
+    Returns 0 on success, or a non-zero errno on failure. Only meaningful
+    on a connected socket — returns non-zero if the connection is not open.
+    """
+    if not is_open() then return 1 end
+    _OSSocket.set_so_sndbuf(_fd, bufsize)
+
   fun ref idle_timeout(duration: (IdleTimeout | None)) =>
     """
     Set or disable the idle timeout. Idle timeout is disabled by default.
