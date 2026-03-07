@@ -1487,11 +1487,11 @@ class TCPConnection
 
     if is_own_event then
       _state.own_event(this, flags, arg)
-      // Matches old _try_shutdown() position: a callback during own_event
-      // (e.g., _read_completed(0) → close()) can transition to _Closing and
-      // set both _shutdown and _shutdown_peer, but _Open.own_event() won't
-      // check for shutdown completion. This catch-all ensures the check runs
-      // after every own-event dispatch, regardless of which state handled it.
+      // A callback during own_event (e.g., _read_completed(0) → close()) can
+      // transition to _Closing and set _shutdown/_shutdown_peer, but
+      // _Open.own_event() won't check for shutdown completion. This catch-all
+      // ensures the check runs after every own-event dispatch, regardless of
+      // which state handled it.
       _check_shutdown_complete()
     else
       _state.foreign_event(this, event, flags, arg)
