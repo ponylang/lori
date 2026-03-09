@@ -286,13 +286,20 @@ The yield check is placed immediately after `_deliver_received()` in three locat
 
 ### Socket options
 
-`TCPConnection` exposes commonly-tuned socket options as public methods, grouped with `keepalive()`:
+`TCPConnection` exposes commonly-tuned socket options as dedicated convenience methods, grouped with `keepalive()`:
 
 - `set_nodelay(state: Bool): U32` — enable/disable TCP_NODELAY (Nagle's algorithm). Uses `OSSockOpt.ipproto_tcp()` as the socket level.
 - `set_so_rcvbuf(bufsize: U32): U32` / `get_so_rcvbuf(): (U32, U32)` — OS receive buffer size.
 - `set_so_sndbuf(bufsize: U32): U32` / `get_so_sndbuf(): (U32, U32)` — OS send buffer size.
 
-All methods guard with `is_open()`. Setters return 0 on success or errno on failure. Getters return `(errno, value)`. When the connection is not open, setters return 1 and getters return `(1, 0)`. These delegate to `_OSSocket` methods in `ossocket.pony`.
+For options without dedicated methods, four general-purpose methods expose the full `getsockopt(2)`/`setsockopt(2)` interface:
+
+- `getsockopt(level, option_name, option_max_size): (U32, Array[U8] iso^)` — raw bytes get.
+- `getsockopt_u32(level, option_name): (U32, U32)` — U32 convenience get.
+- `setsockopt(level, option_name, option): U32` — raw bytes set.
+- `setsockopt_u32(level, option_name, option): U32` — U32 convenience set.
+
+All methods guard with `is_open()`. Setters return 0 on success or errno on failure. Getters return `(errno, value)`. When the connection is not open, setters return 1 and getters return `(1, 0)`. All delegate to `_OSSocket` methods in `ossocket.pony`. Use `OSSockOpt` constants for level and option name parameters.
 
 Note: `keepalive()` predates these methods and uses `_state.is_open()` (updated from the original `_connected` check when the lifecycle state machine was introduced).
 

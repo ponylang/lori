@@ -2,10 +2,12 @@
 Socket option tuning on a connected TCP connection.
 
 A self-contained echo server that configures TCP_NODELAY and OS buffer sizes on
-each accepted connection. The client connects, sends "Hello", receives the echo,
-and prints the configured socket option values before closing. Demonstrates
-`set_nodelay()`, `set_so_rcvbuf()`, `get_so_rcvbuf()`, `set_so_sndbuf()`, and
-`get_so_sndbuf()` on a live connection.
+each accepted connection using both dedicated convenience methods and the
+general-purpose `getsockopt`/`setsockopt` interface. The client connects, sends
+"Hello", receives the echo, and prints the configured socket option values
+before closing. Demonstrates `set_nodelay()`, `set_so_rcvbuf()`,
+`get_so_rcvbuf()`, `setsockopt_u32()`, and `getsockopt_u32()` on a live
+connection.
 """
 use "../../lori"
 
@@ -61,15 +63,22 @@ actor SocketOptionsServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
     // Disable Nagle for low-latency responses
     _tcp_connection.set_nodelay(true)
 
-    // Set OS buffer sizes
+    // Set OS buffer sizes using convenience methods
     _tcp_connection.set_so_rcvbuf(32768)
-    _tcp_connection.set_so_sndbuf(32768)
 
-    // Read back the actual values (OS may round up)
+    // Set send buffer using the general-purpose setsockopt_u32 interface.
+    // Any option from OSSockOpt can be set this way.
+    _tcp_connection.setsockopt_u32(
+      OSSockOpt.sol_socket(), OSSockOpt.so_sndbuf(), 32768)
+
+    // Read back the actual values (OS may round up).
+    // Convenience method for receive buffer:
     (let rcv_errno: U32, let rcv_size: U32) =
       _tcp_connection.get_so_rcvbuf()
+    // General-purpose method for send buffer:
     (let snd_errno: U32, let snd_size: U32) =
-      _tcp_connection.get_so_sndbuf()
+      _tcp_connection.getsockopt_u32(
+        OSSockOpt.sol_socket(), OSSockOpt.so_sndbuf())
 
     if (rcv_errno == 0) and (snd_errno == 0) then
       _out.print("Server: rcvbuf=" + rcv_size.string()

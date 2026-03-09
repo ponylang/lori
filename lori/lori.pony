@@ -386,6 +386,15 @@ fun ref _on_started() =>
 All setters return `U32` — 0 on success, or a non-zero errno on failure.
 Getters return `(U32, U32)` — (errno, value).
 
+**General-purpose access** is available via `getsockopt`/`setsockopt` and their `_u32` variants for any option in [`OSSockOpt`](/lori/lori-OSSockOpt/). For commonly-tuned options, prefer the dedicated methods above.
+
+```pony
+fun ref _on_started() =>
+  // Set TCP_KEEPIDLE via the general-purpose interface
+  _tcp_connection.setsockopt_u32(
+    OSSockOpt.ipproto_tcp(), OSSockOpt.tcp_keepidle(), 60)
+```
+
 ## Connection Limits
 
 `TCPListener` accepts an optional `limit` parameter to cap the number of

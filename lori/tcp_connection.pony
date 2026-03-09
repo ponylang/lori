@@ -239,6 +239,83 @@ class TCPConnection
     if not is_open() then return 1 end
     _OSSocket.set_so_sndbuf(_fd, bufsize)
 
+  fun getsockopt(level: I32, option_name: I32,
+    option_max_size: USize = 4): (U32, Array[U8] iso^)
+  =>
+    """
+    General interface to `getsockopt(2)` for accessing any socket option.
+
+    The `option_max_size` argument is the maximum number of bytes the caller
+    expects the kernel to return. This method allocates a buffer of that size
+    before calling `getsockopt(2)`.
+
+    Returns a 2-tuple: on success, `(0, data)` where `data` is the bytes
+    returned by the kernel, sized to the actual length the kernel wrote. On
+    failure, `(errno, undefined)` — the second element must be ignored. Only
+    meaningful on a connected socket — returns `(1, empty)` if the connection
+    is not open.
+
+    For commonly-tuned options, prefer the dedicated convenience methods
+    (`set_nodelay`, `get_so_rcvbuf`, etc.). Do not change the socket's
+    non-blocking mode — lori's event-driven I/O requires non-blocking
+    sockets.
+    """
+    if not is_open() then return (1, recover Array[U8] end) end
+    _OSSocket.getsockopt(_fd, level, option_name, option_max_size)
+
+  fun getsockopt_u32(level: I32, option_name: I32): (U32, U32) =>
+    """
+    Wrapper for `getsockopt(2)` where the kernel returns a C `uint32_t`.
+
+    Returns a 2-tuple: on success, `(0, value)`. On failure,
+    `(errno, undefined)` — the second element must be ignored. Only
+    meaningful on a connected socket — returns `(1, 0)` if the connection
+    is not open.
+
+    For commonly-tuned options, prefer the dedicated convenience methods
+    (`get_so_rcvbuf`, `get_so_sndbuf`, etc.). Do not change the socket's
+    non-blocking mode — lori's event-driven I/O requires non-blocking
+    sockets.
+    """
+    if not is_open() then return (1, 0) end
+    _OSSocket.getsockopt_u32(_fd, level, option_name)
+
+  fun setsockopt(level: I32, option_name: I32, option: Array[U8]): U32 =>
+    """
+    General interface to `setsockopt(2)` for setting any socket option.
+
+    The caller is responsible for the correct size, byte contents, and
+    byte order of the `option` array for the requested `level` and
+    `option_name`.
+
+    Returns 0 on success, or the value of `errno` on failure. Only
+    meaningful on a connected socket — returns non-zero if the connection
+    is not open.
+
+    For commonly-tuned options, prefer the dedicated convenience methods
+    (`set_nodelay`, `set_so_rcvbuf`, etc.). Do not change the socket's
+    non-blocking mode — lori's event-driven I/O requires non-blocking
+    sockets.
+    """
+    if not is_open() then return 1 end
+    _OSSocket.setsockopt(_fd, level, option_name, option)
+
+  fun setsockopt_u32(level: I32, option_name: I32, option: U32): U32 =>
+    """
+    Wrapper for `setsockopt(2)` where the kernel expects a C `uint32_t`.
+
+    Returns 0 on success, or the value of `errno` on failure. Only
+    meaningful on a connected socket — returns non-zero if the connection
+    is not open.
+
+    For commonly-tuned options, prefer the dedicated convenience methods
+    (`set_nodelay`, `set_so_rcvbuf`, etc.). Do not change the socket's
+    non-blocking mode — lori's event-driven I/O requires non-blocking
+    sockets.
+    """
+    if not is_open() then return 1 end
+    _OSSocket.setsockopt_u32(_fd, level, option_name, option)
+
   fun ref idle_timeout(duration: (IdleTimeout | None)) =>
     """
     Set or disable the idle timeout. Idle timeout is disabled by default.

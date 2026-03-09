@@ -34,7 +34,7 @@ Cooperative scheduler fairness with `yield_read()`. A flood client sends 100 fou
 
 ## [socket-options](socket-options/)
 
-Socket option tuning with `set_nodelay()`, `set_so_rcvbuf()`, `get_so_rcvbuf()`, `set_so_sndbuf()`, and `get_so_sndbuf()`. A server disables Nagle's algorithm and sets OS buffer sizes on each accepted connection, then reads back the actual values (the OS may round up). Shows how to configure commonly-tuned TCP socket options on a live connection.
+Socket option tuning with dedicated convenience methods (`set_nodelay()`, `set_so_rcvbuf()`, `get_so_rcvbuf()`) and the general-purpose `setsockopt_u32()`/`getsockopt_u32()` interface. A server disables Nagle's algorithm and sets OS buffer sizes on each accepted connection, then reads back the actual values (the OS may round up). Shows both approaches to configuring TCP socket options on a live connection.
 
 ## [read-buffer-size](read-buffer-size/)
 
