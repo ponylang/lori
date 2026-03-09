@@ -7,7 +7,7 @@ use @setsockopt[I32](fd: U32, level: I32, option_name: I32,
 primitive _OSSocket
   """
   Socket type-independent wrapper functions for `getsockopt(2)` and
-  `setsockopt(2)` system calls for internal `net` package use.
+  `setsockopt(2)` system calls.
   """
 
   fun get_so_error(fd: U32): (U32, U32) =>

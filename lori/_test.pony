@@ -3358,8 +3358,9 @@ actor \nodoc\ _TestReadBufferTriggerClient is
 
 class \nodoc\ iso _TestSocketOptionsConnected is UnitTest
   """
-  Test that set_nodelay, set_so_rcvbuf, get_so_rcvbuf, set_so_sndbuf, and
-  get_so_sndbuf succeed on a connected socket.
+  Test that socket option methods succeed on a connected socket, including
+  convenience methods (set_nodelay, set_so_rcvbuf, etc.) and general-purpose
+  getsockopt/setsockopt/getsockopt_u32/setsockopt_u32.
   """
   fun name(): String => "SocketOptionsConnected"
 
@@ -3428,13 +3429,50 @@ actor \nodoc\ _TestSocketOptionsServer is
     _h.assert_true(snd_size >= 8192,
       "get_so_sndbuf should return >= 8192, got " + snd_size.string())
 
+    // setsockopt_u32/getsockopt_u32: set SO_RCVBUF via general method,
+    // read back via general method.
+    let gen_set_result = _tcp_connection.setsockopt_u32(
+      OSSockOpt.sol_socket(), OSSockOpt.so_rcvbuf(), 16384)
+    _h.assert_eq[U32](0, gen_set_result,
+      "setsockopt_u32 SO_RCVBUF should succeed")
+    (let gen_get_errno: U32, let gen_get_size: U32) =
+      _tcp_connection.getsockopt_u32(
+        OSSockOpt.sol_socket(), OSSockOpt.so_rcvbuf())
+    _h.assert_eq[U32](0, gen_get_errno,
+      "getsockopt_u32 SO_RCVBUF errno should be 0")
+    _h.assert_true(gen_get_size >= 16384,
+      "getsockopt_u32 SO_RCVBUF should return >= 16384, got "
+        + gen_get_size.string())
+
+    // setsockopt/getsockopt: set SO_SNDBUF via raw bytes, read back via
+    // raw bytes.
+    let raw_set_result = _tcp_connection.setsockopt(
+      OSSockOpt.sol_socket(), OSSockOpt.so_sndbuf(),
+      Array[U8](4).>push_u32(16384))
+    _h.assert_eq[U32](0, raw_set_result,
+      "setsockopt SO_SNDBUF should succeed")
+    (let raw_get_errno: U32, let raw_get_bytes: Array[U8] iso) =
+      _tcp_connection.getsockopt(
+        OSSockOpt.sol_socket(), OSSockOpt.so_sndbuf())
+    _h.assert_eq[U32](0, raw_get_errno,
+      "getsockopt SO_SNDBUF errno should be 0")
+    try
+      let raw_get_size = (consume raw_get_bytes).read_u32(0)?
+      _h.assert_true(raw_get_size >= 16384,
+        "getsockopt SO_SNDBUF should return >= 16384, got "
+          + raw_get_size.string())
+    else
+      _h.fail("getsockopt SO_SNDBUF returned too few bytes")
+    end
+
     _h.complete(true)
     _tcp_connection.close()
 
 class \nodoc\ iso _TestSocketOptionsNotConnected is UnitTest
   """
   Test that socket option methods return non-zero errno on a connection
-  that is not open.
+  that is not open, including both convenience methods and general-purpose
+  getsockopt/setsockopt.
   """
   fun name(): String => "SocketOptionsNotConnected"
 
@@ -3454,3 +3492,23 @@ class \nodoc\ iso _TestSocketOptionsNotConnected is UnitTest
     (let snd_errno: U32, _) = conn.get_so_sndbuf()
     h.assert_true(snd_errno != 0,
       "get_so_sndbuf on none should return non-zero errno")
+
+    // General-purpose methods
+    h.assert_true(
+      conn.setsockopt_u32(
+        OSSockOpt.sol_socket(), OSSockOpt.so_rcvbuf(), 8192) != 0,
+      "setsockopt_u32 on none should return non-zero")
+    h.assert_true(
+      conn.setsockopt(
+        OSSockOpt.sol_socket(), OSSockOpt.so_rcvbuf(),
+        Array[U8](4).>push_u32(8192)) != 0,
+      "setsockopt on none should return non-zero")
+
+    (let gen_u32_errno: U32, _) =
+      conn.getsockopt_u32(OSSockOpt.sol_socket(), OSSockOpt.so_rcvbuf())
+    h.assert_true(gen_u32_errno != 0,
+      "getsockopt_u32 on none should return non-zero errno")
+    (let gen_errno: U32, _) =
+      conn.getsockopt(OSSockOpt.sol_socket(), OSSockOpt.so_rcvbuf())
+    h.assert_true(gen_errno != 0,
+      "getsockopt on none should return non-zero errno")
