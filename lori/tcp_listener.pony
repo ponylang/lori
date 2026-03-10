@@ -54,9 +54,11 @@ class TCPListener
     Return the local IP address. If this TCPListener is closed then the
     address returned is invalid.
     """
-    let ip = recover net.NetAddress end
-    PonyTCP.sockname(_fd, ip)
-    ip
+    recover
+      let ip: net.NetAddress ref = net.NetAddress
+      PonyTCP.sockname(_fd, ip)
+      ip
+    end
 
   fun ref _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
     if event isnt _event then

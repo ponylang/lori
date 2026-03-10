@@ -422,18 +422,22 @@ class TCPConnection
     Return the local IP address. If this TCPConnection is closed then the
     address returned is invalid.
     """
-    let ip = recover net.NetAddress end
-    PonyTCP.sockname(_fd, ip)
-    ip
+    recover
+      let ip: net.NetAddress ref = net.NetAddress
+      PonyTCP.sockname(_fd, ip)
+      ip
+    end
 
   fun remote_address(): net.NetAddress =>
     """
     Return the remote IP address. If this TCPConnection is closed then the
     address returned is invalid.
     """
-    let ip = recover net.NetAddress end
-    PonyTCP.peername(_fd, ip)
-    ip
+    recover
+      let ip: net.NetAddress ref = net.NetAddress
+      PonyTCP.peername(_fd, ip)
+      ip
+    end
 
   fun ref mute() =>
     """
