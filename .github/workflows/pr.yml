@@ -23,7 +23,7 @@ jobs:
     container:
       image: ghcr.io/ponylang/shared-docker-ci-standard-builder-with-libressl-4.2.0:nightly
     steps:
-      - uses: actions/checkout@v4.1.1
+      - uses: actions/checkout@v6.0.2
       - name: config=debug
         run: make ci config=debug ssl=libressl
       - name: config=release
@@ -35,7 +35,7 @@ jobs:
     name: MacOS
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4.1.1
+      - uses: actions/checkout@v6.0.2
       - name: install pony tools
         run: bash .ci-scripts/macOS-install-nightly-pony-tools.bash
       - name: configure networking
@@ -56,7 +56,7 @@ jobs:
     runs-on: windows-2025
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v6.0.2
       - name: Tune Windows Networking
         run: .ci-scripts\windows-configure-networking.ps1
       - name: Install Pony tools
