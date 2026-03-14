@@ -71,6 +71,9 @@ ci: unit-tests examples stress-tests
 unit-tests: $(tests_binary)
 	$^ --exclude=integration
 
+test-one: $(tests_binary)
+	$^ --only="$(t)"
+
 $(tests_binary): $(GEN_FILES) $(SOURCE_FILES) | $(BUILD_DIR) dependencies
 	${PONYC} -o ${BUILD_DIR} $(SRC_DIR)
 
@@ -109,4 +112,4 @@ all: ci
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-.PHONY: all clean realclean TAGS test
+.PHONY: all clean realclean TAGS test test-one
