@@ -7,6 +7,7 @@ A Pony TCP networking library. Reimagines the standard library's `net` package w
 ```
 make ssl=3.0.x              # build + run unit tests
 make test ssl=3.0.x          # same (test is the default)
+make test-one t=TestName ssl=3.0.x  # run a single test by name
 make ci ssl=3.0.x            # unit tests + build examples + build stress tests
 make examples ssl=3.0.x      # build all examples
 make stress-tests ssl=3.0.x  # build stress tests
