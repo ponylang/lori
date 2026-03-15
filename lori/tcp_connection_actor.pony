@@ -5,7 +5,9 @@ trait tag TCPConnectionActor is AsioEventNotify
     """
     Close connection
     """
-    _connection().close()
+    // hard_close() — disposal is unconditional teardown, not graceful shutdown.
+    // See #229 for the edge-triggered race that makes close() unreliable here.
+    _connection().hard_close()
 
   be _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
     _connection()._event_notify(event, flags, arg)
