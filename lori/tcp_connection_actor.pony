@@ -5,7 +5,7 @@ trait tag TCPConnectionActor is AsioEventNotify
     """
     Close connection
     """
-    _connection().close()
+    _connection().hard_close()
 
   be _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
     _connection()._event_notify(event, flags, arg)
