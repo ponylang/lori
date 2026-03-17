@@ -223,9 +223,18 @@ switch ($Command.ToLower())
   "test"
   {
     $testFile = (BuildTest)[-1]
-    $env:PATH = 'C:\Program Files\LLVM\bin;' + $env:PATH
+
+    # Find lldb and diagnose if it can't start
+    $llvmBin = "C:\Program Files\LLVM\bin"
+    $env:PATH = "$llvmBin;" + $env:PATH
+    Write-Host "LLVM bin contents:"
+    Get-ChildItem $llvmBin -Filter "lldb*" | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
+    Write-Host "Attempting lldb --version:"
+    & "$llvmBin\lldb.exe" --version 2>&1
+    Write-Host "lldb --version exit code: $LastExitCode"
+
     Write-Host "Running under lldb: $testFile"
-    & lldb -b -o "run" -k "process status" -k "thread backtrace all" -k "quit" -- "$testFile" 2>&1
+    & "$llvmBin\lldb.exe" -b -o "run" -k "process status" -k "thread backtrace all" -k "quit" -- "$testFile" 2>&1
     $exitCode = $LastExitCode
     if ($exitCode -ne 0)
     {
