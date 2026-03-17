@@ -107,3 +107,40 @@ class \nodoc\ iso _TestConnectionTimeoutValidationAcceptsBoundary is UnitTest
     | let _: ValidationFailure =>
       h.assert_true(true)
     end
+
+class \nodoc\ iso _TestTimerDurationValidationRejectsZero is UnitTest
+  fun name(): String => "TimerDurationValidationRejectsZero"
+
+  fun apply(h: TestHelper) =>
+    match MakeTimerDuration(0)
+    | let _: TimerDuration =>
+      h.fail("MakeTimerDuration(0) should return ValidationFailure")
+    | let _: ValidationFailure =>
+      h.assert_true(true)
+    end
+
+class \nodoc\ iso _TestTimerDurationValidationAcceptsBoundary is UnitTest
+  fun name(): String => "TimerDurationValidationAcceptsBoundary"
+
+  fun apply(h: TestHelper) =>
+    match MakeTimerDuration(1)
+    | let td: TimerDuration =>
+      h.assert_eq[U64](1, td())
+    | let _: ValidationFailure =>
+      h.fail("MakeTimerDuration(1) should succeed")
+    end
+
+    match MakeTimerDuration(U64.max_value() / 1_000_000)
+    | let td: TimerDuration =>
+      h.assert_eq[U64](U64.max_value() / 1_000_000, td())
+    | let _: ValidationFailure =>
+      h.fail("MakeTimerDuration(U64.max_value() / 1_000_000) should succeed")
+    end
+
+    match MakeTimerDuration((U64.max_value() / 1_000_000) + 1)
+    | let _: TimerDuration =>
+      h.fail(
+        "MakeTimerDuration(max + 1) should return ValidationFailure")
+    | let _: ValidationFailure =>
+      h.assert_true(true)
+    end

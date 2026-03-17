@@ -66,6 +66,11 @@ class TCPConnection
   // _ssl_auth_failed.
   var _connect_timed_out: Bool = false
 
+  // Per-connection user timer via ASIO timer (one-shot, no I/O reset)
+  var _user_timer_event: AsioEventID = AsioEvent.none()
+  var _next_timer_id: USize = 0
+  var _user_timer_token: (TimerToken | None) = None
+
   // client startup state
   var _host: String = ""
   var _port: String = ""
@@ -387,6 +392,66 @@ class TCPConnection
       end
     end
 
+  fun ref set_timer(duration: TimerDuration): (TimerToken | SetTimerError) =>
+    """
+    Create a one-shot timer that fires `_on_timer()` after the configured
+    duration. Returns a `TimerToken` on success, or a `SetTimerError` on
+    failure.
+
+    Unlike `idle_timeout()`, this timer has no I/O-reset behavior — it fires
+    unconditionally after the duration elapses, regardless of send/receive
+    activity. There is no automatic re-arming; call `set_timer()` again from
+    `_on_timer()` for repetition.
+
+    Only one user timer can be active at a time. Setting a timer while one is
+    already active returns `SetTimerAlreadyActive` — call `cancel_timer()`
+    first. This prevents silent token invalidation.
+
+    Requires the connection to be application-level connected: `is_open()` must
+    be true and the initial SSL handshake (if any) must have completed. TLS
+    upgrades via `start_tls()` do not block timer creation.
+
+    The timer survives `close()` (graceful shutdown) but is cancelled by
+    `hard_close()`.
+    """
+    if not is_open() then return SetTimerNotOpen end
+    // Don't allow during initial SSL handshake — the application hasn't
+    // received _on_connected/_on_started yet. TLS upgrades are excluded:
+    // the application already received _on_connected/_on_started for the
+    // plaintext connection.
+    match _ssl
+    | let _: SSL ref if (not _ssl_ready) and (not _tls_upgrade) =>
+      return SetTimerNotOpen
+    end
+    if _user_timer_token isnt None then return SetTimerAlreadyActive end
+
+    let nsec = duration() * 1_000_000
+    match \exhaustive\ _enclosing
+    | let e: TCPConnectionActor ref =>
+      _user_timer_event = PonyAsio.create_timer_event(e, nsec)
+    | None =>
+      _Unreachable()
+    end
+    let token = TimerToken._create(_next_timer_id = _next_timer_id + 1)
+    _user_timer_token = token
+    token
+
+  fun ref cancel_timer(token: TimerToken) =>
+    """
+    Cancel an active timer. No-op if the token doesn't match the active timer
+    (already fired, already cancelled, wrong token). Safe to call with stale
+    tokens.
+
+    No connection state check — timers can be cancelled during graceful
+    shutdown (`_Closing`) since they remain active until `hard_close()`.
+    """
+    match _user_timer_token
+    | let t: TimerToken if t == token =>
+      PonyAsio.unsubscribe(_user_timer_event)
+      _user_timer_event = AsioEvent.none()
+      _user_timer_token = None
+    end
+
   fun ref set_read_buffer_minimum(new_min: ReadBufferSize):
     (ReadBufferResized | ReadBufferResizeBelowExpect)
   =>
@@ -585,7 +650,7 @@ class TCPConnection
   fun ref _hard_close_connecting() =>
     """
     Hard close during the connecting phase. Disposes SSL, fires the
-    appropriate failure callback, and cancels both the idle and connect
+    appropriate failure callback, and cancels the idle, connect, and user
     timers. The caller must set `_state = _Closed` before calling this.
     """
     _shutdown = true
@@ -608,14 +673,15 @@ class TCPConnection
     end
     _cancel_idle_timer()
     _cancel_connect_timer()
+    _cancel_user_timer()
 
   fun ref _hard_close_connected() =>
     """
     Hard close for an established connection. Fires `_on_send_failed` for
-    any pending token, clears pending buffers, cancels idle and connect
-    timers, unsubscribes the event, closes the fd, disposes SSL, and fires
-    the appropriate lifecycle callbacks. The caller must set `_state = _Closed`
-    before calling this.
+    any pending token, clears pending buffers, cancels idle, connect, and
+    user timers, unsubscribes the event, closes the fd, disposes SSL, and
+    fires the appropriate lifecycle callbacks. The caller must set
+    `_state = _Closed` before calling this.
     """
     _shutdown = true
     _shutdown_peer = true
@@ -638,6 +704,7 @@ class TCPConnection
 
     _cancel_idle_timer()
     _cancel_connect_timer()
+    _cancel_user_timer()
     PonyAsio.unsubscribe(_event)
     _set_unreadable()
     _set_unwriteable()
@@ -1488,6 +1555,41 @@ class TCPConnection
     _cancel_connect_timer()
     hard_close()
 
+  fun ref _fire_user_timer() =>
+    """
+    Dispatch `_on_timer` to the lifecycle event receiver. Called from
+    `_event_notify` when the user timer event fires.
+
+    The token and event are cleared before the callback. If the callback
+    calls `set_timer()`, it creates a fresh ASIO event. The old event's
+    disposable notification arrives later, doesn't match `_user_timer_event`,
+    and routes through the catch-all handler in `_event_notify`.
+    """
+    let token = _user_timer_token
+    _user_timer_token = None
+    PonyAsio.unsubscribe(_user_timer_event)
+    _user_timer_event = AsioEvent.none()
+    match (token, _lifecycle_event_receiver)
+    | (let t: TimerToken, let s: EitherLifecycleEventReceiver ref) =>
+      s._on_timer(t)
+    | (None, _) =>
+      _Unreachable()
+    | (_, None) =>
+      _Unreachable()
+    end
+
+  fun ref _cancel_user_timer() =>
+    """
+    Cancel the user timer without firing the callback. Called from both
+    hard-close paths during cleanup. Stale disposable notifications route
+    through the catch-all disposable handler in `_event_notify`.
+    """
+    if not _user_timer_event.is_null() then
+      PonyAsio.unsubscribe(_user_timer_event)
+      _user_timer_event = AsioEvent.none()
+      _user_timer_token = None
+    end
+
   fun ref _ssl_flush_sends() =>
     """
     Flush any pending encrypted data from the SSL session to the wire.
@@ -1652,6 +1754,10 @@ class TCPConnection
     end
     if event is _timer_event then
       _fire_idle_timeout()
+      return
+    end
+    if event is _user_timer_event then
+      _fire_user_timer()
       return
     end
 

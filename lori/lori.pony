@@ -316,6 +316,38 @@ fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
   end
 ```
 
+## General-Purpose Timer
+
+`set_timer()` creates a one-shot timer that fires `_on_timer()` after a
+configured duration. Unlike `idle_timeout()`, this timer has no I/O-reset
+behavior — it fires unconditionally regardless of send/receive activity. There
+is no automatic re-arming; call `set_timer()` again from `_on_timer()` for
+repetition.
+
+```pony
+fun ref _on_started() =>
+  match MakeTimerDuration(10_000)
+  | let d: TimerDuration =>
+    match _tcp_connection.set_timer(d)
+    | let t: TimerToken =>
+      _query_timer = t
+    | let err: SetTimerError => None // handle error
+    end
+  end
+
+fun ref _on_timer(token: TimerToken) =>
+  // Timer fired — take action (close, retry, etc.)
+  _tcp_connection.close()
+```
+
+The duration is a [`TimerDuration`](/lori/lori-TimerDuration/) value — a
+constrained type with the same range as `IdleTimeout` (1 to
+18,446,744,073,709 milliseconds). Only one timer can be active at a time;
+calling `set_timer()` while one is active returns
+[`SetTimerAlreadyActive`](/lori/lori-SetTimerAlreadyActive/). Cancel with
+`cancel_timer(token)` before setting a new one. The timer is cancelled by
+`hard_close()` but survives `close()`.
+
 ## Read Yielding
 
 Under sustained inbound traffic, a single connection's read loop can
