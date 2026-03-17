@@ -137,8 +137,9 @@ trait ClientLifecycleEventReceiver
 
     The `reason` parameter identifies the failure stage:
     `ConnectionFailedDNS` (name resolution failed), `ConnectionFailedTCP`
-    (resolved but all TCP attempts failed), or `ConnectionFailedSSL`
-    (TCP connected but SSL handshake failed).
+    (resolved but all TCP attempts failed), `ConnectionFailedSSL`
+    (TCP connected but SSL handshake failed), or `ConnectionFailedTimeout`
+    (the connection attempt timed out before completing).
     """
     None
 

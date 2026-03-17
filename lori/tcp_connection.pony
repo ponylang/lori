@@ -57,6 +57,15 @@ class TCPConnection
   var _timer_event: AsioEventID = AsioEvent.none()
   var _idle_timeout_nsec: U64 = 0
 
+  // Per-connection connect timeout via ASIO timer (one-shot)
+  var _connect_timer_event: AsioEventID = AsioEvent.none()
+  var _connect_timeout_nsec: U64 = 0
+  // COUPLING: Set by _fire_connect_timeout() before calling hard_close().
+  // Read by _hard_close_connecting() and _hard_close_connected() to route
+  // the failure reason to ConnectionFailedTimeout. Same pattern as
+  // _ssl_auth_failed.
+  var _connect_timed_out: Bool = false
+
   // client startup state
   var _host: String = ""
   var _port: String = ""
@@ -70,8 +79,14 @@ class TCPConnection
     enclosing: TCPConnectionActor ref,
     ler: ClientLifecycleEventReceiver ref,
     read_buffer_size: ReadBufferSize = DefaultReadBufferSize(),
-    ip_version: IPVersion = DualStack)
+    ip_version: IPVersion = DualStack,
+    connection_timeout: (ConnectionTimeout | None) = None)
   =>
+    """
+    Create a client-side plaintext connection. An optional `connection_timeout`
+    bounds the TCP Happy Eyeballs phase. If the timeout fires before
+    `_on_connected`, the connection fails with `ConnectionFailedTimeout`.
+    """
     _lifecycle_event_receiver = ler
     _enclosing = enclosing
     _host = host
@@ -80,6 +95,9 @@ class TCPConnection
     _read_buffer_size = read_buffer_size()
     _read_buffer_min = read_buffer_size()
     _ip_version = ip_version
+    match connection_timeout
+    | let ct: ConnectionTimeout => _connect_timeout_nsec = ct() * 1_000_000
+    end
 
     _resize_read_buffer_if_needed()
 
@@ -109,12 +127,16 @@ class TCPConnection
     enclosing: TCPConnectionActor ref,
     ler: ClientLifecycleEventReceiver ref,
     read_buffer_size: ReadBufferSize = DefaultReadBufferSize(),
-    ip_version: IPVersion = DualStack)
+    ip_version: IPVersion = DualStack,
+    connection_timeout: (ConnectionTimeout | None) = None)
   =>
     """
     Create a client-side SSL connection. The SSL session is created from the
     provided SSLContext. If session creation fails, the connection reports
     failure asynchronously via _on_connection_failure(ConnectionFailedSSL).
+    An optional `connection_timeout` bounds the connect-to-ready phase
+    (TCP Happy Eyeballs + TLS handshake). If the timeout fires before
+    `_on_connected`, the connection fails with `ConnectionFailedTimeout`.
     """
     _lifecycle_event_receiver = ler
     _enclosing = enclosing
@@ -124,6 +146,9 @@ class TCPConnection
     _read_buffer_size = read_buffer_size()
     _read_buffer_min = read_buffer_size()
     _ip_version = ip_version
+    match connection_timeout
+    | let ct: ConnectionTimeout => _connect_timeout_nsec = ct() * 1_000_000
+    end
 
     try
       _ssl = ssl_ctx.client(host)?
@@ -551,8 +576,8 @@ class TCPConnection
   fun ref _hard_close_connecting() =>
     """
     Hard close during the connecting phase. Disposes SSL, fires the
-    appropriate failure callback, and cancels the idle timer. The caller
-    must set `_state = _Closed` before calling this.
+    appropriate failure callback, and cancels both the idle and connect
+    timers. The caller must set `_state = _Closed` before calling this.
     """
     _shutdown = true
     _shutdown_peer = true
@@ -563,7 +588,9 @@ class TCPConnection
     end
     match _lifecycle_event_receiver
     | let c: ClientLifecycleEventReceiver ref =>
-      let reason = if _had_inflight then
+      let reason = if _connect_timed_out then
+        ConnectionFailedTimeout
+      elseif _had_inflight then
         ConnectionFailedTCP
       else
         ConnectionFailedDNS
@@ -571,13 +598,14 @@ class TCPConnection
       c._on_connection_failure(reason)
     end
     _cancel_idle_timer()
+    _cancel_connect_timer()
 
   fun ref _hard_close_connected() =>
     """
     Hard close for an established connection. Fires `_on_send_failed` for
-    any pending token, clears pending buffers, cancels idle timer,
-    unsubscribes the event, closes the fd, disposes SSL, and fires the
-    appropriate lifecycle callbacks. The caller must set `_state = _Closed`
+    any pending token, clears pending buffers, cancels idle and connect
+    timers, unsubscribes the event, closes the fd, disposes SSL, and fires
+    the appropriate lifecycle callbacks. The caller must set `_state = _Closed`
     before calling this.
     """
     _shutdown = true
@@ -600,6 +628,7 @@ class TCPConnection
     _pending_token = None
 
     _cancel_idle_timer()
+    _cancel_connect_timer()
     PonyAsio.unsubscribe(_event)
     _set_unreadable()
     _set_unwriteable()
@@ -639,7 +668,11 @@ class TCPConnection
             // the connection never started.
             match \exhaustive\ s
             | let c: ClientLifecycleEventReceiver ref =>
-              c._on_connection_failure(ConnectionFailedSSL)
+              if _connect_timed_out then
+                c._on_connection_failure(ConnectionFailedTimeout)
+              else
+                c._on_connection_failure(ConnectionFailedSSL)
+              end
             | let srv: ServerLifecycleEventReceiver ref =>
               srv._on_start_failure(StartFailedSSL)
             end
@@ -1405,6 +1438,43 @@ class TCPConnection
       _reset_idle_timer()
     end
 
+  fun ref _arm_connect_timer() =>
+    """
+    Create the ASIO timer event for the connect timeout. Called after
+    `PonyTCP.connect` succeeds (at least one connection attempt is inflight).
+    No-op when `_connect_timeout_nsec == 0` (no timeout configured).
+    """
+    if _connect_timeout_nsec == 0 then return end
+    match \exhaustive\ _enclosing
+    | let e: TCPConnectionActor ref =>
+      _connect_timer_event =
+        PonyAsio.create_timer_event(e, _connect_timeout_nsec)
+    | None =>
+      _Unreachable()
+    end
+
+  fun ref _cancel_connect_timer() =>
+    """
+    Cancel the connect timeout timer. Unsubscribes and clears
+    `_connect_timer_event` immediately. Stale disposable notifications
+    route through the catch-all disposable handler in `_event_notify`.
+    """
+    if not _connect_timer_event.is_null() then
+      PonyAsio.unsubscribe(_connect_timer_event)
+      _connect_timer_event = AsioEvent.none()
+      _connect_timeout_nsec = 0
+    end
+
+  fun ref _fire_connect_timeout() =>
+    """
+    The connect timeout has fired. Sets `_connect_timed_out` so that
+    `hard_close()` routes the failure to `ConnectionFailedTimeout`, then
+    cancels the timer and hard-closes the connection.
+    """
+    _connect_timed_out = true
+    _cancel_connect_timer()
+    hard_close()
+
   fun ref _ssl_flush_sends() =>
     """
     Flush any pending encrypted data from the SSL session to the wire.
@@ -1436,6 +1506,7 @@ class TCPConnection
       | SSLReady =>
         if not _ssl_ready then
           _ssl_ready = true
+          _cancel_connect_timer()
           // _tls_upgrade distinguishes initial SSL (constructor) from
           // mid-stream TLS upgrade (start_tls). Changing _tls_upgrade
           // semantics or removing it would break the callback routing
@@ -1515,6 +1586,7 @@ class TCPConnection
       _ssl_flush_sends()
       // _on_connected() deferred until _ssl_ready
     | None =>
+      _cancel_connect_timer()
       match _lifecycle_event_receiver
       | let c: ClientLifecycleEventReceiver ref =>
         c._on_connected()
@@ -1552,10 +1624,13 @@ class TCPConnection
     PonyTCP.close(PonyAsio.event_fd(event))
 
   fun ref _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
-    // Timer fired. Disposable events for cancelled timers never reach here
-    // because _cancel_idle_timer() clears _timer_event synchronously.
-    // Stale timer disposables route through the catch-all disposable handler
-    // below.
+    // Timer events. Disposable events for cancelled timers never reach here
+    // because the cancel methods clear timer fields synchronously. Stale
+    // timer disposables route through the catch-all disposable handler below.
+    if event is _connect_timer_event then
+      _fire_connect_timeout()
+      return
+    end
     if event is _timer_event then
       _fire_idle_timeout()
       return
@@ -1656,6 +1731,9 @@ class TCPConnection
       _inflight_connections = PonyTCP.connect(e, _host, _port, _from,
         asio_flags where ip_version = _ip_version)
       _had_inflight = _inflight_connections > 0
+      if _had_inflight then
+        _arm_connect_timer()
+      end
       _connecting_callback()
     | None =>
       _Unreachable()

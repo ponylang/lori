@@ -43,6 +43,7 @@ lori/
   start_failure_reason.pony -- StartFailureReason primitive and type alias
   tls_failure_reason.pony   -- TLSFailureReason primitives and type alias
   idle_timeout.pony         -- IdleTimeout constrained type and validator
+  connection_timeout.pony   -- ConnectionTimeout constrained type and validator
   ip_version.pony           -- IP4, IP6, DualStack primitives and IPVersion type alias
   max_spawn.pony            -- MaxSpawn constrained type, validator, and default
   auth.pony                 -- Auth primitives (NetAuth, TCPAuth, TCPListenAuth, etc.)
@@ -65,6 +66,7 @@ examples/
   net-ssl-echo-server/      -- SSL echo server
   net-ssl-infinite-ping-pong/ -- SSL ping-pong
   starttls-ping-pong/       -- STARTTLS upgrade from plaintext to TLS
+  connection-timeout/        -- Connection timeout with non-routable address
   yield-read/               -- Cooperative scheduler fairness with yield_read()
 stress-tests/
   open-close/               -- Connection open/close stress test
@@ -76,7 +78,7 @@ stress-tests/
 
 Lori separates connection logic (class) from actor scheduling (trait):
 
-1. **`TCPConnection`** (class) — All TCP state and I/O logic including SSL. Created with `TCPConnection.client(...)`, `TCPConnection.server(...)`, `TCPConnection.ssl_client(...)`, or `TCPConnection.ssl_server(...)`. All four real constructors accept an optional `read_buffer_size: ReadBufferSize = DefaultReadBufferSize()` parameter that sets both the initial buffer allocation and the shrink-back minimum. Client and SSL client constructors also accept an optional `ip_version: IPVersion = DualStack` parameter to restrict to IPv4 (`IP4`) or IPv6 (`IP6`). Existing plaintext connections can be upgraded to TLS via `start_tls()`. Not an actor itself.
+1. **`TCPConnection`** (class) — All TCP state and I/O logic including SSL. Created with `TCPConnection.client(...)`, `TCPConnection.server(...)`, `TCPConnection.ssl_client(...)`, or `TCPConnection.ssl_server(...)`. All four real constructors accept an optional `read_buffer_size: ReadBufferSize = DefaultReadBufferSize()` parameter that sets both the initial buffer allocation and the shrink-back minimum. Client and SSL client constructors also accept an optional `ip_version: IPVersion = DualStack` parameter to restrict to IPv4 (`IP4`) or IPv6 (`IP6`), and an optional `connection_timeout: (ConnectionTimeout | None) = None` parameter to bound the connect-to-ready phase. Existing plaintext connections can be upgraded to TLS via `start_tls()`. Not an actor itself.
 2. **`TCPConnectionActor`** (trait) — The actor trait users implement. Requires `fun ref _connection(): TCPConnection`. Provides behaviors that delegate to the TCPConnection: `_event_notify`, `_read_again`, `dispose`, etc.
 3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure(reason)`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure(reason)`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_start_failure(reason)`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure(reason)`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_throttled`/`_on_unthrottled`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure`, `_on_idle_timeout`.
 
@@ -229,7 +231,7 @@ Design: Discussion #150.
 
 Failure callbacks carry a reason parameter identifying the failure cause. Three type aliases, each following the `start_tls_error.pony` pattern (primitives + type alias):
 
-- **`ConnectionFailureReason`** (`_on_connection_failure`): `ConnectionFailedDNS` (name resolution failed, no TCP attempts), `ConnectionFailedTCP` (resolved but all TCP connections failed), `ConnectionFailedSSL` (TCP connected but SSL handshake failed). The DNS/TCP distinction uses `_had_inflight` (set after `PonyTCP.connect` returns > 0).
+- **`ConnectionFailureReason`** (`_on_connection_failure`): `ConnectionFailedDNS` (name resolution failed, no TCP attempts), `ConnectionFailedTCP` (resolved but all TCP connections failed), `ConnectionFailedSSL` (TCP connected but SSL handshake failed), `ConnectionFailedTimeout` (connect-to-ready phase timed out). The DNS/TCP distinction uses `_had_inflight` (set after `PonyTCP.connect` returns > 0). The timeout distinction uses `_connect_timed_out` (set by `_fire_connect_timeout()` before calling `hard_close()`).
 - **`StartFailureReason`** (`_on_start_failure`): `StartFailedSSL` (SSL session creation or handshake failure). Currently a single-variant type — future reasons (e.g. resource limits) can be added without breaking the type alias.
 - **`TLSFailureReason`** (`_on_tls_failure`): `TLSAuthFailed` (certificate/auth error), `TLSGeneralError` (protocol error). The distinction uses `_ssl_auth_failed` (set by `_ssl_poll()` on `SSLAuthFail` before calling `hard_close()`).
 
@@ -248,6 +250,22 @@ Lifecycle:
 - **Reset points**: `_read()` (POSIX, once per read event), `_read_completed()` (Windows, once per read event), `send()` success path (after the SSL/plaintext write block).
 - **Cancel point**: `hard_close()` in both the not-connected branch (before `return`) and the connected branch (before `PonyAsio.unsubscribe(_event)`).
 - **Event dispatch**: Identity check `event is _timer_event` at the top of `_event_notify`, before the main `event is _event` check. Returns immediately after firing. `_timer_event` is cleared synchronously in `_cancel_idle_timer()`, so stale disposable events for cancelled timers route through the existing catch-all at the end of `_event_notify` (which calls `PonyAsio.destroy`).
+
+### Connection timeout
+
+Optional one-shot ASIO timer that bounds the connect-to-ready phase for client connections. Covers TCP Happy Eyeballs + SSL handshake. The duration is a `ConnectionTimeout` constrained type (same range as `IdleTimeout`). Fields:
+
+- `_connect_timer_event: AsioEventID` — the ASIO timer event, `AsioEvent.none()` when inactive.
+- `_connect_timeout_nsec: U64` — configured timeout in nanoseconds, 0 when disabled.
+- `_connect_timed_out: Bool` — set by `_fire_connect_timeout()` before `hard_close()`, read by `_hard_close_connecting()` and `_hard_close_connected()` to route `ConnectionFailedTimeout`.
+
+Lifecycle:
+
+- **Arm point**: `_complete_client_initialization`, after `_had_inflight` is set, before `_connecting_callback()`. Only arms when `_had_inflight` is true (at least one TCP attempt started).
+- **Cancel points**: `_establish_connection` plaintext branch (before `_on_connected`), `_ssl_poll` SSLReady branch (after `_ssl_ready = true`), `_hard_close_connecting`, `_hard_close_connected`.
+- **Event dispatch**: Identity check `event is _connect_timer_event` at the top of `_event_notify`, before the idle timer check.
+
+Design: Discussion #234.
 
 ### Read buffer sizing
 
