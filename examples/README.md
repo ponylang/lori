@@ -24,6 +24,10 @@ Server that closes connections after 10 seconds of inactivity. Demonstrates
 `idle_timeout()` for setting a per-connection timer and `_on_idle_timeout()`
 for handling the expiration — no extra actors or shared timers needed.
 
+## [connection-timeout](connection-timeout/)
+
+Client that connects to a non-routable address (192.0.2.1, RFC 5737 TEST-NET-1) with a 3-second connection timeout. Demonstrates `MakeConnectionTimeout`, the `connection_timeout` constructor parameter, and exhaustive matching on `ConnectionFailureReason` in `_on_connection_failure`.
+
 ## [backpressure](backpressure/)
 
 Handling `send()` errors and throttle/unthrottle callbacks. A flood client sends 200 chunks of 64KB as fast as possible, demonstrating what happens when the OS send buffer fills: `send()` returns `SendErrorNotWriteable`, `_on_throttled` fires, and the client waits for `_on_unthrottled` to resume. Also shows `_on_sent` for tracking write completion.

@@ -107,7 +107,7 @@ actor MyClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
     _tcp_connection.send("Hello, server!")
 
   fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
-    // All connection attempts failed
+    // DNS, TCP, SSL, or timeout failure
     None
 
   fun ref _on_received(data: Array[U8] iso) =>
@@ -289,6 +289,32 @@ shared `Timers` actors under backpressure.
 This is independent of TCP keepalive (`keepalive()`). TCP keepalive is a
 transport-level dead-peer probe. Idle timeout is application-level inactivity
 detection.
+
+## Connection Timeout
+
+Client connections can hang indefinitely when SYN packets are black-holed or an SSL handshake stalls. The `connection_timeout` constructor parameter bounds the connect-to-ready phase — TCP Happy Eyeballs and (for SSL connections) the TLS handshake. If the timeout fires before `_on_connected`, the connection fails with [`ConnectionFailedTimeout`](/lori/lori-ConnectionFailedTimeout/).
+
+```pony
+match MakeConnectionTimeout(5_000)
+| let ct: ConnectionTimeout =>
+  _tcp_connection = TCPConnection.client(auth, host, port, "", this, this
+    where connection_timeout = ct)
+end
+```
+
+Connection timeout is disabled by default (`None`). The duration is a [`ConnectionTimeout`](/lori/lori-ConnectionTimeout/) value — a constrained type with the same range as `IdleTimeout` (1 to 18,446,744,073,709 milliseconds). The timer is a one-shot: it either fires and fails the connection, or is cancelled when the connection becomes ready.
+
+The timer is armed after `PonyTCP.connect` returns, so it does not cover DNS resolution time. If DNS itself blocks (common with unresponsive nameservers), the total wait will exceed the configured timeout by the DNS resolution time.
+
+```pony
+fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+  match reason
+  | ConnectionFailedTimeout => // timed out
+  | ConnectionFailedDNS => // name resolution failed
+  | ConnectionFailedTCP => // all TCP attempts failed
+  | ConnectionFailedSSL => // SSL handshake failed
+  end
+```
 
 ## Read Yielding
 

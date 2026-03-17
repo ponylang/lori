@@ -9,9 +9,11 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 
+- Add optional connection timeout for client connections ([PR #236](https://github.com/ponylang/lori/pull/236))
 
 ### Changed
 
+- Expand ConnectionFailureReason with ConnectionFailedTimeout ([PR #236](https://github.com/ponylang/lori/pull/236))
 
 ## [0.11.0] - 2026-03-15
 
