@@ -10,6 +10,20 @@ Param(
 
 $ErrorActionPreference = "Stop"
 
+function Get-ProcessExitCodeFromLLDB {
+    param (
+        [string[]]$LLDBOutput
+    )
+
+    $processExitMatch = $LLDBOutput | Select-String -Pattern 'Process \d+ exited with status = (\d+)'
+    if ($processExitMatch.Matches.Count -gt 0) {
+        return [int]$processExitMatch.Matches[0].Groups[1].Value
+    } else {
+        # If we can't find the pattern, return LLDB's exit code
+        return $LastExitCode
+    }
+}
+
 $target = "lori"
 $testPath = "."
 $rootDir = Split-Path $script:MyInvocation.MyCommand.Path
@@ -223,19 +237,12 @@ switch ($Command.ToLower())
   "test"
   {
     $testFile = (BuildTest)[-1]
-
-    # Find lldb and diagnose if it can't start
-    $llvmBin = "C:\Program Files\LLVM\bin"
-    $env:PATH = "$llvmBin;" + $env:PATH
-    Write-Host "LLVM bin contents:"
-    Get-ChildItem $llvmBin -Filter "lldb*" | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
-    Write-Host "Attempting lldb --version:"
-    & "$llvmBin\lldb.exe" --version 2>&1
-    Write-Host "lldb --version exit code: $LastExitCode"
-
-    Write-Host "Running under lldb: $testFile"
-    & "$llvmBin\lldb.exe" -b -o "run" -k "process status" -k "thread backtrace all" -k "quit" -- "$testFile" 2>&1
-    $exitCode = $LastExitCode
+    $lldbcmd = 'C:\msys64\mingw64\bin\lldb.exe'
+    $lldbargs = @('--batch', '--one-line', 'run', '--one-line-on-crash', '"frame variable"', '--one-line-on-crash', '"register read"', '--one-line-on-crash', '"bt all"', '--one-line-on-crash', '"quit 1"', '--')
+    Write-Host "$lldbcmd $lldbargs $testFile"
+    $lldboutput = & $lldbcmd $lldbargs $testFile
+    Write-Output $lldboutput
+    $exitCode = Get-ProcessExitCodeFromLLDB -LLDBOutput $lldboutput
     if ($exitCode -ne 0)
     {
       throw "Test failed with exit code ${exitCode}"
