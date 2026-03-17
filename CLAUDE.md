@@ -246,7 +246,7 @@ Per-connection idle timeout via ASIO timer events. The duration is an `IdleTimeo
 
 Lifecycle:
 
-- **Arm points**: `_complete_server_initialization` (after `_set_writeable()`) and `_event_notify` Happy Eyeballs success (after `_set_readable()`). `_arm_idle_timer()` is a no-op when `_idle_timeout_nsec == 0`. Also called from `idle_timeout()` when setting a timeout on an established connection with no existing timer.
+- **Arm points**: plaintext branch of `_establish_connection` and `_complete_server_initialization`; `_ssl_poll` SSLReady branch for initial SSL connections (not TLS upgrades). `_arm_idle_timer()` is a no-op when `_idle_timeout_nsec == 0` or when a timer already exists (idempotency guard). Also called from `idle_timeout()` when setting a timeout on an established connection with no existing timer. `idle_timeout()` defers arming during initial SSL handshake (`_ssl` present, `_ssl_ready` false, not a TLS upgrade) — `_ssl_poll` arms at SSLReady.
 - **Reset points**: `_read()` (POSIX, once per read event), `_read_completed()` (Windows, once per read event), `send()` success path (after the SSL/plaintext write block).
 - **Cancel point**: `hard_close()` in both the not-connected branch (before `return`) and the connected branch (before `PonyAsio.unsubscribe(_event)`).
 - **Event dispatch**: Identity check `event is _timer_event` at the top of `_event_notify`, before the main `event is _event` check. Returns immediately after firing. `_timer_event` is cleared synchronously in `_cancel_idle_timer()`, so stale disposable events for cancelled timers route through the existing catch-all at the end of `_event_notify` (which calls `PonyAsio.destroy`).
