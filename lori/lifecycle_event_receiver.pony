@@ -105,6 +105,17 @@ trait ServerLifecycleEventReceiver
     """
     None
 
+  fun ref _on_timer(token: TimerToken) =>
+    """
+    Called when a one-shot timer created by `set_timer()` fires. The token
+    matches the one returned by `set_timer()`.
+
+    Fires once per `set_timer()` call. The timer is consumed before the
+    callback, so it is safe to call `set_timer()` from within `_on_timer()`
+    to re-arm. No automatic re-arming occurs.
+    """
+    None
+
 trait ClientLifecycleEventReceiver
   """
   Application-level callbacks for client-side TCP connections.
@@ -221,6 +232,17 @@ trait ClientLifecycleEventReceiver
     The timer automatically re-arms after each firing. Call
     `idle_timeout(None)` to disable it. The application decides what action
     to take — close the connection, send a keepalive, log a warning, etc.
+    """
+    None
+
+  fun ref _on_timer(token: TimerToken) =>
+    """
+    Called when a one-shot timer created by `set_timer()` fires. The token
+    matches the one returned by `set_timer()`.
+
+    Fires once per `set_timer()` call. The timer is consumed before the
+    callback, so it is safe to call `set_timer()` from within `_on_timer()`
+    to re-arm. No automatic re-arming occurs.
     """
     None
 

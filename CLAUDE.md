@@ -35,6 +35,8 @@ lori/
   tcp_listener_actor.pony   -- TCPListenerActor trait (actor wrapper)
   lifecycle_event_receiver.pony -- Client/ServerLifecycleEventReceiver traits
   send_token.pony           -- SendToken class, SendError primitives and type alias
+  timer_token.pony          -- TimerToken class, SetTimerError primitives and type alias
+  timer_duration.pony       -- TimerDuration constrained type and validator
   read_buffer.pony          -- Read buffer result types (ReadBufferResized, ExpectSet, etc.)
   read_buffer_size.pony     -- ReadBufferSize constrained type, validator, and default
   expect.pony               -- Expect constrained type and validator
@@ -67,6 +69,7 @@ lori/
   _test_read_buffer.pony    -- Read buffer sizing and expect interaction tests
   _test_socket_options.pony -- Socket option method tests
   _test_connection_timeout.pony -- Connection timeout (plaintext + SSL) tests
+  _test_timer.pony          -- General-purpose timer tests
 examples/
   backpressure/             -- Backpressure handling with throttle/unthrottle
   echo-server/              -- Simple echo server
@@ -80,6 +83,7 @@ examples/
   net-ssl-infinite-ping-pong/ -- SSL ping-pong
   starttls-ping-pong/       -- STARTTLS upgrade from plaintext to TLS
   connection-timeout/        -- Connection timeout with non-routable address
+  timer/                    -- Query-timeout simulation with set_timer()
   yield-read/               -- Cooperative scheduler fairness with yield_read()
 stress-tests/
   open-close/               -- Connection open/close stress test
@@ -93,7 +97,7 @@ Lori separates connection logic (class) from actor scheduling (trait):
 
 1. **`TCPConnection`** (class) — All TCP state and I/O logic including SSL. Created with `TCPConnection.client(...)`, `TCPConnection.server(...)`, `TCPConnection.ssl_client(...)`, or `TCPConnection.ssl_server(...)`. All four real constructors accept an optional `read_buffer_size: ReadBufferSize = DefaultReadBufferSize()` parameter that sets both the initial buffer allocation and the shrink-back minimum. Client and SSL client constructors also accept an optional `ip_version: IPVersion = DualStack` parameter to restrict to IPv4 (`IP4`) or IPv6 (`IP6`), and an optional `connection_timeout: (ConnectionTimeout | None) = None` parameter to bound the connect-to-ready phase. Existing plaintext connections can be upgraded to TLS via `start_tls()`. Not an actor itself.
 2. **`TCPConnectionActor`** (trait) — The actor trait users implement. Requires `fun ref _connection(): TCPConnection`. Provides behaviors that delegate to the TCPConnection: `_event_notify`, `_read_again`, `dispose`, etc.
-3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure(reason)`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure(reason)`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_start_failure(reason)`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure(reason)`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_throttled`/`_on_unthrottled`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure`, `_on_idle_timeout`.
+3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure(reason)`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure(reason)`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_start_failure(reason)`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure(reason)`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_throttled`/`_on_unthrottled`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure`, `_on_idle_timeout`, `_on_timer`.
 
 ### How to implement a server
 
@@ -279,6 +283,30 @@ Lifecycle:
 - **Event dispatch**: Identity check `event is _connect_timer_event` at the top of `_event_notify`, before the idle timer check.
 
 Design: Discussion #234.
+
+### User timer
+
+One-shot general-purpose timer per connection, independent of the idle timeout. No I/O-reset behavior — fires unconditionally after the configured duration. The duration is a `TimerDuration` constrained type (same range as `IdleTimeout`). Fields:
+
+- `_user_timer_event: AsioEventID` — the ASIO timer event, `AsioEvent.none()` when inactive.
+- `_next_timer_id: USize` — monotonically increasing counter for minting `TimerToken` values.
+- `_user_timer_token: (TimerToken | None)` — the active timer's token, or `None`.
+
+API:
+- `set_timer(duration: TimerDuration): (TimerToken | SetTimerError)` — creates a one-shot timer. Returns `SetTimerNotOpen` if not application-level connected (includes initial SSL handshake). Returns `SetTimerAlreadyActive` if a timer is already active. TLS upgrades do not block timer creation.
+- `cancel_timer(token: TimerToken)` — cancels the timer if the token matches. No-op for stale/wrong tokens. No connection state check (can cancel during `_Closing`).
+
+Internals:
+- `_fire_user_timer()` — clears token and event before the callback, then dispatches `_on_timer(token)`. Clearing before dispatch prevents aliasing when the callback calls `set_timer()`.
+- `_cancel_user_timer()` — cleanup path for `hard_close`. Unsubscribes and clears without firing the callback.
+
+Event dispatch: identity check `event is _user_timer_event` in `_event_notify`, after the idle timer check and before the `is_own_event` capture.
+
+Cleanup: `_cancel_user_timer()` called from both `_hard_close_connecting()` (defensive) and `_hard_close_connected()`. Timers survive `close()` (graceful shutdown) but are cancelled by `hard_close()`.
+
+Stale events after cancel: `_user_timer_event` is cleared to `AsioEvent.none()` synchronously. Stale fire notifications fall through to `foreign_event` (timer flags don't include writeable, so they're silently dropped). Stale disposable notifications route through the catch-all handler.
+
+Design: Discussion #233.
 
 ### Read buffer sizing
 

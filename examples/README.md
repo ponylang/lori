@@ -28,6 +28,10 @@ for handling the expiration — no extra actors or shared timers needed.
 
 Client that connects to a non-routable address (192.0.2.1, RFC 5737 TEST-NET-1) with a 3-second connection timeout. Demonstrates `MakeConnectionTimeout`, the `connection_timeout` constructor parameter, and exhaustive matching on `ConnectionFailureReason` in `_on_connection_failure`.
 
+## [timer](timer/)
+
+Query-timeout simulation using `set_timer()`. A client connects, sends a "query", and sets a 3-second timer. The server never responds. When the timer fires, `_on_timer()` logs the timeout and closes the connection. Shows how `set_timer()` fires unconditionally regardless of I/O activity, unlike `idle_timeout()` which resets on every send/receive.
+
 ## [backpressure](backpressure/)
 
 Handling `send()` errors and throttle/unthrottle callbacks. A flood client sends 200 chunks of 64KB as fast as possible, demonstrating what happens when the OS send buffer fills: `send()` returns `SendErrorNotWriteable`, `_on_throttled` fires, and the client waits for `_on_unthrottled` to resume. Also shows `_on_sent` for tracking write completion.
