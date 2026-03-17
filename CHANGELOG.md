@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 
+- Fix idle timer issues with SSL connections ([PR #238](https://github.com/ponylang/lori/pull/238))
 
 ### Added
 
