@@ -223,21 +223,13 @@ switch ($Command.ToLower())
   "test"
   {
     $testFile = (BuildTest)[-1]
-    Write-Host "$testFile --sequential"
-    $rawOutput = & "$testFile" 2>&1
+    $env:PATH = 'C:\Program Files\LLVM\bin;' + $env:PATH
+    Write-Host "Running under lldb: $testFile"
+    & lldb -b -o "run" -k "process status" -k "thread backtrace all" -k "quit" -- "$testFile" 2>&1
     $exitCode = $LastExitCode
-    foreach ($line in $rawOutput) { Write-Host $line }
     if ($exitCode -ne 0)
     {
-      $stderrLines = @($rawOutput |
-        Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } |
-        ForEach-Object { $_.ToString() })
-      $details = ""
-      if ($stderrLines.Count -gt 0)
-      {
-        $details = "`n" + ($stderrLines -join "`n")
-      }
-      throw "Test failed with exit code ${exitCode}${details}"
+      throw "Test failed with exit code ${exitCode}"
     }
     break
   }
