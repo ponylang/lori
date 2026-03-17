@@ -365,10 +365,19 @@ class TCPConnection
     | let t: IdleTimeout =>
       _idle_timeout_nsec = t() * 1_000_000
       if _state.is_open() then
-        if _timer_event.is_null() then
-          _arm_idle_timer()
+        // Don't arm during initial SSL handshake — the timer would fire
+        // before _on_connected()/_on_started(). _ssl_poll will arm at
+        // SSLReady. TLS upgrades are excluded: the timer is already
+        // running from the plaintext phase and should be reset normally.
+        match _ssl
+        | let _: SSL ref if (not _ssl_ready) and (not _tls_upgrade) =>
+          None
         else
-          _reset_idle_timer()
+          if _timer_event.is_null() then
+            _arm_idle_timer()
+          else
+            _reset_idle_timer()
+          end
         end
       end
     | None =>
@@ -1390,8 +1399,12 @@ class TCPConnection
     Create the ASIO timer event for idle timeout. Called when the connection
     establishes and `_idle_timeout_nsec > 0`, or when `idle_timeout()` is
     called on an established connection.
+
+    Idempotent — if a timer already exists, this is a no-op. Prevents ASIO
+    timer event leaks from double-arm scenarios.
     """
     if _idle_timeout_nsec == 0 then return end
+    if not _timer_event.is_null() then return end
     match \exhaustive\ _enclosing
     | let e: TCPConnectionActor ref =>
       _timer_event = PonyAsio.create_timer_event(e, _idle_timeout_nsec)
@@ -1507,6 +1520,12 @@ class TCPConnection
         if not _ssl_ready then
           _ssl_ready = true
           _cancel_connect_timer()
+          // Arm idle timer now that the handshake is complete. Not for
+          // TLS upgrades — the timer is already running from the
+          // plaintext phase.
+          if not _tls_upgrade then
+            _arm_idle_timer()
+          end
           // _tls_upgrade distinguishes initial SSL (constructor) from
           // mid-stream TLS upgrade (start_tls). Changing _tls_upgrade
           // semantics or removing it would break the callback routing
@@ -1578,14 +1597,14 @@ class TCPConnection
     _state = _Open
     _set_writeable()
     _set_readable()
-    _arm_idle_timer()
 
     match \exhaustive\ _ssl
     | let _: SSL ref =>
       // Flush ClientHello to initiate SSL handshake
       _ssl_flush_sends()
-      // _on_connected() deferred until _ssl_ready
+      // _on_connected() and _arm_idle_timer() deferred until _ssl_ready
     | None =>
+      _arm_idle_timer()
       _cancel_connect_timer()
       match _lifecycle_event_receiver
       | let c: ClientLifecycleEventReceiver ref =>
@@ -1756,14 +1775,14 @@ class TCPConnection
       _state = _Open
       _set_readable()
       _set_writeable()
-      _arm_idle_timer()
 
       match \exhaustive\ _ssl
       | let _: SSL ref =>
         // Flush any initial SSL data (usually no-op for servers)
         _ssl_flush_sends()
-        // _on_started() deferred until _ssl_ready
+        // _on_started() and _arm_idle_timer() deferred until _ssl_ready
       | None =>
+        _arm_idle_timer()
         s._on_started()
       end
 
