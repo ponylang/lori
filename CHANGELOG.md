@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file. This projec
 ### Added
 
 - Add optional connection timeout for client connections ([PR #236](https://github.com/ponylang/lori/pull/236))
+- Add general-purpose one-shot timer ([PR #241](https://github.com/ponylang/lori/pull/241))
 
 ### Changed
 
