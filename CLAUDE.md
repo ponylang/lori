@@ -53,7 +53,20 @@ lori/
   ossocketopt.pony          -- OSSockOpt: socket option constants (large, generated)
   _connection_state.pony    -- _ConnectionState trait and lifecycle state classes
   _panics.pony              -- _Unreachable primitive for impossible states
-  _test.pony                -- Tests
+  _test.pony                -- Test runner (Main only)
+  _test_connection.pony     -- Connection basics, ping-pong, expect, listener tests
+  _test_flow_control.pony   -- Mute/unmute tests
+  _test_send.pony           -- Send, sendv, send-after-close tests
+  _test_ssl.pony            -- SSL ping-pong and SSL sendv tests
+  _test_start_tls.pony      -- STARTTLS upgrade and precondition tests
+  _test_close_while_connecting.pony -- Close/hard_close during connecting phase
+  _test_idle_timeout.pony   -- Idle timeout (plaintext + SSL) tests
+  _test_yield_read.pony     -- Yield read tests
+  _test_ip_version.pony     -- IPv4/IPv6 specific tests
+  _test_constrained_types.pony -- Validation tests for constrained types
+  _test_read_buffer.pony    -- Read buffer sizing and expect interaction tests
+  _test_socket_options.pony -- Socket option method tests
+  _test_connection_timeout.pony -- Connection timeout (plaintext + SSL) tests
 examples/
   backpressure/             -- Backpressure handling with throttle/unthrottle
   echo-server/              -- Simple echo server
@@ -340,6 +353,7 @@ POSIX and Windows (IOCP) have distinct code paths throughout `TCPConnection`, gu
 - Core lifecycle callbacks are prefixed with `_on_` (private by convention)
 - Tests use hardcoded ports per test
 - `\nodoc\` annotation on test classes
+- New tests go in the appropriate `_test_*.pony` file by functional area, not in `_test.pony` (which contains only the `Main` test runner). Register the test class in `Main.tests()` in `_test.pony`.
 - Examples have a file-level docstring explaining what they demonstrate
 - Self-contained examples use the Listener/Server/Client actor structure (listener accepts connections, launches client on `_on_listening`)
 - Each example uses a unique port

@@ -1,0 +1,109 @@
+use "constrained_types"
+use "pony_test"
+
+class \nodoc\ iso _TestMaxSpawnRejectsZero is UnitTest
+  fun name(): String => "MaxSpawnRejectsZero"
+
+  fun apply(h: TestHelper) =>
+    match MakeMaxSpawn(0)
+    | let _: MaxSpawn =>
+      h.fail("MakeMaxSpawn(0) should return ValidationFailure")
+    | let _: ValidationFailure =>
+      h.assert_true(true)
+    end
+
+class \nodoc\ iso _TestMaxSpawnAcceptsBoundary is UnitTest
+  fun name(): String => "MaxSpawnAcceptsBoundary"
+
+  fun apply(h: TestHelper) =>
+    match MakeMaxSpawn(1)
+    | let m: MaxSpawn =>
+      h.assert_eq[U32](1, m())
+    | let _: ValidationFailure =>
+      h.fail("MakeMaxSpawn(1) should succeed")
+    end
+
+    match MakeMaxSpawn(U32.max_value())
+    | let m: MaxSpawn =>
+      h.assert_eq[U32](U32.max_value(), m())
+    | let _: ValidationFailure =>
+      h.fail("MakeMaxSpawn(U32.max_value()) should succeed")
+    end
+
+class \nodoc\ iso _TestDefaultMaxSpawn is UnitTest
+  fun name(): String => "DefaultMaxSpawn"
+
+  fun apply(h: TestHelper) =>
+    h.assert_eq[U32](100_000, DefaultMaxSpawn()())
+
+class \nodoc\ iso _TestReadBufferSizeRejectsZero is UnitTest
+  fun name(): String => "ReadBufferSizeRejectsZero"
+
+  fun apply(h: TestHelper) =>
+    match MakeReadBufferSize(0)
+    | let _: ReadBufferSize =>
+      h.fail("MakeReadBufferSize(0) should return ValidationFailure")
+    | let _: ValidationFailure =>
+      h.assert_true(true)
+    end
+
+class \nodoc\ iso _TestReadBufferSizeAcceptsBoundary is UnitTest
+  fun name(): String => "ReadBufferSizeAcceptsBoundary"
+
+  fun apply(h: TestHelper) =>
+    match MakeReadBufferSize(1)
+    | let r: ReadBufferSize =>
+      h.assert_eq[USize](1, r())
+    | let _: ValidationFailure =>
+      h.fail("MakeReadBufferSize(1) should succeed")
+    end
+
+    match MakeReadBufferSize(USize.max_value())
+    | let r: ReadBufferSize =>
+      h.assert_eq[USize](USize.max_value(), r())
+    | let _: ValidationFailure =>
+      h.fail("MakeReadBufferSize(USize.max_value()) should succeed")
+    end
+
+class \nodoc\ iso _TestDefaultReadBufferSize is UnitTest
+  fun name(): String => "DefaultReadBufferSize"
+
+  fun apply(h: TestHelper) =>
+    h.assert_eq[USize](16384, DefaultReadBufferSize()())
+
+class \nodoc\ iso _TestConnectionTimeoutValidationRejectsZero is UnitTest
+  fun name(): String => "ConnectionTimeoutValidationRejectsZero"
+
+  fun apply(h: TestHelper) =>
+    match MakeConnectionTimeout(0)
+    | let _: ConnectionTimeout =>
+      h.fail("MakeConnectionTimeout(0) should return ValidationFailure")
+    | let _: ValidationFailure =>
+      h.assert_true(true)
+    end
+
+class \nodoc\ iso _TestConnectionTimeoutValidationAcceptsBoundary is UnitTest
+  fun name(): String => "ConnectionTimeoutValidationAcceptsBoundary"
+
+  fun apply(h: TestHelper) =>
+    match MakeConnectionTimeout(1)
+    | let ct: ConnectionTimeout =>
+      h.assert_eq[U64](1, ct())
+    | let _: ValidationFailure =>
+      h.fail("MakeConnectionTimeout(1) should succeed")
+    end
+
+    match MakeConnectionTimeout(U64.max_value() / 1_000_000)
+    | let ct: ConnectionTimeout =>
+      h.assert_eq[U64](U64.max_value() / 1_000_000, ct())
+    | let _: ValidationFailure =>
+      h.fail("MakeConnectionTimeout(U64.max_value() / 1_000_000) should succeed")
+    end
+
+    match MakeConnectionTimeout((U64.max_value() / 1_000_000) + 1)
+    | let _: ConnectionTimeout =>
+      h.fail(
+        "MakeConnectionTimeout(max + 1) should return ValidationFailure")
+    | let _: ValidationFailure =>
+      h.assert_true(true)
+    end
