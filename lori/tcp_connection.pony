@@ -626,10 +626,10 @@ class TCPConnection
     """
     Attempt to perform a graceful shutdown. Don't accept new writes.
 
-    During the connecting phase (Happy Eyeballs in progress), marks the
-    connection as closed so straggler events clean up instead of establishing
-    a connection. Once all in-flight connections have drained,
-    `_on_connection_failure` fires.
+    During the connecting phase (Happy Eyeballs in progress), transitions to
+    `_UnconnectedClosing` to drain inflight connection attempts. Each
+    straggler event is cleaned up as it arrives. Once all inflight connections
+    have drained, `_on_connection_failure` fires.
 
     If the connection is established and not muted, we won't finish closing
     until we get a zero length read. If the connection is muted, perform a
