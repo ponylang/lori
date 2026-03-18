@@ -61,7 +61,7 @@ jobs:
         uses: actions/checkout@v6.0.2
         with:
           repository: ponylang/ponyc
-          ref: 174c1ef72f7d937aa291bdacb5f1c19294e11214
+          ref: 5c07181607123286d17cd451ee0336c513aa389b
           path: ponyc-src
       - name: Tune Windows Networking
         run: .ci-scripts\windows-configure-networking.ps1
