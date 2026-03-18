@@ -240,8 +240,7 @@ switch ($Command.ToLower())
     $lldbcmd = 'C:\msys64\mingw64\bin\lldb.exe'
     $lldbargs = @('--batch', '--one-line', 'run', '--one-line-on-crash', '"frame variable"', '--one-line-on-crash', '"register read"', '--one-line-on-crash', '"bt all"', '--one-line-on-crash', '"quit 1"', '--')
     Write-Host "$lldbcmd $lldbargs $testFile"
-    $lldboutput = & $lldbcmd $lldbargs $testFile
-    Write-Output $lldboutput
+    & $lldbcmd $lldbargs $testFile 2>&1 | Tee-Object -Variable lldboutput
     $exitCode = Get-ProcessExitCodeFromLLDB -LLDBOutput $lldboutput
     if ($exitCode -ne 0)
     {
