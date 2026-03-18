@@ -166,25 +166,26 @@ TCPConnection uses explicit state objects (`_ConnectionState` trait in `_connect
 
 ```
 _ConnectionNone → _ClientConnecting → _Open → _Closing → _Closed
-                                    ↘ _Closed (hard_close)
+                                    ↘ _UnconnectedClosing → _Closed
 _ConnectionNone → _Open (server) → _Closing → _Closed
 ```
 
 | State | `is_open()` | `is_closed()` | Description |
 |---|---|---|---|
 | `_ConnectionNone` | false | false | Before `_finish_initialization`. All methods call `_Unreachable()`. |
-| `_ClientConnecting` | false | false | Happy Eyeballs in progress. Has `_pending_close` flag for `close()` during connecting. |
+| `_ClientConnecting` | false | false | Happy Eyeballs in progress. `close()`/`hard_close()` transition to `_UnconnectedClosing`. |
+| `_UnconnectedClosing` | false | true | Draining inflight Happy Eyeballs connections after close/hard_close during connecting phase. |
 | `_Open` | true | false | Connection established, I/O active. |
 | `_Closing` | false | true | Graceful shutdown in progress — waiting for peer FIN. Still reads to detect FIN. |
 | `_Closed` | false | true | Fully closed. Handles straggler event cleanup only. |
 
 State classes dispatch lifecycle-gated operations (`send`, `close`, `hard_close`, `start_tls`, `read_again`, `own_event`, `foreign_event`) and delegate to TCPConnection methods for the actual work. All I/O, SSL, buffer, and flow control logic remains on TCPConnection.
 
-**Private field access**: Pony restricts private field access to the defining type. State classes use helper methods on TCPConnection (`_set_state`, `_decrement_inflight`, `_establish_connection`, `_straggler_cleanup`, etc.) rather than accessing fields directly.
+**Private field access**: Pony restricts private field access to the defining type. State classes use helper methods on TCPConnection (`_set_state`, `_decrement_inflight`, `_has_inflight`, `_establish_connection`, `_straggler_cleanup`, etc.) rather than accessing fields directly.
 
 **Flags kept on TCPConnection**: `_shutdown` and `_shutdown_peer` remain as data fields (set by I/O methods, checked by `_Closing`). Flow control flags (`_throttled`, `_readable`, `_writeable`, `_muted`, `_yield_read`) are orthogonal to lifecycle state.
 
-**`_event_notify` dispatch**: Timer events and disposable handling stay on TCPConnection. The `is_own_event` check is captured BEFORE dispatch because `_ClientConnecting.foreign_event()` can promote a foreign event to `_event` (Happy Eyeballs winner).
+**`_event_notify` dispatch**: Timer events and disposable handling stay on TCPConnection. The `is_own_event` check is captured BEFORE dispatch because `_ClientConnecting.foreign_event()` can promote a foreign event to `_event` (Happy Eyeballs winner). All foreign events are delegated to `_state.foreign_event()` — each state guards with `if not (writeable or readable) then return end` to filter disposable, timer, and signal notifications while still processing error-only events (the fix for stale timer fires reaching `foreign_event` as straggler events). `PonyAsio.destroy` for disposable events is handled by the catch-all at the end of `_event_notify`.
 
 Design: Discussion #219.
 

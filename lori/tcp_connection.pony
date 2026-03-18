@@ -2,6 +2,24 @@ use net = "net"
 use "ssl/net"
 
 class TCPConnection
+  """
+  Connection lifecycle state machine:
+
+  ```mermaid
+  stateDiagram-v2
+    [*] --> _ConnectionNone
+    _ConnectionNone --> _ClientConnecting : client init
+    _ConnectionNone --> _Open : server init
+    _ConnectionNone --> _Closed : SSL session creation failed
+    _ClientConnecting --> _Open : connect success
+    _ClientConnecting --> _UnconnectedClosing : close/hard_close (inflight > 0)
+    _ClientConnecting --> _Closed : close/hard_close/failure (inflight == 0)
+    _UnconnectedClosing --> _Closed : all inflight drained
+    _Open --> _Closing : close
+    _Open --> _Closed : hard_close
+    _Closing --> _Closed : shutdown complete or hard_close
+  ```
+  """
   var _state: _ConnectionState ref = _ConnectionNone
   var _shutdown: Bool = false
   var _shutdown_peer: Bool = false
@@ -651,7 +669,8 @@ class TCPConnection
     """
     Hard close during the connecting phase. Disposes SSL, fires the
     appropriate failure callback, and cancels the idle, connect, and user
-    timers. The caller must set `_state = _Closed` before calling this.
+    timers. Safe to call from any state — the caller is responsible for state
+    transitions. Must not be called more than once per connection lifecycle.
     """
     _shutdown = true
     _shutdown_peer = true
@@ -1687,6 +1706,9 @@ class TCPConnection
   fun ref _decrement_inflight(): U32 =>
     _inflight_connections = _inflight_connections - 1
     _inflight_connections
+
+  fun _has_inflight(): Bool =>
+    _inflight_connections > 0
 
   fun ref _establish_connection(event: AsioEventID, fd: U32) =>
     """
