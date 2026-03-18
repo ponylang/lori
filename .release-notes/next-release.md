@@ -75,3 +75,9 @@ fun ref _on_timer(token: TimerToken) =>
 
 Only one timer can be active at a time. Setting a timer while one is active returns `SetTimerAlreadyActive` — cancel the existing timer first. The timer survives `close()` (graceful shutdown) but is cancelled by `hard_close()`. There is no automatic re-arming; call `set_timer()` again from `_on_timer()` for repetition.
 
+## Fix resource leak from orphaned Happy Eyeballs connections
+
+When `close()` or `hard_close()` was called during the connecting phase, inflight Happy Eyeballs connection attempts could leak file descriptors and ASIO events. On Linux, failed connection attempts delivered error-only events (`ASIO_READ` without `ASIO_WRITE`) that were silently dropped by the writeable guard, preventing cleanup. On macOS, failed sockets produced two events per socket; the old guard accidentally filtered one, but the cleanup still had gaps.
+
+Inflight connections are now reliably drained on all platforms.
+
