@@ -91,3 +91,10 @@ jobs:
         run: |
           $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
           .\build\debug\open-close 100
+      - name: crash reproduction loop (issue #237)
+        run: |
+          $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
+          for ($i = 1; $i -le 10; $i++) {
+            Write-Host "=== Run $i/10 ==="
+            .\make.ps1 -Command test -Config Debug 2>&1;
+          }
