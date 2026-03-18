@@ -57,7 +57,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6.0.2
-      - name: Checkout ponyc (pre-LLVM 21)
+        with:
+          fetch-depth: 0
+      - name: Reset lori source to pre-NetAddress fix
+        run: git checkout 7942b695 -- lori/
+      - name: Checkout ponyc (pre-0.61.1)
         uses: actions/checkout@v6.0.2
         with:
           repository: ponylang/ponyc
