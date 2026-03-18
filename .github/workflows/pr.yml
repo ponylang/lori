@@ -74,19 +74,19 @@ jobs:
           Push-Location ponyc-src
           .\make.ps1 -Command libs
           Pop-Location
-      - name: Build ponyc debug runtime
+      - name: Build ponyc release runtime (native CPU)
         run: |
           Push-Location ponyc-src
-          .\make.ps1 -Command configure -Config Debug
-          .\make.ps1 -Command build -Config Debug
-          .\build\debug\ponyc.exe --version
+          .\make.ps1 -Command configure -Config Release
+          .\make.ps1 -Command build -Config Release
+          .\build\release\ponyc.exe --version
           Pop-Location
       - name: build lori SSL libs
         run: .\make.ps1 -Command libs 2>&1;
       - name: crash reproduction loop (issue #237)
         run: |
-          $env:PATH = "$PWD\ponyc-src\build\debug;C:\ponyc\bin;" + $env:PATH;
+          $env:PATH = "$PWD\ponyc-src\build\release;C:\ponyc\bin;" + $env:PATH;
           for ($i = 1; $i -le 100; $i++) {
-            Write-Host "=== Run $i/10 ==="
+            Write-Host "=== Run $i/100 ==="
             .\make.ps1 -Command test -Config Debug 2>&1;
           }
