@@ -57,10 +57,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6.0.2
-      - name: Checkout ponyc
+      - name: Checkout ponyc (pre-LLVM 21)
         uses: actions/checkout@v6.0.2
         with:
           repository: ponylang/ponyc
+          ref: 174c1ef7
           path: ponyc-src
       - name: Tune Windows Networking
         run: .ci-scripts\windows-configure-networking.ps1
