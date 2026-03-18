@@ -57,25 +57,35 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6.0.2
+      - name: Checkout ponyc
+        uses: actions/checkout@v6.0.2
+        with:
+          repository: ponylang/ponyc
+          path: ponyc-src
       - name: Tune Windows Networking
         run: .ci-scripts\windows-configure-networking.ps1
-      - name: Install Pony tools
+      - name: Install corral
         run: .ci-scripts\windows-install-pony-tools.ps1 nightlies
-      - name: Install lldb
+      - name: Install MSYS2 dependencies
         run: |
-          function msys() { C:\msys64\usr\bin\bash.exe @('-lc') + @Args }; msys ' '; msys 'pacman --noconfirm -Syuu'; msys 'pacman --noconfirm -Syuu'; msys 'pacman --noconfirm -S --needed mingw-w64-x86_64-lldb'; msys 'pacman --noconfirm -Scc'
-      - name: cache SSL libs
-        id: restore-libs
-        uses: actions/cache@v5.0.3
-        with:
-          path: build/libs
-          key: libs-windows-2025-${{ hashFiles('make.ps1') }}
-      - name: build SSL libs
-        if: steps.restore-libs.outputs.cache-hit != 'true'
-        run: .\make.ps1 -Command libs  2>&1;
+          function msys() { C:\msys64\usr\bin\bash.exe @('-lc') + @Args }; msys ' '; msys 'pacman --noconfirm -Syuu'; msys 'pacman --noconfirm -Syuu'; msys 'pacman --noconfirm -S --needed base-devel mingw-w64-x86_64-lldb'; msys 'pacman --noconfirm -Scc'
+      - name: Build ponyc libs
+        run: |
+          Push-Location ponyc-src
+          .\make.ps1 -Command libs
+          Pop-Location
+      - name: Build ponyc debug runtime
+        run: |
+          Push-Location ponyc-src
+          .\make.ps1 -Command configure -Config Debug
+          .\make.ps1 -Command build -Config Debug
+          .\build\debug\ponyc.exe --version
+          Pop-Location
+      - name: build lori SSL libs
+        run: .\make.ps1 -Command libs 2>&1;
       - name: crash reproduction loop (issue #237)
         run: |
-          $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
+          $env:PATH = "$PWD\ponyc-src\build\debug;C:\ponyc\bin;" + $env:PATH;
           for ($i = 1; $i -le 10; $i++) {
             Write-Host "=== Run $i/10 ==="
             .\make.ps1 -Command test -Config Debug 2>&1;
