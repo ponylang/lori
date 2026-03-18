@@ -167,13 +167,17 @@ TCPConnection uses explicit state objects (`_ConnectionState` trait in `_connect
 ```
 _ConnectionNone → _ClientConnecting → _Open → _Closing → _Closed
                                     ↘ _Closed (hard_close)
+_ClientConnecting → _UnconnectedClosing → _Closed (close, drain stragglers)
+_ClientConnecting → _Closed (hard_close / all connections failed)
+_UnconnectedClosing → _Closed (all inflight drained / hard_close)
 _ConnectionNone → _Open (server) → _Closing → _Closed
 ```
 
 | State | `is_open()` | `is_closed()` | Description |
 |---|---|---|---|
 | `_ConnectionNone` | false | false | Before `_finish_initialization`. All methods call `_Unreachable()`. |
-| `_ClientConnecting` | false | false | Happy Eyeballs in progress. Has `_pending_close` flag for `close()` during connecting. |
+| `_ClientConnecting` | false | false | Happy Eyeballs in progress. `close()` transitions to `_UnconnectedClosing`. |
+| `_UnconnectedClosing` | false | true | Draining inflight Happy Eyeballs after `close()` during connecting. Fires `_on_connection_failure` when all drain. `hard_close()` short-circuits to `_Closed`. |
 | `_Open` | true | false | Connection established, I/O active. |
 | `_Closing` | false | true | Graceful shutdown in progress — waiting for peer FIN. Still reads to detect FIN. |
 | `_Closed` | false | true | Fully closed. Handles straggler event cleanup only. |

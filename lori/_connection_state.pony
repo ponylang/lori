@@ -48,30 +48,19 @@ class _ConnectionNone is _ConnectionState
   fun is_closed(): Bool => false
 
 class _ClientConnecting is _ConnectionState
-  var _pending_close: Bool = false
-
   fun ref own_event(conn: TCPConnection ref, flags: U32, arg: U32) =>
     _Unreachable()
 
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
     flags: U32, arg: U32)
   =>
-    if not AsioEvent.writeable(flags) then return end
-
-    let fd = PonyAsio.event_fd(event)
-    let remaining = conn._decrement_inflight()
-
-    if _pending_close then
-      // Straggler cleanup during close — don't establish, just clean up
-      conn._straggler_cleanup(event)
-
-      if remaining == 0 then
-        // All inflight drained — fire failure and transition
-        conn._set_state(_Closed)
-        conn._hard_close_connecting()
-      end
+    if PonyAsio.get_disposable(event) then return end
+    if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
       return
     end
+
+    let fd = PonyAsio.event_fd(event)
+    conn._decrement_inflight()
 
     if conn._is_socket_connected(fd) then
       conn._establish_connection(event, fd)
@@ -85,7 +74,7 @@ class _ClientConnecting is _ConnectionState
     SendErrorNotConnected
 
   fun ref close(conn: TCPConnection ref) =>
-    _pending_close = true
+    conn._set_state(_UnconnectedClosing)
 
   fun ref hard_close(conn: TCPConnection ref) =>
     conn._set_state(_Closed)
@@ -125,7 +114,10 @@ class _Open is _ConnectionState
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
     flags: U32, arg: U32)
   =>
-    if not AsioEvent.writeable(flags) then return end
+    if PonyAsio.get_disposable(event) then return end
+    if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
+      return
+    end
 
     // Happy Eyeballs straggler — clean up
     conn._decrement_inflight()
@@ -178,7 +170,10 @@ class _Closing is _ConnectionState
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
     flags: U32, arg: U32)
   =>
-    if not AsioEvent.writeable(flags) then return end
+    if PonyAsio.get_disposable(event) then return end
+    if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
+      return
+    end
 
     // Happy Eyeballs straggler — clean up
     conn._decrement_inflight()
@@ -211,6 +206,55 @@ class _Closing is _ConnectionState
   fun is_open(): Bool => false
   fun is_closed(): Bool => true
 
+class _UnconnectedClosing is _ConnectionState
+  """
+  Draining inflight Happy Eyeballs connections after close() during the
+  connecting phase. The failure callback is deferred until all inflight
+  connections drain. hard_close() can interrupt this drain (e.g., connection
+  timeout fires during drain), transitioning to _Closed immediately.
+  """
+  fun ref own_event(conn: TCPConnection ref, flags: U32, arg: U32) =>
+    _Unreachable()
+
+  fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
+    flags: U32, arg: U32)
+  =>
+    if PonyAsio.get_disposable(event) then return end
+    if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
+      return
+    end
+
+    let remaining = conn._decrement_inflight()
+    conn._straggler_cleanup(event)
+
+    if remaining == 0 then
+      conn._set_state(_Closed)
+      conn._hard_close_connecting()
+    end
+
+  fun ref send(conn: TCPConnection ref,
+    data: (ByteSeq | ByteSeqIter)): (SendToken | SendError)
+  =>
+    SendErrorNotConnected
+
+  fun ref close(conn: TCPConnection ref) =>
+    None
+
+  fun ref hard_close(conn: TCPConnection ref) =>
+    conn._set_state(_Closed)
+    conn._hard_close_connecting()
+
+  fun ref start_tls(conn: TCPConnection ref, ssl_ctx: SSLContext val,
+    host: String): (None | StartTLSError)
+  =>
+    StartTLSNotConnected
+
+  fun ref read_again(conn: TCPConnection ref) =>
+    None
+
+  fun is_open(): Bool => false
+  fun is_closed(): Bool => true
+
 class _Closed is _ConnectionState
   fun ref own_event(conn: TCPConnection ref, flags: U32, arg: U32) =>
     None
@@ -218,9 +262,13 @@ class _Closed is _ConnectionState
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
     flags: U32, arg: U32)
   =>
-    if not AsioEvent.writeable(flags) then return end
+    if PonyAsio.get_disposable(event) then return end
+    if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
+      return
+    end
 
     // Happy Eyeballs straggler — clean up
+    conn._decrement_inflight()
     conn._straggler_cleanup(event)
 
   fun ref send(conn: TCPConnection ref,
