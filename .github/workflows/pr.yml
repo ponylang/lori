@@ -58,9 +58,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6.0.2
         with:
-          fetch-depth: 0
-      - name: Reset lori source to pre-NetAddress fix
-        run: git checkout 7942b695 -- lori/
+          ref: 7942b695e50bcac8e4242d5f655d05fc21912da6
       - name: Checkout ponyc (pre-0.61.1)
         uses: actions/checkout@v6.0.2
         with:
@@ -93,5 +91,5 @@ jobs:
           $env:PATH = "$PWD\ponyc-src\build\release;C:\ponyc\bin;" + $env:PATH;
           for ($i = 1; $i -le 100; $i++) {
             Write-Host "=== Run $i/100 ==="
-            .\make.ps1 -Command test -Config Debug 2>&1;
+            .\make.ps1 -Command test -Config Release 2>&1;
           }
