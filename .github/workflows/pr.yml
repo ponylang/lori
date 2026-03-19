@@ -58,37 +58,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6.0.2
         with:
-          ref: 7942b695e50bcac8e4242d5f655d05fc21912da6
-      - name: Checkout ponyc (pre-0.61.1)
-        uses: actions/checkout@v6.0.2
-        with:
-          repository: ponylang/ponyc
-          ref: 5c07181607123286d17cd451ee0336c513aa389b
-          path: ponyc-src
+          ref: 7f452ee8e525ace2166b9612a718698b3890c35d
       - name: Tune Windows Networking
         run: .ci-scripts\windows-configure-networking.ps1
-      - name: Install corral
+      - name: Install Pony tools
         run: .ci-scripts\windows-install-pony-tools.ps1 nightlies
-      - name: Install MSYS2 dependencies
-        run: |
-          function msys() { C:\msys64\usr\bin\bash.exe @('-lc') + @Args }; msys ' '; msys 'pacman --noconfirm -Syuu'; msys 'pacman --noconfirm -Syuu'; msys 'pacman --noconfirm -S --needed base-devel mingw-w64-x86_64-lldb'; msys 'pacman --noconfirm -Scc'
-      - name: Build ponyc libs
-        run: |
-          Push-Location ponyc-src
-          .\make.ps1 -Command libs
-          Pop-Location
-      - name: Build ponyc release runtime (native CPU)
-        run: |
-          Push-Location ponyc-src
-          .\make.ps1 -Command configure -Config Release
-          .\make.ps1 -Command build -Config Release
-          .\build\release\ponyc.exe --version
-          Pop-Location
-      - name: build lori SSL libs
+      - name: cache SSL libs
+        id: restore-libs
+        uses: actions/cache@v5.0.3
+        with:
+          path: build/libs
+          key: libs-windows-2025-${{ hashFiles('make.ps1') }}
+      - name: build SSL libs
+        if: steps.restore-libs.outputs.cache-hit != 'true'
         run: .\make.ps1 -Command libs 2>&1;
       - name: crash reproduction loop (issue #237)
         run: |
-          $env:PATH = "$PWD\ponyc-src\build\release;C:\ponyc\bin;" + $env:PATH;
+          $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
           for ($i = 1; $i -le 100; $i++) {
             Write-Host "=== Run $i/100 ==="
             .\make.ps1 -Command test -Config Release 2>&1;
