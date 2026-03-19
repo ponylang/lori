@@ -188,7 +188,7 @@ State classes dispatch lifecycle-gated operations (`send`, `close`, `hard_close`
 
 **Flags kept on TCPConnection**: `_shutdown` and `_shutdown_peer` remain as data fields (set by I/O methods, checked by `_Closing`). Flow control flags (`_throttled`, `_readable`, `_writeable`, `_muted`, `_yield_read`) are orthogonal to lifecycle state.
 
-**`_event_notify` dispatch**: Timer events and disposable handling stay on TCPConnection. The `is_own_event` check is captured BEFORE dispatch because `_ClientConnecting.foreign_event()` can promote a foreign event to `_event` (Happy Eyeballs winner).
+**`_event_notify` dispatch**: A single `if/elseif/else` chain dispatches on event identity: connect timer, idle timer, user timer, socket event (`_event`), or everything else (the `else` branch). Timer identity checks must come before the `event is _event` check. The `else` branch checks disposable first (destroys stale timer disposables and straggler disposables), otherwise dispatches to `foreign_event` for Happy Eyeballs stragglers.
 
 Design: Discussion #219.
 
@@ -270,7 +270,7 @@ Lifecycle:
 - **Arm points**: plaintext branch of `_establish_connection` and `_complete_server_initialization`; `_ssl_poll` SSLReady branch for initial SSL connections (not TLS upgrades). `_arm_idle_timer()` is a no-op when `_idle_timeout_nsec == 0` or when a timer already exists (idempotency guard). Also called from `idle_timeout()` when setting a timeout on an established connection with no existing timer. `idle_timeout()` defers arming during initial SSL handshake (`_ssl` present, `_ssl_ready` false, not a TLS upgrade) — `_ssl_poll` arms at SSLReady.
 - **Reset points**: `_read()` (POSIX, once per read event), `_read_completed()` (Windows, once per read event), `send()` success path (after the SSL/plaintext write block).
 - **Cancel point**: `hard_close()` in both the not-connected branch (before `return`) and the connected branch (before `PonyAsio.unsubscribe(_event)`).
-- **Event dispatch**: Identity check `event is _timer_event` at the top of `_event_notify`, before the main `event is _event` check. Returns immediately after firing. `_timer_event` is cleared synchronously in `_cancel_idle_timer()`, so stale disposable events for cancelled timers route through the existing catch-all at the end of `_event_notify` (which calls `PonyAsio.destroy`).
+- **Event dispatch**: Identity check `event is _timer_event` in `_event_notify`'s `if/elseif/else` chain, before the `event is _event` check. `_timer_event` is cleared synchronously in `_cancel_idle_timer()`, so stale disposable events for cancelled timers fall through to the `else` branch where the disposable check destroys them.
 
 ### Connection timeout
 
@@ -284,7 +284,7 @@ Lifecycle:
 
 - **Arm point**: `_complete_client_initialization`, after `_had_inflight` is set, before `_connecting_callback()`. Only arms when `_had_inflight` is true (at least one TCP attempt started).
 - **Cancel points**: `_establish_connection` plaintext branch (before `_on_connected`), `_ssl_poll` SSLReady branch (after `_ssl_ready = true`), `_hard_close_connecting`, `_hard_close_connected`.
-- **Event dispatch**: Identity check `event is _connect_timer_event` at the top of `_event_notify`, before the idle timer check.
+- **Event dispatch**: Identity check `event is _connect_timer_event` in `_event_notify`'s `if/elseif/else` chain, before the idle timer check.
 
 Design: Discussion #234.
 
@@ -304,11 +304,11 @@ Internals:
 - `_fire_user_timer()` — clears token and event before the callback, then dispatches `_on_timer(token)`. Clearing before dispatch prevents aliasing when the callback calls `set_timer()`.
 - `_cancel_user_timer()` — cleanup path for `hard_close`. Unsubscribes and clears without firing the callback.
 
-Event dispatch: identity check `event is _user_timer_event` in `_event_notify`, after the idle timer check and before the `is_own_event` capture.
+Event dispatch: identity check `event is _user_timer_event` in `_event_notify`'s `if/elseif/else` chain, after the idle timer check and before the `event is _event` check.
 
 Cleanup: `_cancel_user_timer()` called from both `_hard_close_connecting()` (defensive) and `_hard_close_connected()`. Timers survive `close()` (graceful shutdown) but are cancelled by `hard_close()`.
 
-Stale events after cancel: `_user_timer_event` is cleared to `AsioEvent.none()` synchronously. Stale fire notifications fall through to `foreign_event` (timer flags don't include writeable, so they're silently dropped). Stale disposable notifications route through the catch-all handler.
+Stale events after cancel: `_user_timer_event` is cleared to `AsioEvent.none()` synchronously. Stale fire notifications fall through to `foreign_event` (timer flags don't include writeable, so they're silently dropped). Stale disposable notifications fall through to the `else` branch where the disposable check destroys them.
 
 Design: Discussion #233.
 

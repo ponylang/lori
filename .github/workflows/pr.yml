@@ -37,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
       - name: install pony tools
-        run: bash .ci-scripts/macOS-install-nightly-pony-tools.bash
+        run: bash .ci-scripts/macOS-install-release-pony-tools.bash
       - name: configure networking
         run: bash .ci-scripts/macOS-configure-networking.bash
       - name: config=debug

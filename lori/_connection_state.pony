@@ -21,7 +21,18 @@ class _ConnectionNone is _ConnectionState
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
     flags: U32, arg: U32)
   =>
-    _Unreachable()
+    if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
+      return
+    end
+
+    // The message flags and the event struct's disposable status can
+    // disagree: a stale message may carry writeable/readable flags while
+    // the event struct has already been marked disposable by a prior
+    // unsubscribe. Check the struct before unsubscribing.
+    if not PonyAsio.get_disposable(event) then
+      PonyAsio.unsubscribe(event)
+    end
+    PonyTCP.close(PonyAsio.event_fd(event))
 
   fun ref send(conn: TCPConnection ref,
     data: (ByteSeq | ByteSeqIter)): (SendToken | SendError)
@@ -54,7 +65,6 @@ class _ClientConnecting is _ConnectionState
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
     flags: U32, arg: U32)
   =>
-    if PonyAsio.get_disposable(event) then return end
     if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
       return
     end
@@ -114,6 +124,7 @@ class _Open is _ConnectionState
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
     flags: U32, arg: U32)
   =>
+    // Removing this guard causes the test suite to hang.
     if PonyAsio.get_disposable(event) then return end
     if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
       return
@@ -170,6 +181,7 @@ class _Closing is _ConnectionState
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
     flags: U32, arg: U32)
   =>
+    // Removing this guard causes the test suite to hang.
     if PonyAsio.get_disposable(event) then return end
     if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
       return
@@ -219,7 +231,6 @@ class _UnconnectedClosing is _ConnectionState
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
     flags: U32, arg: U32)
   =>
-    if PonyAsio.get_disposable(event) then return end
     if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
       return
     end
@@ -262,7 +273,6 @@ class _Closed is _ConnectionState
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
     flags: U32, arg: U32)
   =>
-    if PonyAsio.get_disposable(event) then return end
     if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
       return
     end
