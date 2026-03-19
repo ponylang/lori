@@ -223,7 +223,7 @@ switch ($Command.ToLower())
   "test"
   {
     $testFile = (BuildTest)[-1]
-    Write-Host "$testFile --sequential"
+    Write-Host "$testFile"
     $rawOutput = & "$testFile" 2>&1
     $exitCode = $LastExitCode
     foreach ($line in $rawOutput) { Write-Host $line }

@@ -1,6 +1,8 @@
 use net = "net"
 use "ssl/net"
 
+use @printf[I32](fmt: Pointer[U8] tag, ...)
+
 class TCPConnection
   var _state: _ConnectionState ref = _ConnectionNone
   var _shutdown: Bool = false
@@ -1492,9 +1494,9 @@ class TCPConnection
   fun ref _cancel_idle_timer() =>
     """
     Cancel the idle timer. Unsubscribes and clears `_timer_event`
-    immediately. The stale disposable notification (if any) is handled by
-    the catch-all disposable handler in `_event_notify`'s else branch,
-    which destroys any unrecognized disposable event.
+    immediately. The stale disposable notification (if any) no longer
+    matches `_timer_event` and is destroyed by `_event_notify`'s else
+    branch disposable check.
     """
     if not _timer_event.is_null() then
       PonyAsio.unsubscribe(_timer_event)
@@ -1537,7 +1539,8 @@ class TCPConnection
     """
     Cancel the connect timeout timer. Unsubscribes and clears
     `_connect_timer_event` immediately. Stale disposable notifications
-    route through the catch-all disposable handler in `_event_notify`.
+    no longer match `_connect_timer_event` and are destroyed by
+    `_event_notify`'s else branch disposable check.
     """
     if not _connect_timer_event.is_null() then
       PonyAsio.unsubscribe(_connect_timer_event)
@@ -1562,8 +1565,9 @@ class TCPConnection
 
     The token and event are cleared before the callback. If the callback
     calls `set_timer()`, it creates a fresh ASIO event. The old event's
-    disposable notification arrives later, doesn't match `_user_timer_event`,
-    and routes through the catch-all handler in `_event_notify`.
+    disposable notification arrives later, doesn't match
+    `_user_timer_event`, and is destroyed by `_event_notify`'s else
+    branch disposable check.
     """
     let token = _user_timer_token
     _user_timer_token = None
@@ -1581,8 +1585,9 @@ class TCPConnection
   fun ref _cancel_user_timer() =>
     """
     Cancel the user timer without firing the callback. Called from both
-    hard-close paths during cleanup. Stale disposable notifications route
-    through the catch-all disposable handler in `_event_notify`.
+    hard-close paths during cleanup. Stale disposable notifications no
+    longer match `_user_timer_event` and are destroyed by
+    `_event_notify`'s else branch disposable check.
     """
     if not _user_timer_event.is_null() then
       PonyAsio.unsubscribe(_user_timer_event)
@@ -1726,10 +1731,18 @@ class TCPConnection
   fun ref _connecting_event_failed(event: AsioEventID, fd: U32) =>
     """
     Called by _ClientConnecting when a Happy Eyeballs connection attempt
-    fails. Unsubscribes the event, closes the fd, and fires the connecting
-    callback.
+    fails. Closes the fd and fires the connecting callback. Only
+    unsubscribes if the event hasn't already been unsubscribed — on
+    non-Windows systems, a race can cause the event to already be
+    disposable by the time we process it (see stdlib TCPConnection).
     """
-    PonyAsio.unsubscribe(event)
+    // The message flags and the event struct's disposable status can
+    // disagree: a stale message may carry writeable/readable flags while
+    // the event struct has already been marked disposable by a prior
+    // unsubscribe. Check the struct before unsubscribing.
+    if not PonyAsio.get_disposable(event) then
+      PonyAsio.unsubscribe(event)
+    end
     PonyTCP.close(fd)
     _connecting_callback()
 
@@ -1739,50 +1752,49 @@ class TCPConnection
     chosen. Unsubscribes (if not already disposable) and closes the fd.
     Does NOT decrement _inflight_connections — caller handles that.
     """
+    // The message flags and the event struct's disposable status can
+    // disagree: a stale message may carry writeable/readable flags while
+    // the event struct has already been marked disposable by a prior
+    // unsubscribe. Check the struct before unsubscribing.
     if not PonyAsio.get_disposable(event) then
       PonyAsio.unsubscribe(event)
     end
     PonyTCP.close(PonyAsio.event_fd(event))
 
   fun ref _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
-    // Timer events. Disposable events for cancelled timers never reach here
-    // because the cancel methods clear timer fields synchronously. Stale
-    // timer disposables route through the catch-all disposable handler below.
+    // Explicit dispatch on event identity. Timer identity checks must come
+    // before `event is _event`. The else branch checks disposable first
+    // (stale timer disposables, straggler disposables), otherwise dispatches
+    // to foreign_event for Happy Eyeballs stragglers.
     if event is _connect_timer_event then
       _fire_connect_timeout()
-      return
-    end
-    if event is _timer_event then
+    elseif event is _timer_event then
       _fire_idle_timeout()
-      return
-    end
-    if event is _user_timer_event then
+    elseif event is _user_timer_event then
       _fire_user_timer()
-      return
-    end
-
-    // Capture before dispatch: _ClientConnecting.foreign_event() may promote
-    // a foreign event to _event (Happy Eyeballs winner), which would make the
-    // post-dispatch identity check incorrect.
-    let is_own_event = event is _event
-
-    if is_own_event then
+    elseif event is _event then
       _state.own_event(this, flags, arg)
       // A callback during own_event (e.g., _read_completed(0) → close()) can
       // transition to _Closing and set _shutdown/_shutdown_peer, but
-      // _Open.own_event() won't check for shutdown completion. This catch-all
-      // ensures the check runs after every own-event dispatch, regardless of
-      // which state handled it.
+      // _Open.own_event() won't check for shutdown completion. This ensures
+      // the check runs after every own-event dispatch, regardless of which
+      // state handled it.
       _check_shutdown_complete()
-    else
-      _state.foreign_event(this, event, flags, arg)
-    end
-
-    if AsioEvent.disposable(flags) then
-      PonyAsio.destroy(event)
-      if is_own_event then
+      if AsioEvent.disposable(flags) then
+        PonyAsio.destroy(event)
         _event = AsioEvent.none()
       end
+    else
+      // AsioEvent.disposable(flags)
+      if AsioEvent.disposable(flags) then
+        PonyAsio.destroy(event)
+      else
+        _state.foreign_event(this, event, flags, arg)
+      end
+
+      // if AsioEvent.disposable(flags) then
+      //   PonyAsio.destroy(event)
+      // end
     end
 
   fun ref _connecting_callback() =>
