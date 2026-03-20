@@ -35,8 +35,8 @@ actor \nodoc\ _TestIP4Pinger is (TCPConnectionActor & ClientLifecycleEventReceiv
       "",
       this,
       this where ip_version = IP4)
-    match MakeExpect(4)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(4)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
   fun ref _connection(): TCPConnection =>
@@ -75,8 +75,8 @@ actor \nodoc\ _TestIP4Ponger is (TCPConnectionActor & ServerLifecycleEventReceiv
       fd,
       this,
       this)
-    match MakeExpect(4)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(4)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
   fun ref _connection(): TCPConnection =>
@@ -163,8 +163,8 @@ actor \nodoc\ _TestIP6Pinger is (TCPConnectionActor & ClientLifecycleEventReceiv
       "",
       this,
       this where ip_version = IP6)
-    match MakeExpect(4)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(4)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
   fun ref _connection(): TCPConnection =>
@@ -203,8 +203,8 @@ actor \nodoc\ _TestIP6Ponger is (TCPConnectionActor & ServerLifecycleEventReceiv
       fd,
       this,
       this)
-    match MakeExpect(4)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(4)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
   fun ref _connection(): TCPConnection =>

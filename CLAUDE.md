@@ -37,9 +37,9 @@ lori/
   send_token.pony           -- SendToken class, SendError primitives and type alias
   timer_token.pony          -- TimerToken class, SetTimerError primitives and type alias
   timer_duration.pony       -- TimerDuration constrained type and validator
-  read_buffer.pony          -- Read buffer result types (ReadBufferResized, ExpectSet, etc.)
+  read_buffer.pony          -- Read buffer result types (ReadBufferResized, BufferUntilSet, etc.)
   read_buffer_size.pony     -- ReadBufferSize constrained type, validator, and default
-  expect.pony               -- Expect constrained type and validator
+  buffer_size.pony          -- BufferSize constrained type, validator, Streaming primitive
   start_tls_error.pony      -- StartTLSError primitives and type alias
   connection_failure_reason.pony -- ConnectionFailureReason primitives and type alias
   start_failure_reason.pony -- StartFailureReason primitive and type alias
@@ -56,7 +56,7 @@ lori/
   _connection_state.pony    -- _ConnectionState trait and lifecycle state classes
   _panics.pony              -- _Unreachable primitive for impossible states
   _test.pony                -- Test runner (Main only)
-  _test_connection.pony     -- Connection basics, ping-pong, expect, listener tests
+  _test_connection.pony     -- Connection basics, ping-pong, buffer_until, listener tests
   _test_flow_control.pony   -- Mute/unmute tests
   _test_send.pony           -- Send, sendv, send-after-close tests
   _test_ssl.pony            -- SSL ping-pong and SSL sendv tests
@@ -66,14 +66,14 @@ lori/
   _test_yield_read.pony     -- Yield read tests
   _test_ip_version.pony     -- IPv4/IPv6 specific tests
   _test_constrained_types.pony -- Validation tests for constrained types
-  _test_read_buffer.pony    -- Read buffer sizing and expect interaction tests
+  _test_read_buffer.pony    -- Read buffer sizing and buffer_until interaction tests
   _test_socket_options.pony -- Socket option method tests
   _test_connection_timeout.pony -- Connection timeout (plaintext + SSL) tests
   _test_timer.pony          -- General-purpose timer tests
 examples/
   backpressure/             -- Backpressure handling with throttle/unthrottle
   echo-server/              -- Simple echo server
-  framed-protocol/          -- Length-prefixed framing with expect()
+  framed-protocol/          -- Length-prefixed framing with buffer_until()
   idle-timeout/             -- Per-connection idle timeout
   infinite-ping-pong/       -- Ping-pong client+server
   ip-version/               -- IPv4-only echo server
@@ -194,18 +194,18 @@ Design: Discussion #219.
 
 ### SSL internals
 
-SSL state lives directly in `TCPConnection` (fields `_ssl`, `_ssl_ready`, `_ssl_failed`, `_ssl_expect`, `_ssl_auth_failed`). Key behaviors:
+SSL state lives directly in `TCPConnection` (fields `_ssl`, `_ssl_ready`, `_ssl_failed`, `_ssl_buffer_until`, `_ssl_auth_failed`). Key behaviors:
 
 - **0-to-N output per input on both sides:** Both read and write can produce zero, one, or many output chunks per input chunk. During handshake, output may be zero (buffered). A single TCP read containing multiple SSL records produces multiple decrypted chunks.
 - **`_ssl_poll()` pump:** Called after `ssl.receive()` in `_deliver_received()`. Checks SSL state, delivers decrypted data to the lifecycle event receiver, and flushes encrypted protocol data (handshake responses, etc.) via `_ssl_flush_sends()`.
 - **Client handshake initiation:** When TCP connects, `_ssl_flush_sends()` sends the ClientHello. The handshake proceeds via `_deliver_received()` → `ssl.receive()` → `_ssl_poll()`.
 - **Ready signaling:** `_ssl_ready` is set when `ssl.state()` returns `SSLReady`, which triggers `_on_connected`/`_on_started` delivery.
 - **Error handling:** `SSLAuthFail` sets `_ssl_auth_failed = true` then triggers `hard_close()`. `SSLError` triggers `hard_close()` directly. `hard_close()` reads `_ssl_auth_failed` to pass `TLSAuthFailed` vs `TLSGeneralError` to `_on_tls_failure` (for TLS upgrades), or `ConnectionFailedSSL`/`StartFailedSSL` to `_on_connection_failure`/`_on_start_failure` (for initial SSL). If the handshake never completed, clients get `_on_connection_failure(ConnectionFailedSSL)` and servers get `_on_start_failure(StartFailedSSL)`.
-- **Expect handling:** The application's `expect()` value is stored in `_ssl_expect` as `(Expect | None)` and converted to `USize` at the `ssl.read()` call site (0 for `None`). The TCP read layer uses `None` (read all available) since SSL record framing doesn't align with application framing.
+- **Buffer-until handling:** The application's `buffer_until()` value is stored in `_ssl_buffer_until` as `(BufferSize | Streaming)` and converted to `USize` at the `ssl.read()` call site (0 for `Streaming`). The TCP read layer uses `Streaming` (read all available) since SSL record framing doesn't align with application framing.
 
 ### TLS upgrade (STARTTLS)
 
-`start_tls(ssl_ctx, host)` upgrades an established plaintext connection to TLS. It creates an SSL session, migrates expect state (`_ssl_expect = _expect; _expect = None`), sets `_tls_upgrade = true`, and flushes the ClientHello. The `_tls_upgrade` flag distinguishes "initial SSL from constructor" vs "upgraded SSL from start_tls()":
+`start_tls(ssl_ctx, host)` upgrades an established plaintext connection to TLS. It creates an SSL session, migrates buffer-until state (`_ssl_buffer_until = _buffer_until; _buffer_until = Streaming`), sets `_tls_upgrade = true`, and flushes the ClientHello. The `_tls_upgrade` flag distinguishes "initial SSL from constructor" vs "upgraded SSL from start_tls()":
 
 - **`_ssl_poll()`**: When `SSLReady` is reached and `_tls_upgrade` is true, calls `_on_tls_ready()` instead of `_on_connected()`/`_on_started()`.
 - **`hard_close()`**: When SSL handshake is incomplete and `_tls_upgrade` is true, calls `_on_tls_failure(reason)` (where `reason` is `TLSAuthFailed` or `TLSGeneralError` based on `_ssl_auth_failed`) then `_on_closed()` (the application already knew about the plaintext connection). Without `_tls_upgrade`, the initial-SSL path fires `_on_connection_failure(ConnectionFailedSSL)`/`_on_start_failure(StartFailedSSL)` instead.
@@ -318,17 +318,17 @@ Configurable read buffer with three interacting values:
 
 - **`_read_buffer_min`**: Shrink-back floor. When buffer is empty and oversized, shrinks to this.
 - **`_read_buffer_size`**: Current buffer allocation size.
-- **expect** (user's requested value): Framing threshold.
+- **buffer_until** (user's requested value): Framing threshold.
 
-Invariant chain: `expect <= _read_buffer_min <= _read_buffer_size`.
+Invariant chain: `buffer_until <= _read_buffer_min <= _read_buffer_size`.
 
 API:
 - Constructor parameter `read_buffer_size: ReadBufferSize` (default `DefaultReadBufferSize()`, 16384) sets both `_read_buffer_size` and `_read_buffer_min`.
 - `set_read_buffer_minimum(new_min: ReadBufferSize)` — sets shrink-back floor, grows buffer if needed.
 - `resize_read_buffer(size: ReadBufferSize)` — forces buffer to exact size, lowers minimum if below it.
-- `expect(qty: (Expect | None))` — returns `ExpectAboveBufferMinimum` if `qty` exceeds `_read_buffer_min`. `None` means "deliver all available data."
+- `buffer_until(qty: (BufferSize | Streaming))` — returns `BufferSizeAboveMinimum` if `qty` exceeds `_read_buffer_min`. `Streaming` means "deliver all available data."
 
-`_user_expect()` returns the unwrapped expect value as `USize` (0 when both `_expect` and `_ssl_expect` are `None`) for invariant checks against buffer sizes.
+`_user_buffer_until()` returns the unwrapped buffer-until value as `USize` (0 when both `_buffer_until` and `_ssl_buffer_until` are `Streaming`) for invariant checks against buffer sizes.
 
 Shrink-back happens in `_resize_read_buffer_if_needed()` when `_bytes_in_read_buffer == 0` and `_read_buffer_size > _read_buffer_min`. On Windows, a post-loop call to `_resize_read_buffer_if_needed()` was added in `_read_completed()` and `_windows_resume_read()` because the existing calls inside the `while _there_is_buffered_read_data()` loop can never see `_bytes_in_read_buffer == 0`.
 

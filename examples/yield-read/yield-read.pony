@@ -58,8 +58,8 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
   new create(auth: TCPServerAuth, fd: U32, out: OutStream) =>
     _out = out
     _tcp_connection = TCPConnection.server(auth, fd, this, this)
-    match MakeExpect(4)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(4)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
   fun ref _connection(): TCPConnection =>

@@ -72,8 +72,8 @@ actor \nodoc\ _TestPinger is (TCPConnectionActor & ClientLifecycleEventReceiver)
       "",
       this,
       this)
-    match MakeExpect(4)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(4)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
   fun ref _connection(): TCPConnection =>
@@ -112,8 +112,8 @@ actor \nodoc\ _TestPonger is (TCPConnectionActor & ServerLifecycleEventReceiver)
       fd,
       this,
       this)
-    match MakeExpect(4)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(4)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
   fun ref _connection(): TCPConnection =>
@@ -166,21 +166,21 @@ actor \nodoc\ _TestPongerListener is TCPListenerActor
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestPongerListener")
 
-class \nodoc\ iso _TestBasicExpect is UnitTest
-  fun name(): String => "BasicExpect"
+class \nodoc\ iso _TestBasicBufferUntil is UnitTest
+  fun name(): String => "BasicBufferUntil"
 
   fun apply(h: TestHelper) =>
     h.expect_action("server listening")
     h.expect_action("client connected")
     h.expect_action("expected data received")
 
-    let s = _TestBasicExpectListener(h)
+    let s = _TestBasicBufferUntilListener(h)
 
     h.dispose_when_done(s)
 
     h.long_test(5_000_000_000)
 
-actor \nodoc\ _TestBasicExpectClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
+actor \nodoc\ _TestBasicBufferUntilClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _h: TestHelper
 
@@ -204,10 +204,10 @@ actor \nodoc\ _TestBasicExpectClient is (TCPConnectionActor & ClientLifecycleEve
   fun ref _on_received(data: Array[U8] iso) =>
     _h.fail("Client shouldn't get data")
 
-actor \nodoc\ _TestBasicExpectListener is TCPListenerActor
+actor \nodoc\ _TestBasicBufferUntilListener is TCPListenerActor
   let _h: TestHelper
   var _tcp_listener: TCPListener = TCPListener.none()
-  var _client: (_TestBasicExpectClient | None) = None
+  var _client: (_TestBasicBufferUntilClient | None) = None
 
   new create(h: TestHelper) =>
     _h = h
@@ -220,20 +220,20 @@ actor \nodoc\ _TestBasicExpectListener is TCPListenerActor
   fun ref _listener(): TCPListener =>
     _tcp_listener
 
-  fun ref _on_accept(fd: U32): _TestBasicExpectServer =>
-    _TestBasicExpectServer(fd, _h)
+  fun ref _on_accept(fd: U32): _TestBasicBufferUntilServer =>
+    _TestBasicBufferUntilServer(fd, _h)
 
   fun ref _on_closed() =>
-    try (_client as _TestBasicExpectClient).dispose() end
+    try (_client as _TestBasicBufferUntilClient).dispose() end
 
   fun ref _on_listening() =>
     _h.complete_action("server listening")
-    _client =_TestBasicExpectClient(_h)
+    _client =_TestBasicBufferUntilClient(_h)
 
   fun ref _on_listen_failure() =>
-    _h.fail("Unable to open _TestBasicExpectListener")
+    _h.fail("Unable to open _TestBasicBufferUntilListener")
 
-actor \nodoc\ _TestBasicExpectServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
+actor \nodoc\ _TestBasicBufferUntilServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   let _h: TestHelper
   var _tcp_connection: TCPConnection = TCPConnection.none()
   var _received_count: U8 = 0
@@ -245,8 +245,8 @@ actor \nodoc\ _TestBasicExpectServer is (TCPConnectionActor & ServerLifecycleEve
       fd,
       this,
       this)
-    match MakeExpect(4)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(4)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
   fun ref _connection(): TCPConnection =>

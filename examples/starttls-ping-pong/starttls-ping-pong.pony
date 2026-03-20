@@ -17,8 +17,8 @@ complete message ("STARTTLS", "OK", "Ping", "Pong"). TCP is stream-oriented, not
 message-oriented — in a real program, data can arrive split across multiple reads
 or concatenated together. A production implementation needs to account for this;
 common approaches include length-prefixed framing (see the framed-protocol
-example), line-delimited protocols, or using `expect()` to read fixed-size
-chunks. The framing code is omitted here to keep the STARTTLS flow easy to
+example), line-delimited protocols, or using `buffer_until()` to read
+fixed-size chunks. The framing code is omitted here to keep the STARTTLS flow easy to
 follow.
 """
 use "files"

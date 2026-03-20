@@ -1,13 +1,13 @@
 """
-Demonstrates lori's expect() for length-prefixed message framing and
+Demonstrates lori's buffer_until() for length-prefixed message framing and
 multi-buffer send() for sending header + payload in a single writev syscall.
 
 A framed client connects to an echo server and exchanges messages using a
 simple protocol: each message is preceded by a 4-byte big-endian length
-header. The server uses expect() to switch between reading the 4-byte header
-and reading the variable-length payload, then echoes each message back with
-the same framing. The client uses the same expect()-based framing to read
-echoed responses.
+header. The server uses buffer_until() to switch between reading the 4-byte
+header and reading the variable-length payload, then echoes each message back
+with the same framing. The client uses the same buffer_until()-based framing to
+read echoed responses.
 
 Expected output shows the client sending several messages and receiving each
 one echoed back, confirming the framing round-trip.
@@ -50,7 +50,7 @@ actor Listener is TCPListenerActor
 actor FramedServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   """
   Server-side connection that reads length-prefixed messages and echoes them
-  back with the same framing. Uses expect() to switch between reading the
+  back with the same framing. Uses buffer_until() to switch between reading the
   4-byte header and the variable-length payload.
   """
   var _tcp_connection: TCPConnection = TCPConnection.none()
@@ -60,8 +60,8 @@ actor FramedServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   new create(auth: TCPServerAuth, fd: U32, out: OutStream) =>
     _out = out
     _tcp_connection = TCPConnection.server(auth, fd, this, this)
-    match MakeExpect(4)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(4)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
   fun ref _connection(): TCPConnection =>
@@ -76,8 +76,8 @@ actor FramedServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
           data(3)?.usize()
         _out.print("Server: header says " + len.string() + " byte payload")
         _reading_header = false
-        match MakeExpect(len)
-        | let e: Expect => _tcp_connection.expect(e)
+        match MakeBufferSize(len)
+        | let e: BufferSize => _tcp_connection.buffer_until(e)
         end
       end
     else
@@ -97,8 +97,8 @@ actor FramedServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
       _tcp_connection.send(recover val [as ByteSeq: header; payload] end)
 
       _reading_header = true
-      match MakeExpect(4)
-      | let e: Expect => _tcp_connection.expect(e)
+      match MakeBufferSize(4)
+      | let e: BufferSize => _tcp_connection.buffer_until(e)
       end
     end
 
@@ -138,8 +138,8 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
     for msg in _messages.values() do
       _send_framed(msg)
     end
-    match MakeExpect(4)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(4)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
   fun ref _send_framed(msg: String) =>
@@ -166,8 +166,8 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
           (data(2)?.usize() << 8) or
           data(3)?.usize()
         _reading_header = false
-        match MakeExpect(len)
-        | let e: Expect => _tcp_connection.expect(e)
+        match MakeBufferSize(len)
+        | let e: BufferSize => _tcp_connection.buffer_until(e)
         end
       end
     else
@@ -185,8 +185,8 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
       end
 
       _reading_header = true
-      match MakeExpect(4)
-      | let e: Expect => _tcp_connection.expect(e)
+      match MakeBufferSize(4)
+      | let e: BufferSize => _tcp_connection.buffer_until(e)
       end
 
       if _messages_received == _messages.size() then

@@ -293,8 +293,8 @@ actor \nodoc\ _TestSendvServer
       fd,
       this,
       this)
-    match MakeExpect(13)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(13)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
   fun ref _connection(): TCPConnection =>
@@ -471,8 +471,8 @@ actor \nodoc\ _TestSendvMixedEmptyServer
       fd,
       this,
       this)
-    match MakeExpect(10)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(10)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
   fun ref _connection(): TCPConnection =>
