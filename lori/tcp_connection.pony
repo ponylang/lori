@@ -41,7 +41,6 @@ class TCPConnection
   var _ssl: (SSL ref | None) = None
   var _ssl_ready: Bool = false
   var _ssl_failed: Bool = false
-  var _ssl_buffer_until: (BufferSize | Streaming) = Streaming
   // Distinguishes "initial SSL from constructor" vs "upgraded SSL from
   // start_tls()". Used by _ssl_poll() and hard_close() to route to the
   // correct callbacks (_on_tls_ready/_on_tls_failure vs
@@ -577,19 +576,26 @@ class TCPConnection
   fun _user_buffer_until(): USize =>
     """
     The user's requested buffer-until value, regardless of whether SSL is
-    active. Internally, buffer-until is split across `_buffer_until` (non-SSL)
-    and `_ssl_buffer_until` (SSL), but invariant checks need the user's actual
-    requested value. Returns 0 when both are `Streaming`, since 0 < any valid
-    buffer min — the correct behavior for invariant checks when no buffer-until
-    constraint is active.
+    active. Returns 0 when `Streaming`, since 0 < any valid buffer min — the
+    correct behavior for invariant checks when no buffer-until constraint is
+    active.
     """
     match \exhaustive\ _buffer_until
     | let e: BufferSize => e()
-    | Streaming =>
-      match \exhaustive\ _ssl_buffer_until
-      | let e: BufferSize => e()
-      | Streaming => 0
-      end
+    | Streaming => 0
+    end
+
+  fun _tcp_buffer_until(): (BufferSize | Streaming) =>
+    """
+    The buffer-until value for the TCP read layer. When SSL is active, returns
+    `Streaming` because SSL record framing doesn't align with application
+    framing — the TCP layer reads all available data and lets `_ssl_poll()`
+    handle chunking via `_buffer_until`. When SSL is not active, returns the
+    user's `_buffer_until` value directly.
+    """
+    match _ssl
+    | let _: SSL box => Streaming
+    | None => _buffer_until
     end
 
   fun ref buffer_until(qty: (BufferSize | Streaming)): BufferUntilResult =>
@@ -610,16 +616,7 @@ class TCPConnection
 
     match \exhaustive\ _lifecycle_event_receiver
     | let _: EitherLifecycleEventReceiver =>
-      match \exhaustive\ _ssl
-      | let _: SSL ref =>
-        // Store the application's buffer-until value for SSL read chunking.
-        // Tell the TCP read layer to read all available (Streaming) since SSL
-        // record framing doesn't align with application framing.
-        _ssl_buffer_until = qty
-        _buffer_until = Streaming
-      | None =>
-        _buffer_until = qty
-      end
+      _buffer_until = qty
     | None =>
       _Unreachable()
     end
@@ -862,8 +859,6 @@ class TCPConnection
       return StartTLSSessionFailed
     end
 
-    _ssl_buffer_until = _buffer_until
-    _buffer_until = Streaming
     _tls_upgrade = true
     _ssl = consume ssl
     _ssl_ready = false
@@ -1191,7 +1186,7 @@ class TCPConnection
 
             // Handle any data already in the read buffer
             while not _muted and _there_is_buffered_read_data() do
-              let bytes_to_consume = match \exhaustive\ _buffer_until
+              let bytes_to_consume = match \exhaustive\ _tcp_buffer_until()
               | let e: BufferSize => e()
               | Streaming => _bytes_in_read_buffer
               end
@@ -1287,7 +1282,7 @@ class TCPConnection
         while not _muted and _there_is_buffered_read_data()
         do
           // get data to be distributed and update `_bytes_in_read_buffer`
-          let chop_at = match \exhaustive\ _buffer_until
+          let chop_at = match \exhaustive\ _tcp_buffer_until()
           | let e: BufferSize => e()
           | Streaming => _bytes_in_read_buffer
           end
@@ -1338,7 +1333,7 @@ class TCPConnection
       match \exhaustive\ _lifecycle_event_receiver
       | let s: EitherLifecycleEventReceiver ref =>
         while not _muted and _there_is_buffered_read_data() do
-          let chop_at = match \exhaustive\ _buffer_until
+          let chop_at = match \exhaustive\ _tcp_buffer_until()
           | let e: BufferSize => e()
           | Streaming => _bytes_in_read_buffer
           end
@@ -1372,7 +1367,7 @@ class TCPConnection
     end
 
   fun _there_is_buffered_read_data(): Bool =>
-    match \exhaustive\ _buffer_until
+    match \exhaustive\ _tcp_buffer_until()
     | let e: BufferSize => _bytes_in_read_buffer >= e()
     | Streaming => _bytes_in_read_buffer > 0
     end
@@ -1382,7 +1377,7 @@ class TCPConnection
     Resize the read buffer if it's smaller than the buffer-until threshold, or
     shrink it back to the minimum when empty and oversized.
     """
-    let needs_grow = match \exhaustive\ _buffer_until
+    let needs_grow = match \exhaustive\ _tcp_buffer_until()
     | let e: BufferSize => _read_buffer.size() <= e()
     | Streaming => _read_buffer.size() == 0
     end
@@ -1660,7 +1655,7 @@ class TCPConnection
       end
 
       // Read all available decrypted data
-      let ssl_read_buffer_until: USize = match \exhaustive\ _ssl_buffer_until
+      let ssl_read_buffer_until: USize = match \exhaustive\ _buffer_until
       | let e: BufferSize => e()
       | Streaming => 0
       end
