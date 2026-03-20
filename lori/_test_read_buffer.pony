@@ -62,14 +62,14 @@ actor \nodoc\ _TestReadBufferConstructorSizeServer is
     | let rbs: ReadBufferSize =>
       match _tcp_connection.set_read_buffer_minimum(rbs)
       | ReadBufferResized => None
-      | ReadBufferResizeBelowExpect =>
+      | ReadBufferResizeBelowBufferSize =>
         _h.fail("set_read_buffer_minimum(256) should succeed")
       end
 
       // resize_read_buffer to 256 should succeed since minimum is now 256
       match _tcp_connection.resize_read_buffer(rbs)
       | ReadBufferResized => None
-      | let _: ReadBufferResizeBelowExpect =>
+      | let _: ReadBufferResizeBelowBufferSize =>
         _h.fail("resize_read_buffer(256) should succeed")
       | let _: ReadBufferResizeBelowUsed =>
         _h.fail("resize_read_buffer(256) should succeed")
@@ -140,7 +140,7 @@ actor \nodoc\ _TestSetReadBufferMinSuccessServer is
     | let rbs: ReadBufferSize =>
       match _tcp_connection.set_read_buffer_minimum(rbs)
       | ReadBufferResized => None
-      | ReadBufferResizeBelowExpect =>
+      | ReadBufferResizeBelowBufferSize =>
         _h.fail("set_read_buffer_minimum(512) should succeed")
       end
     | let _: ValidationFailure =>
@@ -152,7 +152,7 @@ actor \nodoc\ _TestSetReadBufferMinSuccessServer is
     | let rbs: ReadBufferSize =>
       match _tcp_connection.set_read_buffer_minimum(rbs)
       | ReadBufferResized => None
-      | ReadBufferResizeBelowExpect =>
+      | ReadBufferResizeBelowBufferSize =>
         _h.fail("set_read_buffer_minimum(128) should succeed")
       end
     | let _: ValidationFailure =>
@@ -162,19 +162,19 @@ actor \nodoc\ _TestSetReadBufferMinSuccessServer is
     _h.complete(true)
     _tcp_connection.close()
 
-class \nodoc\ iso _TestSetReadBufferMinimumBelowExpect is UnitTest
+class \nodoc\ iso _TestSetReadBufferMinimumBelowBufferSize is UnitTest
   """
   Test that set_read_buffer_minimum() fails when the new minimum is below
-  the current expect value.
+  the current buffer-until value.
   """
-  fun name(): String => "SetReadBufferMinimumBelowExpect"
+  fun name(): String => "SetReadBufferMinimumBelowBufferSize"
 
   fun apply(h: TestHelper) =>
-    let listener = _TestSetReadBufferMinBelowExpectListener(h)
+    let listener = _TestSetReadBufferMinBelowBufferSizeListener(h)
     h.dispose_when_done(listener)
     h.long_test(5_000_000_000)
 
-actor \nodoc\ _TestSetReadBufferMinBelowExpectListener is TCPListenerActor
+actor \nodoc\ _TestSetReadBufferMinBelowBufferSizeListener is TCPListenerActor
   var _tcp_listener: TCPListener = TCPListener.none()
   let _h: TestHelper
 
@@ -186,8 +186,8 @@ actor \nodoc\ _TestSetReadBufferMinBelowExpectListener is TCPListenerActor
   fun ref _listener(): TCPListener =>
     _tcp_listener
 
-  fun ref _on_accept(fd: U32): _TestSetReadBufferMinBelowExpectServer =>
-    _TestSetReadBufferMinBelowExpectServer(fd, _h)
+  fun ref _on_accept(fd: U32): _TestSetReadBufferMinBelowBufferSizeServer =>
+    _TestSetReadBufferMinBelowBufferSizeServer(fd, _h)
 
   fun ref _on_listening() =>
     _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
@@ -196,7 +196,7 @@ actor \nodoc\ _TestSetReadBufferMinBelowExpectListener is TCPListenerActor
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open listener")
 
-actor \nodoc\ _TestSetReadBufferMinBelowExpectServer is
+actor \nodoc\ _TestSetReadBufferMinBelowBufferSizeServer is
   (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _h: TestHelper
@@ -210,32 +210,32 @@ actor \nodoc\ _TestSetReadBufferMinBelowExpectServer is
     _tcp_connection
 
   fun ref _on_started() =>
-    // Set expect to 100
-    match MakeExpect(100)
-    | let e: Expect => _tcp_connection.expect(e)
+    // Set buffer_until to 100
+    match MakeBufferSize(100)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
-    // Setting minimum below expect should fail
+    // Setting minimum below buffer_until should fail
     match MakeReadBufferSize(50)
     | let rbs: ReadBufferSize =>
       match _tcp_connection.set_read_buffer_minimum(rbs)
       | ReadBufferResized =>
         _h.fail(
-          "set_read_buffer_minimum(50) should fail when expect is 100")
-      | ReadBufferResizeBelowExpect => None
+          "set_read_buffer_minimum(50) should fail when buffer_until is 100")
+      | ReadBufferResizeBelowBufferSize => None
       end
     | let _: ValidationFailure =>
       _h.fail("MakeReadBufferSize(50) should succeed")
     end
 
-    // Setting minimum at expect should succeed
+    // Setting minimum at buffer_until should succeed
     match MakeReadBufferSize(100)
     | let rbs: ReadBufferSize =>
       match _tcp_connection.set_read_buffer_minimum(rbs)
       | ReadBufferResized => None
-      | ReadBufferResizeBelowExpect =>
+      | ReadBufferResizeBelowBufferSize =>
         _h.fail(
-          "set_read_buffer_minimum(100) should succeed when expect is 100")
+          "set_read_buffer_minimum(100) should succeed when buffer_until is 100")
       end
     | let _: ValidationFailure =>
       _h.fail("MakeReadBufferSize(100) should succeed")
@@ -302,7 +302,7 @@ actor \nodoc\ _TestResizeReadBufferSuccessServer is
     | let rbs: ReadBufferSize =>
       match _tcp_connection.resize_read_buffer(rbs)
       | ReadBufferResized => None
-      | let _: ReadBufferResizeBelowExpect =>
+      | let _: ReadBufferResizeBelowBufferSize =>
         _h.fail("resize_read_buffer(4096) should succeed")
       | let _: ReadBufferResizeBelowUsed =>
         _h.fail("resize_read_buffer(4096) should succeed")
@@ -316,7 +316,7 @@ actor \nodoc\ _TestResizeReadBufferSuccessServer is
     | let rbs: ReadBufferSize =>
       match _tcp_connection.resize_read_buffer(rbs)
       | ReadBufferResized => None
-      | let _: ReadBufferResizeBelowExpect =>
+      | let _: ReadBufferResizeBelowBufferSize =>
         _h.fail("resize_read_buffer(512) should succeed")
       | let _: ReadBufferResizeBelowUsed =>
         _h.fail("resize_read_buffer(512) should succeed")
@@ -328,19 +328,19 @@ actor \nodoc\ _TestResizeReadBufferSuccessServer is
     _h.complete(true)
     _tcp_connection.close()
 
-class \nodoc\ iso _TestResizeReadBufferBelowExpect is UnitTest
+class \nodoc\ iso _TestResizeReadBufferBelowBufferSize is UnitTest
   """
   Test that resize_read_buffer() fails when the size is below the current
-  expect value.
+  buffer-until value.
   """
-  fun name(): String => "ResizeReadBufferBelowExpect"
+  fun name(): String => "ResizeReadBufferBelowBufferSize"
 
   fun apply(h: TestHelper) =>
-    let listener = _TestResizeReadBufferBelowExpectListener(h)
+    let listener = _TestResizeReadBufferBelowBufferSizeListener(h)
     h.dispose_when_done(listener)
     h.long_test(5_000_000_000)
 
-actor \nodoc\ _TestResizeReadBufferBelowExpectListener is TCPListenerActor
+actor \nodoc\ _TestResizeReadBufferBelowBufferSizeListener is TCPListenerActor
   var _tcp_listener: TCPListener = TCPListener.none()
   let _h: TestHelper
 
@@ -352,8 +352,8 @@ actor \nodoc\ _TestResizeReadBufferBelowExpectListener is TCPListenerActor
   fun ref _listener(): TCPListener =>
     _tcp_listener
 
-  fun ref _on_accept(fd: U32): _TestResizeReadBufferBelowExpectServer =>
-    _TestResizeReadBufferBelowExpectServer(fd, _h)
+  fun ref _on_accept(fd: U32): _TestResizeReadBufferBelowBufferSizeServer =>
+    _TestResizeReadBufferBelowBufferSizeServer(fd, _h)
 
   fun ref _on_listening() =>
     _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
@@ -362,7 +362,7 @@ actor \nodoc\ _TestResizeReadBufferBelowExpectListener is TCPListenerActor
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open listener")
 
-actor \nodoc\ _TestResizeReadBufferBelowExpectServer is
+actor \nodoc\ _TestResizeReadBufferBelowBufferSizeServer is
   (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _h: TestHelper
@@ -376,21 +376,21 @@ actor \nodoc\ _TestResizeReadBufferBelowExpectServer is
     _tcp_connection
 
   fun ref _on_started() =>
-    // Set expect to 200
-    match MakeExpect(200)
-    | let e: Expect => _tcp_connection.expect(e)
+    // Set buffer_until to 200
+    match MakeBufferSize(200)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
-    // Resize below expect should fail
+    // Resize below buffer_until should fail
     match MakeReadBufferSize(100)
     | let rbs: ReadBufferSize =>
       match _tcp_connection.resize_read_buffer(rbs)
       | ReadBufferResized =>
-        _h.fail("resize_read_buffer(100) should fail when expect is 200")
-      | let _: ReadBufferResizeBelowExpect => None
+        _h.fail("resize_read_buffer(100) should fail when buffer_until is 200")
+      | let _: ReadBufferResizeBelowBufferSize => None
       | let _: ReadBufferResizeBelowUsed =>
         _h.fail(
-          "should be ReadBufferResizeBelowExpect, not ReadBufferResizeBelowUsed"
+          "should be ReadBufferResizeBelowBufferSize, not ReadBufferResizeBelowUsed"
           )
       end
     | let _: ValidationFailure =>
@@ -403,7 +403,7 @@ actor \nodoc\ _TestResizeReadBufferBelowExpectServer is
 class \nodoc\ iso _TestResizeReadBufferBelowMinLowersMin is UnitTest
   """
   Test that resize_read_buffer() below the current minimum lowers the minimum.
-  Verified by subsequently setting expect to the old minimum (which would fail
+  Verified by subsequently setting buffer_until to the old minimum (which would fail
   if the minimum hadn't been lowered).
   """
   fun name(): String => "ResizeReadBufferBelowMinLowersMin"
@@ -461,7 +461,7 @@ actor \nodoc\ _TestResizeReadBufferBelowMinServer is
     | let rbs: ReadBufferSize =>
       match _tcp_connection.resize_read_buffer(rbs)
       | ReadBufferResized => None
-      | let _: ReadBufferResizeBelowExpect =>
+      | let _: ReadBufferResizeBelowBufferSize =>
         _h.fail("resize_read_buffer(256) should succeed")
       | let _: ReadBufferResizeBelowUsed =>
         _h.fail("resize_read_buffer(256) should succeed")
@@ -470,41 +470,41 @@ actor \nodoc\ _TestResizeReadBufferBelowMinServer is
       _h.fail("MakeReadBufferSize(256) should succeed")
     end
 
-    // Now expect(512) should fail because minimum was lowered to 256
-    match MakeExpect(512)
-    | let e: Expect =>
-      match _tcp_connection.expect(e)
-      | ExpectSet =>
-        _h.fail("expect(512) should fail when minimum is 256")
-      | ExpectAboveBufferMinimum => None
+    // Now buffer_until(512) should fail because minimum was lowered to 256
+    match MakeBufferSize(512)
+    | let e: BufferSize =>
+      match _tcp_connection.buffer_until(e)
+      | BufferUntilSet =>
+        _h.fail("buffer_until(512) should fail when minimum is 256")
+      | BufferSizeAboveMinimum => None
       end
     end
 
-    // expect(256) should succeed (at the new minimum)
-    match MakeExpect(256)
-    | let e: Expect =>
-      match _tcp_connection.expect(e)
-      | ExpectSet => None
-      | ExpectAboveBufferMinimum =>
-        _h.fail("expect(256) should succeed when minimum is 256")
+    // buffer_until(256) should succeed (at the new minimum)
+    match MakeBufferSize(256)
+    | let e: BufferSize =>
+      match _tcp_connection.buffer_until(e)
+      | BufferUntilSet => None
+      | BufferSizeAboveMinimum =>
+        _h.fail("buffer_until(256) should succeed when minimum is 256")
       end
     end
 
     _h.complete(true)
     _tcp_connection.close()
 
-class \nodoc\ iso _TestExpectAboveBufferMinimum is UnitTest
+class \nodoc\ iso _TestBufferSizeAboveMinimum is UnitTest
   """
-  Test that expect() fails when the requested value exceeds the buffer minimum.
+  Test that buffer_until() fails when the requested value exceeds the buffer minimum.
   """
-  fun name(): String => "ExpectAboveBufferMinimum"
+  fun name(): String => "BufferSizeAboveMinimum"
 
   fun apply(h: TestHelper) =>
-    let listener = _TestExpectAboveBufferMinListener(h)
+    let listener = _TestBufferSizeAboveMinListener(h)
     h.dispose_when_done(listener)
     h.long_test(5_000_000_000)
 
-actor \nodoc\ _TestExpectAboveBufferMinListener is TCPListenerActor
+actor \nodoc\ _TestBufferSizeAboveMinListener is TCPListenerActor
   var _tcp_listener: TCPListener = TCPListener.none()
   let _h: TestHelper
 
@@ -516,8 +516,8 @@ actor \nodoc\ _TestExpectAboveBufferMinListener is TCPListenerActor
   fun ref _listener(): TCPListener =>
     _tcp_listener
 
-  fun ref _on_accept(fd: U32): _TestExpectAboveBufferMinServer =>
-    _TestExpectAboveBufferMinServer(fd, _h)
+  fun ref _on_accept(fd: U32): _TestBufferSizeAboveMinServer =>
+    _TestBufferSizeAboveMinServer(fd, _h)
 
   fun ref _on_listening() =>
     _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
@@ -526,7 +526,7 @@ actor \nodoc\ _TestExpectAboveBufferMinListener is TCPListenerActor
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open listener")
 
-actor \nodoc\ _TestExpectAboveBufferMinServer is
+actor \nodoc\ _TestBufferSizeAboveMinServer is
   (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _h: TestHelper
@@ -547,32 +547,32 @@ actor \nodoc\ _TestExpectAboveBufferMinServer is
     _tcp_connection
 
   fun ref _on_started() =>
-    // expect(256) should fail because minimum is 128
-    match MakeExpect(256)
-    | let e: Expect =>
-      match _tcp_connection.expect(e)
-      | ExpectSet =>
-        _h.fail("expect(256) should fail when minimum is 128")
-      | ExpectAboveBufferMinimum => None
+    // buffer_until(256) should fail because minimum is 128
+    match MakeBufferSize(256)
+    | let e: BufferSize =>
+      match _tcp_connection.buffer_until(e)
+      | BufferUntilSet =>
+        _h.fail("buffer_until(256) should fail when minimum is 128")
+      | BufferSizeAboveMinimum => None
       end
     end
 
     _h.complete(true)
     _tcp_connection.close()
 
-class \nodoc\ iso _TestExpectAtBufferMinimum is UnitTest
+class \nodoc\ iso _TestBufferSizeAtMinimum is UnitTest
   """
-  Test that expect() succeeds when the requested value equals the buffer
+  Test that buffer_until() succeeds when the requested value equals the buffer
   minimum.
   """
-  fun name(): String => "ExpectAtBufferMinimum"
+  fun name(): String => "BufferSizeAtMinimum"
 
   fun apply(h: TestHelper) =>
-    let listener = _TestExpectAtBufferMinListener(h)
+    let listener = _TestBufferSizeAtMinListener(h)
     h.dispose_when_done(listener)
     h.long_test(5_000_000_000)
 
-actor \nodoc\ _TestExpectAtBufferMinListener is TCPListenerActor
+actor \nodoc\ _TestBufferSizeAtMinListener is TCPListenerActor
   var _tcp_listener: TCPListener = TCPListener.none()
   let _h: TestHelper
 
@@ -584,8 +584,8 @@ actor \nodoc\ _TestExpectAtBufferMinListener is TCPListenerActor
   fun ref _listener(): TCPListener =>
     _tcp_listener
 
-  fun ref _on_accept(fd: U32): _TestExpectAtBufferMinServer =>
-    _TestExpectAtBufferMinServer(fd, _h)
+  fun ref _on_accept(fd: U32): _TestBufferSizeAtMinServer =>
+    _TestBufferSizeAtMinServer(fd, _h)
 
   fun ref _on_listening() =>
     _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
@@ -594,7 +594,7 @@ actor \nodoc\ _TestExpectAtBufferMinListener is TCPListenerActor
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open listener")
 
-actor \nodoc\ _TestExpectAtBufferMinServer is
+actor \nodoc\ _TestBufferSizeAtMinServer is
   (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _h: TestHelper
@@ -614,13 +614,13 @@ actor \nodoc\ _TestExpectAtBufferMinServer is
     _tcp_connection
 
   fun ref _on_started() =>
-    // expect(256) should succeed (equals minimum)
-    match MakeExpect(256)
-    | let e: Expect =>
-      match _tcp_connection.expect(e)
-      | ExpectSet => None
-      | ExpectAboveBufferMinimum =>
-        _h.fail("expect(256) should succeed when minimum is 256")
+    // buffer_until(256) should succeed (equals minimum)
+    match MakeBufferSize(256)
+    | let e: BufferSize =>
+      match _tcp_connection.buffer_until(e)
+      | BufferUntilSet => None
+      | BufferSizeAboveMinimum =>
+        _h.fail("buffer_until(256) should succeed when minimum is 256")
       end
     end
 

@@ -31,7 +31,7 @@ class TCPConnection
   var _bytes_in_read_buffer: USize = 0
   var _read_buffer_size: USize = 16384
   var _read_buffer_min: USize = 16384
-  var _expect: (Expect | None) = None
+  var _buffer_until: (BufferSize | Streaming) = Streaming
 
   // Send token tracking
   var _next_token_id: USize = 0
@@ -41,7 +41,7 @@ class TCPConnection
   var _ssl: (SSL ref | None) = None
   var _ssl_ready: Bool = false
   var _ssl_failed: Bool = false
-  var _ssl_expect: (Expect | None) = None
+  var _ssl_buffer_until: (BufferSize | Streaming) = Streaming
   // Distinguishes "initial SSL from constructor" vs "upgraded SSL from
   // start_tls()". Used by _ssl_poll() and hard_close() to route to the
   // correct callbacks (_on_tls_ready/_on_tls_failure vs
@@ -455,7 +455,7 @@ class TCPConnection
     end
 
   fun ref set_read_buffer_minimum(new_min: ReadBufferSize):
-    (ReadBufferResized | ReadBufferResizeBelowExpect)
+    (ReadBufferResized | ReadBufferResizeBelowBufferSize)
   =>
     """
     Set the shrink-back floor for the read buffer to exactly `new_min` bytes.
@@ -463,13 +463,13 @@ class TCPConnection
     to this size automatically. If the current buffer allocation is smaller
     than `new_min`, the buffer is grown to match.
 
-    Returns `ReadBufferResizeBelowExpect` if `new_min` is less than the
-    current expect value.
+    Returns `ReadBufferResizeBelowBufferSize` if `new_min` is less than the
+    current buffer-until value.
     """
     let min = new_min()
 
-    if min < _user_expect() then
-      return ReadBufferResizeBelowExpect
+    if min < _user_buffer_until() then
+      return ReadBufferResizeBelowBufferSize
     end
 
     _read_buffer_min = min
@@ -486,14 +486,14 @@ class TCPConnection
     Force the read buffer to exactly `size'` bytes, reallocating if different.
     If `size'` is below the current minimum, the minimum is lowered to match.
 
-    Returns `ReadBufferResizeBelowExpect` if `size'` is less than the current
-    expect value, or `ReadBufferResizeBelowUsed` if `size'` is less than the
-    amount of unprocessed data currently in the buffer.
+    Returns `ReadBufferResizeBelowBufferSize` if `size'` is less than the
+    current buffer-until value, or `ReadBufferResizeBelowUsed` if `size'` is
+    less than the amount of unprocessed data currently in the buffer.
     """
     let size = size'()
 
-    if size < _user_expect() then
-      return ReadBufferResizeBelowExpect
+    if size < _user_buffer_until() then
+      return ReadBufferResizeBelowBufferSize
     end
 
     if size < _bytes_in_read_buffer then
@@ -574,35 +574,37 @@ class TCPConnection
     """
     _yield_read = true
 
-  fun _user_expect(): USize =>
+  fun _user_buffer_until(): USize =>
     """
-    The user's requested expect value, regardless of whether SSL is active.
-    Internally, expect is split across _expect (non-SSL) and _ssl_expect (SSL),
-    but invariant checks need the user's actual requested value. Returns 0 when
-    both are None, since 0 < any valid buffer min — the correct behavior for
-    invariant checks when no expect constraint is active.
+    The user's requested buffer-until value, regardless of whether SSL is
+    active. Internally, buffer-until is split across `_buffer_until` (non-SSL)
+    and `_ssl_buffer_until` (SSL), but invariant checks need the user's actual
+    requested value. Returns 0 when both are `Streaming`, since 0 < any valid
+    buffer min — the correct behavior for invariant checks when no buffer-until
+    constraint is active.
     """
-    match \exhaustive\ _expect
-    | let e: Expect => e()
-    | None =>
-      match \exhaustive\ _ssl_expect
-      | let e: Expect => e()
-      | None => 0
+    match \exhaustive\ _buffer_until
+    | let e: BufferSize => e()
+    | Streaming =>
+      match \exhaustive\ _ssl_buffer_until
+      | let e: BufferSize => e()
+      | Streaming => 0
       end
     end
 
-  fun ref expect(qty: (Expect | None)): ExpectResult =>
+  fun ref buffer_until(qty: (BufferSize | Streaming)): BufferUntilResult =>
     """
-    Set the number of bytes to read before delivering data via
-    `_on_received`. When `qty` is `None`, all available data is delivered.
+    Set the number of bytes to buffer before delivering data via
+    `_on_received`. When `qty` is `Streaming`, all available data is delivered
+    as it arrives.
 
-    Returns `ExpectAboveBufferMinimum` if `qty` exceeds the current read
-    buffer minimum. Raise the buffer minimum first, then set expect.
+    Returns `BufferSizeAboveMinimum` if `qty` exceeds the current read
+    buffer minimum. Raise the buffer minimum first, then set buffer_until.
     """
     match qty
-    | let e: Expect =>
+    | let e: BufferSize =>
       if e() > _read_buffer_min then
-        return ExpectAboveBufferMinimum
+        return BufferSizeAboveMinimum
       end
     end
 
@@ -610,19 +612,19 @@ class TCPConnection
     | let _: EitherLifecycleEventReceiver =>
       match \exhaustive\ _ssl
       | let _: SSL ref =>
-        // Store the application's expect value for SSL read chunking.
-        // Tell the TCP read layer to read all available (None) since SSL
+        // Store the application's buffer-until value for SSL read chunking.
+        // Tell the TCP read layer to read all available (Streaming) since SSL
         // record framing doesn't align with application framing.
-        _ssl_expect = qty
-        _expect = None
+        _ssl_buffer_until = qty
+        _buffer_until = Streaming
       | None =>
-        _expect = qty
+        _buffer_until = qty
       end
     | None =>
       _Unreachable()
     end
 
-    ExpectSet
+    BufferUntilSet
 
   fun ref close() =>
     """
@@ -860,8 +862,8 @@ class TCPConnection
       return StartTLSSessionFailed
     end
 
-    _ssl_expect = _expect
-    _expect = None
+    _ssl_buffer_until = _buffer_until
+    _buffer_until = Streaming
     _tls_upgrade = true
     _ssl = consume ssl
     _ssl_ready = false
@@ -1189,9 +1191,9 @@ class TCPConnection
 
             // Handle any data already in the read buffer
             while not _muted and _there_is_buffered_read_data() do
-              let bytes_to_consume = match \exhaustive\ _expect
-              | let e: Expect => e()
-              | None => _bytes_in_read_buffer
+              let bytes_to_consume = match \exhaustive\ _buffer_until
+              | let e: BufferSize => e()
+              | Streaming => _bytes_in_read_buffer
               end
 
               let x = _read_buffer = recover Array[U8] end
@@ -1285,9 +1287,9 @@ class TCPConnection
         while not _muted and _there_is_buffered_read_data()
         do
           // get data to be distributed and update `_bytes_in_read_buffer`
-          let chop_at = match \exhaustive\ _expect
-          | let e: Expect => e()
-          | None => _bytes_in_read_buffer
+          let chop_at = match \exhaustive\ _buffer_until
+          | let e: BufferSize => e()
+          | Streaming => _bytes_in_read_buffer
           end
           (let data, _read_buffer) = (consume _read_buffer).chop(chop_at)
           _bytes_in_read_buffer = _bytes_in_read_buffer - chop_at
@@ -1336,9 +1338,9 @@ class TCPConnection
       match \exhaustive\ _lifecycle_event_receiver
       | let s: EitherLifecycleEventReceiver ref =>
         while not _muted and _there_is_buffered_read_data() do
-          let chop_at = match \exhaustive\ _expect
-          | let e: Expect => e()
-          | None => _bytes_in_read_buffer
+          let chop_at = match \exhaustive\ _buffer_until
+          | let e: BufferSize => e()
+          | Streaming => _bytes_in_read_buffer
           end
           (let data, _read_buffer) = (consume _read_buffer).chop(chop_at)
           _bytes_in_read_buffer = _bytes_in_read_buffer - chop_at
@@ -1370,19 +1372,19 @@ class TCPConnection
     end
 
   fun _there_is_buffered_read_data(): Bool =>
-    match \exhaustive\ _expect
-    | let e: Expect => _bytes_in_read_buffer >= e()
-    | None => _bytes_in_read_buffer > 0
+    match \exhaustive\ _buffer_until
+    | let e: BufferSize => _bytes_in_read_buffer >= e()
+    | Streaming => _bytes_in_read_buffer > 0
     end
 
   fun ref _resize_read_buffer_if_needed() =>
     """
-    Resize the read buffer if it's smaller than expected data size, or shrink
-    it back to the minimum when empty and oversized.
+    Resize the read buffer if it's smaller than the buffer-until threshold, or
+    shrink it back to the minimum when empty and oversized.
     """
-    let needs_grow = match \exhaustive\ _expect
-    | let e: Expect => _read_buffer.size() <= e()
-    | None => _read_buffer.size() == 0
+    let needs_grow = match \exhaustive\ _buffer_until
+    | let e: BufferSize => _read_buffer.size() <= e()
+    | Streaming => _read_buffer.size() == 0
     end
     if needs_grow then
       _read_buffer.undefined(_read_buffer_size)
@@ -1658,12 +1660,12 @@ class TCPConnection
       end
 
       // Read all available decrypted data
-      let ssl_read_expect: USize = match \exhaustive\ _ssl_expect
-      | let e: Expect => e()
-      | None => 0
+      let ssl_read_buffer_until: USize = match \exhaustive\ _ssl_buffer_until
+      | let e: BufferSize => e()
+      | Streaming => 0
       end
       while true do
-        match \exhaustive\ ssl.read(ssl_read_expect)
+        match \exhaustive\ ssl.read(ssl_read_buffer_until)
         | let d: Array[U8] iso => s._on_received(consume d)
         | None => break
         end

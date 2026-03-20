@@ -1,11 +1,11 @@
 primitive ReadBufferResized
   """A successful read buffer operation."""
 
-primitive ReadBufferResizeBelowExpect
+primitive ReadBufferResizeBelowBufferSize
   """
   The requested read buffer size or minimum is smaller than the current
-  expect value. The expect value sets a hard floor — the buffer must be
-  able to hold at least that many bytes to satisfy the framing contract.
+  buffer-until value. The buffer-until value sets a hard floor — the buffer must
+  be able to hold at least that many bytes to satisfy the framing contract.
   """
 
 primitive ReadBufferResizeBelowUsed
@@ -15,16 +15,16 @@ primitive ReadBufferResizeBelowUsed
   """
 
 type ReadBufferResizeResult is
-  (ReadBufferResized | ReadBufferResizeBelowExpect | ReadBufferResizeBelowUsed)
+  (ReadBufferResized | ReadBufferResizeBelowBufferSize | ReadBufferResizeBelowUsed)
 
-primitive ExpectSet
-  """A successful expect operation."""
+primitive BufferUntilSet
+  """A successful buffer_until operation."""
 
-primitive ExpectAboveBufferMinimum
+primitive BufferSizeAboveMinimum
   """
-  The requested `Expect` value exceeds the current read buffer minimum. Raise
-  the buffer minimum first, then set expect.
+  The requested `BufferSize` value exceeds the current read buffer minimum. Raise
+  the buffer minimum first, then set buffer_until.
   """
 
-type ExpectResult is
-  (ExpectSet | ExpectAboveBufferMinimum)
+type BufferUntilResult is
+  (BufferUntilSet | BufferSizeAboveMinimum)

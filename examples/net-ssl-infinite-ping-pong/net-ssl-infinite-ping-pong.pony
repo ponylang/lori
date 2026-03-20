@@ -3,7 +3,7 @@ SSL version of infinite ping-pong.
 
 Same Ping/Pong exchange as the plain infinite-ping-pong example, but over SSL.
 Shows both TCPConnection.ssl_server and TCPConnection.ssl_client in the same
-program. Both sides use `expect()` so that each `_on_received` callback
+program. Both sides use `buffer_until()` so that each `_on_received` callback
 delivers exactly one 4-byte message. Must be run from the project root so the
 relative certificate paths resolve correctly.
 """
@@ -78,8 +78,8 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
   =>
     _out = out
     _tcp_connection = TCPConnection.ssl_server(auth, sslctx, fd, this, this)
-    match MakeExpect(4)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(4)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
   fun ref _connection(): TCPConnection =>
@@ -103,8 +103,8 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
     _out = out
     _tcp_connection = TCPConnection.ssl_client(auth, sslctx, host, port, from,
       this, this)
-    match MakeExpect(4)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(4)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
   fun ref _connection(): TCPConnection =>

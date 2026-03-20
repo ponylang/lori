@@ -80,8 +80,8 @@ actor \nodoc\ _TestYieldReadServer
       fd,
       this,
       this)
-    match MakeExpect(4)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(4)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
   fun ref _connection(): TCPConnection =>

@@ -16,7 +16,7 @@ Client and server exchanging messages in a loop. Adds a `ClientLifecycleEventRec
 
 ## [framed-protocol](framed-protocol/)
 
-Length-prefixed message framing with `expect()`. Each message has a 4-byte big-endian length header followed by a variable-length payload. Both sides use `expect()` to switch between reading the header and reading the payload, demonstrating how to build a protocol parser on top of lori's read chunking.
+Length-prefixed message framing with `buffer_until()`. Each message has a 4-byte big-endian length header followed by a variable-length payload. Both sides use `buffer_until()` to switch between reading the header and reading the payload, demonstrating how to build a protocol parser on top of lori's read chunking.
 
 ## [idle-timeout](idle-timeout/)
 

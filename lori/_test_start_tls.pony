@@ -57,8 +57,8 @@ actor \nodoc\ _TestStartTLSClient
       "",
       this,
       this)
-    match MakeExpect(2)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(2)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
   fun ref _connection(): TCPConnection =>
@@ -83,8 +83,8 @@ actor \nodoc\ _TestStartTLSClient
 
   fun ref _on_tls_ready() =>
     _h.complete_action("client tls ready")
-    match MakeExpect(4)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(4)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
     _tcp_connection.send("Ping")
 
@@ -109,8 +109,8 @@ actor \nodoc\ _TestStartTLSServer
       fd,
       this,
       this)
-    match MakeExpect(8)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(8)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
   fun ref _connection(): TCPConnection =>
@@ -133,8 +133,8 @@ actor \nodoc\ _TestStartTLSServer
 
   fun ref _on_tls_ready() =>
     _h.complete_action("server tls ready")
-    match MakeExpect(4)
-    | let e: Expect => _tcp_connection.expect(e)
+    match MakeBufferSize(4)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
 
   fun ref _on_tls_failure(reason: TLSFailureReason) =>

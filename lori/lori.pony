@@ -400,12 +400,14 @@ match MakeReadBufferSize(8192)
 end
 ```
 
-The `expect()` method accepts `(Expect | None)` where `None` means "deliver all
-available data." The invariant chain is: `expect <= read_buffer_min <=
-read_buffer_size`. Setting expect above the buffer minimum returns
-[`ExpectAboveBufferMinimum`](/lori/lori-ExpectAboveBufferMinimum/) — raise the
-minimum first, then set expect. Resizing below the current expect returns
-[`ReadBufferResizeBelowExpect`](/lori/lori-ReadBufferResizeBelowExpect/).
+The `buffer_until()` method accepts `(BufferSize | Streaming)` where `Streaming`
+means "deliver all available data." The invariant chain is: `buffer_until <=
+read_buffer_min <= read_buffer_size`. Setting buffer_until above the buffer
+minimum returns
+[`BufferSizeAboveMinimum`](/lori/lori-BufferSizeAboveMinimum/) — raise the
+minimum first, then set buffer_until. Resizing below the current buffer_until
+returns
+[`ReadBufferResizeBelowBufferSize`](/lori/lori-ReadBufferResizeBelowBufferSize/).
 Resizing below the amount of unprocessed data in the buffer returns
 [`ReadBufferResizeBelowUsed`](/lori/lori-ReadBufferResizeBelowUsed/).
 
