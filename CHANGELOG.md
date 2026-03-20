@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file. This projec
 ### Changed
 
 - Expand ConnectionFailureReason with ConnectionFailedTimeout ([PR #236](https://github.com/ponylang/lori/pull/236))
+- Rename expect() to buffer_until() with clearer type names ([PR #250](https://github.com/ponylang/lori/pull/250))
 
 ## [0.11.0] - 2026-03-15
 
