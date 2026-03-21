@@ -22,8 +22,11 @@ jobs:
         id: restore-libs
         uses: actions/cache@v5.0.3
         with:
-          path: build/libs
-          key: libs-windows-2025-${{ hashFiles('make.ps1') }}
+          path: |
+            ssl.lib
+            crypto.lib
+            tls.lib
+          key: rootlibs-windows-2025-${{ hashFiles('make.ps1') }}
       - name: build SSL libs
         if: steps.restore-libs.outputs.cache-hit != 'true'
         run: .\make.ps1 -Command libs  2>&1;
