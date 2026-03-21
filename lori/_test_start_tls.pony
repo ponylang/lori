@@ -637,3 +637,105 @@ actor \nodoc\ _TestStartTLSHandshakeFailureListener is TCPListenerActor
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestStartTLSHandshakeFailureListener")
+
+class \nodoc\ iso _TestStartTLSIsWriteableDuringUpgrade is UnitTest
+  """
+  Test that is_writeable() returns false during a TLS upgrade handshake
+  (state: _TLSUpgrading). After start_tls() succeeds, the connection is
+  in _TLSUpgrading where sends_allowed() = false.
+  """
+  fun name(): String => "StartTLSIsWriteableDuringUpgrade"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9762"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("is_writeable false during upgrade")
+
+    let listener = _TestStartTLSIsWriteableListener(
+      port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestStartTLSIsWriteableClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _sslctx: SSLContext val
+  let _h: TestHelper
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _sslctx = sslctx
+    _h = h
+
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(h.env.root),
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    // Initiate TLS upgrade
+    match _tcp_connection.start_tls(_sslctx, "localhost")
+    | None =>
+      // Now in _TLSUpgrading — is_writeable() should be false
+      _h.assert_false(
+        _tcp_connection.is_writeable(),
+        "is_writeable should be false during TLS upgrade")
+      _h.complete_action("is_writeable false during upgrade")
+    | let _: StartTLSError =>
+      _h.fail("start_tls should have succeeded")
+    end
+
+actor \nodoc\ _TestStartTLSIsWriteableListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestStartTLSIsWriteableClient | None) = None
+  var _server: (_TestDoNothingServerActor | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestDoNothingServerActor =>
+    let server = _TestDoNothingServerActor(fd, _h)
+    _server = server
+    server
+
+  fun ref _on_closed() =>
+    try (_server as _TestDoNothingServerActor).dispose() end
+    try (_client as _TestStartTLSIsWriteableClient).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestStartTLSIsWriteableClient(
+      _port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestStartTLSIsWriteableListener")

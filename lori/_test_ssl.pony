@@ -650,3 +650,130 @@ actor \nodoc\ _TestSSLTransitionToOpenServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+class \nodoc\ iso _TestSSLIsWriteableDuringHandshake is UnitTest
+  """
+  Test that is_writeable() returns false during the initial SSL handshake
+  (state: _SSLHandshaking). A plain TCP client connects to an SSL server;
+  the server enters _SSLHandshaking but the handshake never completes
+  because the client doesn't speak TLS. The server calls check_writeable()
+  on itself from its constructor; both this and _finish_initialization are
+  self-sends (FIFO), so check_writeable fires after _finish_initialization
+  when the server is in _SSLHandshaking.
+  """
+  fun name(): String => "SSLIsWriteableDuringHandshake"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9763"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("is_writeable false during ssl handshake")
+
+    let listener = _TestSSLIsWriteableListener(
+      port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSSLIsWriteableListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSSLIsWriteablePlainClient | None) = None
+  var _server: (_TestSSLIsWriteableServer | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSSLIsWriteableServer =>
+    let server = _TestSSLIsWriteableServer(_sslctx, fd, _h)
+    _server = server
+    server
+
+  fun ref _on_closed() =>
+    try (_server as _TestSSLIsWriteableServer).dispose() end
+    try (_client as _TestSSLIsWriteablePlainClient).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestSSLIsWriteablePlainClient(_port, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSSLIsWriteableListener")
+
+actor \nodoc\ _TestSSLIsWriteableServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  """
+  SSL server whose handshake stalls because the peer is a plain TCP client.
+  The constructor calls check_writeable() after creating the ssl_server
+  TCPConnection; both _finish_initialization (from the TCPConnection
+  constructor) and check_writeable are self-sends, so FIFO ordering
+  guarantees check_writeable fires in _SSLHandshaking.
+  """
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_server(
+      TCPServerAuth(_h.env.root),
+      sslctx,
+      fd,
+      this,
+      this)
+    check_writeable()
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  be check_writeable() =>
+    _h.assert_false(
+      _tcp_connection.is_writeable(),
+      "is_writeable should be false during SSL handshake")
+    _h.complete_action("is_writeable false during ssl handshake")
+    _tcp_connection.hard_close()
+
+  fun ref _on_started() =>
+    _h.fail("SSL handshake should not complete against plain TCP client")
+
+actor \nodoc\ _TestSSLIsWriteablePlainClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  """
+  Plain TCP client (no SSL) — the SSL server's handshake will stall.
+  """
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(port: String, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(_h.env.root),
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
