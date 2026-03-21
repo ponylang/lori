@@ -148,7 +148,7 @@ class \nodoc\ iso _TestSSLConnectionTimeoutFires is UnitTest
   Test that the connection timeout fires during SSL handshake. Connects an
   ssl_client to a plain TCP server — TCP connects but the SSL handshake
   stalls because the server doesn't speak TLS. Exercises the
-  _hard_close_connected() timeout path (distinct from the plaintext
+  _hard_close_ssl_handshaking() timeout path (distinct from the plaintext
   _hard_close_connecting() path).
   """
   fun name(): String => "SSLConnectionTimeoutFires"
@@ -261,7 +261,7 @@ class \nodoc\ iso _TestSSLConnectionTimeoutCancelledOnConnect is UnitTest
   Test that the connect timer is cancelled when an SSL handshake completes.
   Connects an ssl_client to a proper SSL server with a long timeout and
   verifies _on_connected fires. Exercises the _cancel_connect_timer() call
-  in _ssl_poll() at the SSLReady branch.
+  in _SSLHandshaking.ssl_handshake_complete().
   """
   fun name(): String => "SSLConnectionTimeoutCancelledOnConnect"
 

@@ -296,3 +296,357 @@ actor \nodoc\ _TestSSLSendvServer
     _h.assert_eq[String]("SSL Hello World", String.from_array(consume data))
     _h.complete_action("data verified")
     _tcp_connection.close()
+
+class \nodoc\ iso _TestSSLHandshakeFailureClient is UnitTest
+  """
+  Test that an SSL client whose handshake fails (peer sends garbage) gets
+  `_on_connection_failure(ConnectionFailedSSL)` via `_hard_close_ssl_handshaking`.
+  """
+  fun name(): String => "SSLHandshakeFailureClient"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9757"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("client failure")
+
+    let listener = _TestSSLHandshakeFailureClientListener(
+      port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSSLHandshakeFailureClientListener is TCPListenerActor
+  """
+  Plain TCP listener that accepts connections, sends garbage to break the
+  SSL handshake, and closes.
+  """
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSSLHandshakeFailureSSLClient | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSSLHandshakeFailurePlainServer =>
+    _TestSSLHandshakeFailurePlainServer(fd, _h)
+
+  fun ref _on_closed() =>
+    try (_client as _TestSSLHandshakeFailureSSLClient).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestSSLHandshakeFailureSSLClient(
+      _port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSSLHandshakeFailureClientListener")
+
+actor \nodoc\ _TestSSLHandshakeFailurePlainServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  """
+  Plain TCP server that sends garbage bytes to break the SSL handshake.
+  """
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.server(
+      TCPServerAuth(_h.env.root),
+      fd,
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    _tcp_connection.send("XXXXXXXXXX")
+    _tcp_connection.close()
+
+actor \nodoc\ _TestSSLHandshakeFailureSSLClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  """
+  SSL client connecting to a plain TCP server. The handshake will fail.
+  """
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_client(
+      TCPConnectAuth(h.env.root),
+      sslctx,
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _h.fail("Should not have connected")
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    match reason
+    | ConnectionFailedSSL =>
+      _h.complete_action("client failure")
+    else
+      _h.fail("Expected ConnectionFailedSSL")
+    end
+
+class \nodoc\ iso _TestSSLHandshakeFailureServer is UnitTest
+  """
+  Test that an SSL server whose handshake fails (peer sends garbage) gets
+  `_on_start_failure(StartFailedSSL)` via `_hard_close_ssl_handshaking`.
+  """
+  fun name(): String => "SSLHandshakeFailureServer"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9758"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("server failure")
+
+    let listener = _TestSSLHandshakeFailureServerListener(
+      port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSSLHandshakeFailureServerListener is TCPListenerActor
+  """
+  Listener that creates SSL servers. A plain TCP client connects and sends
+  garbage to break the SSL handshake.
+  """
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSSLHandshakeFailurePlainClient | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSSLHandshakeFailureSSLServer =>
+    _TestSSLHandshakeFailureSSLServer(_sslctx, fd, _h)
+
+  fun ref _on_closed() =>
+    try (_client as _TestSSLHandshakeFailurePlainClient).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestSSLHandshakeFailurePlainClient(_port, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSSLHandshakeFailureServerListener")
+
+actor \nodoc\ _TestSSLHandshakeFailureSSLServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  """
+  SSL server that receives garbage from a plain client. The handshake fails.
+  """
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_server(
+      TCPServerAuth(_h.env.root),
+      sslctx,
+      fd,
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    _h.fail("Should not have started")
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    match reason
+    | StartFailedSSL =>
+      _h.complete_action("server failure")
+    end
+
+actor \nodoc\ _TestSSLHandshakeFailurePlainClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  """
+  Plain TCP client that sends garbage to an SSL server.
+  """
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(port: String, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(h.env.root),
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _tcp_connection.send("XXXXXXXXXX")
+    _tcp_connection.close()
+
+class \nodoc\ iso _TestSSLHandshakeCompleteTransitionsToOpen is UnitTest
+  """
+  Test that after a successful SSL handshake, the connection is in _Open
+  state: is_open() returns true and send() returns a SendToken.
+  """
+  fun name(): String => "SSLHandshakeCompleteTransitionsToOpen"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9759"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("is_open verified")
+    h.expect_action("send returns token")
+
+    let listener = _TestSSLTransitionToOpenListener(
+      port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSSLTransitionToOpenListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSSLTransitionToOpenClient | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSSLTransitionToOpenServer =>
+    _TestSSLTransitionToOpenServer(_sslctx, fd, _h)
+
+  fun ref _on_closed() =>
+    try (_client as _TestSSLTransitionToOpenClient).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestSSLTransitionToOpenClient(_port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSSLTransitionToOpenListener")
+
+actor \nodoc\ _TestSSLTransitionToOpenClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_client(
+      TCPConnectAuth(h.env.root),
+      sslctx,
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _h.assert_true(_tcp_connection.is_open(), "is_open should be true")
+    _h.complete_action("is_open verified")
+
+    match \exhaustive\ _tcp_connection.send("test")
+    | let _: SendToken =>
+      _h.complete_action("send returns token")
+    | let _: SendError =>
+      _h.fail("send() should return SendToken")
+    end
+    _tcp_connection.close()
+
+actor \nodoc\ _TestSSLTransitionToOpenServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_server(
+      TCPServerAuth(_h.env.root),
+      sslctx,
+      fd,
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection

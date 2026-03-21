@@ -376,3 +376,264 @@ actor \nodoc\ _TestStartTLSPreconditionsListener is TCPListenerActor
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestStartTLSPreconditionsListener")
+
+class \nodoc\ iso _TestStartTLSSendDuringUpgrade is UnitTest
+  """
+  Test that send() returns SendErrorNotConnected during a TLS upgrade
+  handshake (state: _TLSUpgrading). After start_tls() succeeds, the
+  connection is in _TLSUpgrading where sends_allowed() = false.
+  """
+  fun name(): String => "StartTLSSendDuringUpgrade"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9760"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("send blocked during upgrade")
+
+    let listener = _TestStartTLSSendDuringUpgradeListener(
+      port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestStartTLSSendDuringUpgradeClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _sslctx: SSLContext val
+  let _h: TestHelper
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _sslctx = sslctx
+    _h = h
+
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(h.env.root),
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    // Initiate TLS upgrade
+    match _tcp_connection.start_tls(_sslctx, "localhost")
+    | None =>
+      // Now in _TLSUpgrading — send() should fail
+      match \exhaustive\ _tcp_connection.send("should fail")
+      | SendErrorNotConnected =>
+        _h.complete_action("send blocked during upgrade")
+      | let _: SendToken =>
+        _h.fail("send() should not return SendToken during TLS upgrade")
+      | let _: SendError =>
+        _h.fail("Expected SendErrorNotConnected, got other SendError")
+      end
+    | let _: StartTLSError =>
+      _h.fail("start_tls should have succeeded")
+    end
+
+actor \nodoc\ _TestStartTLSSendDuringUpgradeListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestStartTLSSendDuringUpgradeClient | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestDoNothingServerActor =>
+    _TestDoNothingServerActor(fd, _h)
+
+  fun ref _on_closed() =>
+    try
+      (_client as _TestStartTLSSendDuringUpgradeClient).dispose()
+    end
+
+  fun ref _on_listening() =>
+    _client = _TestStartTLSSendDuringUpgradeClient(
+      _port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestStartTLSSendDuringUpgradeListener")
+
+class \nodoc\ iso _TestStartTLSHandshakeFailure is UnitTest
+  """
+  Test that a TLS upgrade handshake failure fires `_on_tls_failure` followed
+  by `_on_closed` via `_hard_close_tls_upgrading`. Client initiates STARTTLS,
+  the server replies "OK" and sends garbage instead of doing the TLS
+  handshake, causing the client's TLS upgrade to fail.
+  """
+  fun name(): String => "StartTLSHandshakeFailure"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9761"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("tls failure received")
+    h.expect_action("on closed received")
+
+    let listener = _TestStartTLSHandshakeFailureListener(
+      port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestStartTLSHandshakeFailureClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  """
+  Plaintext client that negotiates STARTTLS, then upgrades. The server sends
+  garbage after "OK", so the TLS handshake fails.
+  """
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _sslctx: SSLContext val
+  let _h: TestHelper
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _sslctx = sslctx
+    _h = h
+
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(h.env.root),
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+    match MakeBufferSize(2)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
+    end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _tcp_connection.send("STARTTLS")
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    let msg = String.from_array(consume data)
+    if msg == "OK" then
+      match _tcp_connection.start_tls(_sslctx, "localhost")
+      | let _: StartTLSError =>
+        _h.fail("Client start_tls should have succeeded")
+      end
+    else
+      _h.fail("Client got unexpected: " + msg)
+    end
+
+  fun ref _on_tls_ready() =>
+    _h.fail("TLS handshake should not have succeeded")
+
+  fun ref _on_tls_failure(reason: TLSFailureReason) =>
+    _h.complete_action("tls failure received")
+
+  fun ref _on_closed() =>
+    _h.complete_action("on closed received")
+
+actor \nodoc\ _TestStartTLSHandshakeFailureServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  """
+  Plaintext server that responds to "STARTTLS" with "OK", waits for the
+  client's ClientHello (which arrives as binary data), then sends garbage
+  to break the TLS handshake. The wait ensures "OK" is consumed by the
+  client before garbage arrives, avoiding a `StartTLSHasBufferedData`
+  precondition failure (CVE-2021-23222 check).
+  """
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _awaiting_client_hello: Bool = false
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.server(
+      TCPServerAuth(_h.env.root),
+      fd,
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    if _awaiting_client_hello then
+      // Client sent a ClientHello — respond with garbage to break the
+      // handshake.
+      _tcp_connection.send("XXXXXXXXXX")
+      _tcp_connection.close()
+    else
+      let msg = String.from_array(consume data)
+      if msg == "STARTTLS" then
+        _tcp_connection.send("OK")
+        _awaiting_client_hello = true
+      end
+    end
+
+actor \nodoc\ _TestStartTLSHandshakeFailureListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestStartTLSHandshakeFailureClient | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestStartTLSHandshakeFailureServer =>
+    _TestStartTLSHandshakeFailureServer(fd, _h)
+
+  fun ref _on_closed() =>
+    try
+      (_client as _TestStartTLSHandshakeFailureClient).dispose()
+    end
+
+  fun ref _on_listening() =>
+    _client = _TestStartTLSHandshakeFailureClient(
+      _port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestStartTLSHandshakeFailureListener")
