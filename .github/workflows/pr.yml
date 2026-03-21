@@ -21,7 +21,7 @@ jobs:
     name: Linux
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/ponylang/shared-docker-ci-standard-builder-with-libressl-4.2.0:nightly
+      image: ghcr.io/ponylang/shared-docker-ci-standard-builder-with-libressl-4.2.0:release
     steps:
       - uses: actions/checkout@v6.0.2
       - name: config=debug
@@ -60,7 +60,7 @@ jobs:
       - name: Tune Windows Networking
         run: .ci-scripts\windows-configure-networking.ps1
       - name: Install Pony tools
-        run: .ci-scripts\windows-install-pony-tools.ps1 nightlies
+        run: .ci-scripts\windows-install-pony-tools.ps1 releases
       - name: cache SSL libs
         id: restore-libs
         uses: actions/cache@v5.0.3
