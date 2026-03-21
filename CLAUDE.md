@@ -19,6 +19,8 @@ make config=debug ssl=3.0.x  # debug build
 
 Uses `corral` for dependency management. `make` automatically runs `corral fetch` before compiling.
 
+**Windows uses `make.ps1`, not the Makefile.** Both run tests with `--sequential`. When making build/test changes, update both files.
+
 ## Dependencies
 
 - `github.com/ponylang/ssl.git` — SSL/TLS support
@@ -395,6 +397,7 @@ POSIX and Windows (IOCP) have distinct code paths throughout `TCPConnection`, gu
 - Auth hierarchy: `AmbientAuth` > `NetAuth` > `TCPAuth` > `TCPListenAuth` > `TCPServerAuth`, with `TCPConnectAuth` as a separate leaf under `TCPAuth`
 - Core lifecycle callbacks are prefixed with `_on_` (private by convention)
 - Tests use hardcoded ports per test
+- Test listeners must store references to ALL actors created in `_on_accept` and `_on_listening`, and dispose every one of them in `_on_closed`. The Pony runtime won't exit while actors with live I/O resources exist, causing CI hangs (especially on macOS).
 - `\nodoc\` annotation on test classes
 - New tests go in the appropriate `_test_*.pony` file by functional area, not in `_test.pony` (which contains only the `Main` test runner). Register the test class in `Main.tests()` in `_test.pony`.
 - Examples have a file-level docstring explaining what they demonstrate
