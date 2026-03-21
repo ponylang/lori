@@ -73,3 +73,8 @@ actor \nodoc\ Main is TestList
     test(_TestTimerSurvivesClose)
     test(_TestSetTimerNotOpenDuringSSLHandshake)
     test(_TestSetTimerNotOpenDuringSSLHandshakeServer)
+    test(_TestSSLHandshakeFailureClient)
+    test(_TestSSLHandshakeFailureServer)
+    test(_TestSSLHandshakeCompleteTransitionsToOpen)
+    test(_TestStartTLSSendDuringUpgrade)
+    test(_TestStartTLSHandshakeFailure)

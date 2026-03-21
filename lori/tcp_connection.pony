@@ -41,17 +41,13 @@ class TCPConnection
   var _ssl: (SSL ref | None) = None
   var _ssl_ready: Bool = false
   var _ssl_failed: Bool = false
-  // Distinguishes "initial SSL from constructor" vs "upgraded SSL from
-  // start_tls()". Used by _ssl_poll() and hard_close() to route to the
-  // correct callbacks (_on_tls_ready/_on_tls_failure vs
-  // _on_connected/_on_started/_on_connection_failure/_on_start_failure).
-  var _tls_upgrade: Bool = false
   // Set when PonyTCP.connect returned > 0, meaning at least one TCP
   // connection attempt was made. Used by the failure callback to distinguish
   // DNS failure (no attempts) from TCP failure (all attempts failed).
   var _had_inflight: Bool = false
   // Set when _ssl_poll() sees SSLAuthFail before calling hard_close().
-  // hard_close() reads this to pass TLSAuthFailed vs TLSGeneralError.
+  // _hard_close_tls_upgrading() reads this to pass TLSAuthFailed vs
+  // TLSGeneralError.
   var _ssl_auth_failed: Bool = false
 
   // Per-connection idle timeout via ASIO timer
@@ -62,8 +58,8 @@ class TCPConnection
   var _connect_timer_event: AsioEventID = AsioEvent.none()
   var _connect_timeout_nsec: U64 = 0
   // COUPLING: Set by _fire_connect_timeout() before calling hard_close().
-  // Read by _hard_close_connecting() and _hard_close_connected() to route
-  // the failure reason to ConnectionFailedTimeout. Same pattern as
+  // Read by _hard_close_connecting() and _hard_close_ssl_handshaking() to
+  // route the failure reason to ConnectionFailedTimeout. Same pattern as
   // _ssl_auth_failed.
   var _connect_timed_out: Bool = false
 
@@ -370,20 +366,14 @@ class TCPConnection
     match \exhaustive\ duration
     | let t: IdleTimeout =>
       _idle_timeout_nsec = t() * 1_000_000
+      // _SSLHandshaking.is_open() = false blocks arming; the timer starts
+      // at ssl_handshake_complete. _TLSUpgrading.is_open() = true allows
+      // arming — the timer is already running from the plaintext phase.
       if _state.is_open() then
-        // Don't arm during initial SSL handshake — the timer would fire
-        // before _on_connected()/_on_started(). _ssl_poll will arm at
-        // SSLReady. TLS upgrades are excluded: the timer is already
-        // running from the plaintext phase and should be reset normally.
-        match _ssl
-        | let _: SSL ref if (not _ssl_ready) and (not _tls_upgrade) =>
-          None
+        if _timer_event.is_null() then
+          _arm_idle_timer()
         else
-          if _timer_event.is_null() then
-            _arm_idle_timer()
-          else
-            _reset_idle_timer()
-          end
+          _reset_idle_timer()
         end
       end
     | None =>
@@ -415,15 +405,10 @@ class TCPConnection
     The timer survives `close()` (graceful shutdown) but is cancelled by
     `hard_close()`.
     """
+    // _SSLHandshaking.is_open() = false blocks timers during initial SSL
+    // handshake. _TLSUpgrading.is_open() = true allows them — the
+    // application already received _on_connected/_on_started.
     if not is_open() then return SetTimerNotOpen end
-    // Don't allow during initial SSL handshake — the application hasn't
-    // received _on_connected/_on_started yet. TLS upgrades are excluded:
-    // the application already received _on_connected/_on_started for the
-    // plaintext connection.
-    match _ssl
-    | let _: SSL ref if (not _ssl_ready) and (not _tls_upgrade) =>
-      return SetTimerNotOpen
-    end
     if _user_timer_token isnt None then return SetTimerAlreadyActive end
 
     let nsec = duration() * 1_000_000
@@ -676,13 +661,17 @@ class TCPConnection
     _cancel_connect_timer()
     _cancel_user_timer()
 
-  fun ref _hard_close_connected() =>
+  fun ref _hard_close_cleanup() =>
     """
-    Hard close for an established connection. Fires `_on_send_failed` for
-    any pending token, clears pending buffers, cancels idle, connect, and
-    user timers, unsubscribes the event, closes the fd, disposes SSL, and
-    fires the appropriate lifecycle callbacks. The caller must set
-    `_state = _Closed` before calling this.
+    Common teardown for hard-closing an established connection. Handles
+    shutdown flags, send_failed for pending token, clearing pending buffers,
+    cancelling all timers, unsubscribing the event, closing the fd, and
+    disposing SSL. Order is load-bearing: timer cancel before event
+    unsubscribe, SSL dispose after fd close.
+
+    Does NOT set `_ssl = None` — the connection is terminal and nothing
+    accesses it afterward. The caller must set `_state = _Closed` before
+    calling this.
     """
     _shutdown = true
     _shutdown_peer = true
@@ -719,51 +708,11 @@ class TCPConnection
       ssl.dispose()
     end
 
-    match \exhaustive\ _lifecycle_event_receiver
-    | let s: EitherLifecycleEventReceiver ref =>
-      match \exhaustive\ _ssl
-      | let _: SSL ref =>
-        if not _ssl_ready then
-          // _tls_upgrade distinguishes initial SSL (constructor) from
-          // mid-stream TLS upgrade (start_tls). Changing _tls_upgrade
-          // semantics or removing it would break the callback routing
-          // here and in _ssl_poll().
-          if _tls_upgrade then
-            // TLS upgrade handshake failed. The application already received
-            // _on_connected/_on_started for the original plaintext connection,
-            // so _on_closed must follow for cleanup.
-            let reason = if _ssl_auth_failed then
-              TLSAuthFailed
-            else
-              TLSGeneralError
-            end
-            s._on_tls_failure(reason)
-            s._on_closed()
-          else
-            // Initial SSL handshake never completed. For clients, the
-            // application never learned the connection existed. For servers,
-            // the connection never started.
-            match \exhaustive\ s
-            | let c: ClientLifecycleEventReceiver ref =>
-              if _connect_timed_out then
-                c._on_connection_failure(ConnectionFailedTimeout)
-              else
-                c._on_connection_failure(ConnectionFailedSSL)
-              end
-            | let srv: ServerLifecycleEventReceiver ref =>
-              srv._on_start_failure(StartFailedSSL)
-            end
-          end
-        else
-          s._on_closed()
-        end
-      | None =>
-        s._on_closed()
-      end
-    | None =>
-      _Unreachable()
-    end
-
+  fun ref _spawner_notification() =>
+    """
+    Notify the spawning listener (if any) that this server connection has
+    closed. For client connections, this is a no-op.
+    """
     match _lifecycle_event_receiver
     | let e: ServerLifecycleEventReceiver ref =>
       match \exhaustive\ _spawned_by
@@ -777,6 +726,77 @@ class TCPConnection
       end
     end
 
+  fun ref _hard_close_connected() =>
+    """
+    Hard close for an established connection where the application has been
+    notified (i.e., _on_connected/_on_started has already fired). Only
+    reachable from `_Open` and `_Closing` — handshake states have their own
+    hard-close methods. Fires `_on_closed` and notifies the spawner. The
+    caller must set `_state = _Closed` before calling this.
+    """
+    _hard_close_cleanup()
+
+    match \exhaustive\ _lifecycle_event_receiver
+    | let s: EitherLifecycleEventReceiver ref =>
+      s._on_closed()
+    | None =>
+      _Unreachable()
+    end
+
+    _spawner_notification()
+
+  fun ref _hard_close_ssl_handshaking() =>
+    """
+    Hard close during the initial SSL handshake (state: `_SSLHandshaking`).
+    The application has not been notified — fires `_on_connection_failure`
+    (client) or `_on_start_failure` (server). The caller must set
+    `_state = _Closed` before calling this.
+    """
+    _hard_close_cleanup()
+
+    match \exhaustive\ _lifecycle_event_receiver
+    | let s: EitherLifecycleEventReceiver ref =>
+      match \exhaustive\ s
+      | let c: ClientLifecycleEventReceiver ref =>
+        if _connect_timed_out then
+          c._on_connection_failure(ConnectionFailedTimeout)
+        else
+          c._on_connection_failure(ConnectionFailedSSL)
+        end
+      | let srv: ServerLifecycleEventReceiver ref =>
+        srv._on_start_failure(StartFailedSSL)
+      end
+    | None =>
+      _Unreachable()
+    end
+
+    _spawner_notification()
+
+  fun ref _hard_close_tls_upgrading() =>
+    """
+    Hard close during a TLS upgrade handshake (state: `_TLSUpgrading`).
+    The application was already notified of the plaintext connection, so
+    `_on_tls_failure` fires followed by `_on_closed`. The caller must set
+    `_state = _Closed` before calling this.
+    """
+    _hard_close_cleanup()
+
+    let reason = if _ssl_auth_failed then
+      TLSAuthFailed
+    else
+      TLSGeneralError
+    end
+
+    match \exhaustive\ _lifecycle_event_receiver
+    | let s: EitherLifecycleEventReceiver ref =>
+      s._on_tls_failure(reason)
+      s._on_closed()
+    | None =>
+      _Unreachable()
+    end
+
+    _spawner_notification()
+
   fun is_open(): Bool =>
     _state.is_open()
 
@@ -786,17 +806,9 @@ class TCPConnection
   fun is_writeable(): Bool =>
     """
     Returns whether the connection can currently accept a `send()` call.
-    Checks that the connection is open, the socket is writeable, and any
-    SSL layer has completed its handshake.
+    Checks that the state allows sends and the socket is writeable.
     """
-    if not (is_open() and _writeable) then
-      return false
-    end
-
-    match \exhaustive\ _ssl
-    | let _: SSL box => _ssl_ready
-    | None => true
-    end
+    _state.sends_allowed() and _writeable
 
   fun ref start_tls(ssl_ctx: SSLContext val, host: String = ""):
     (None | StartTLSError)
@@ -859,9 +871,8 @@ class TCPConnection
       return StartTLSSessionFailed
     end
 
-    _tls_upgrade = true
     _ssl = consume ssl
-    _ssl_ready = false
+    _state = _TLSUpgrading
     _ssl_flush_sends()
     None
 
@@ -879,15 +890,10 @@ class TCPConnection
     _state.send(this, data)
 
   fun ref _do_send(data: (ByteSeq | ByteSeqIter)): (SendToken | SendError) =>
+    // Only reachable from _Open.send() — the handshake states return
+    // SendErrorNotConnected directly without calling this method.
     if not _writeable then
       return SendErrorNotWriteable
-    end
-
-    match _ssl
-    | let _: SSL ref =>
-      if not _ssl_ready then
-        return SendErrorNotConnected
-      end
     end
 
     _next_token_id = _next_token_id + 1
@@ -967,9 +973,14 @@ class TCPConnection
     Add a buffer to the pending write queue. Callers must call the
     platform-specific flush after enqueuing: `_send_pending_writes()` on
     POSIX, `_iocp_submit_pending()` on Windows.
+
+    Uses `not is_closed()` rather than `is_open()` because `_ssl_flush_sends()`
+    calls `_enqueue()` during `_SSLHandshaking` (where `is_open() = false`)
+    to push handshake protocol data. The wider guard allows handshake data
+    through while still blocking enqueue after the connection closes.
     """
     if data.size() == 0 then return end
-    if is_open() then
+    if not is_closed() then
       _pending_data.push(data)
       _pending_writev_total = _pending_writev_total + data.size()
     end
@@ -1623,27 +1634,7 @@ class TCPConnection
       | SSLReady =>
         if not _ssl_ready then
           _ssl_ready = true
-          _cancel_connect_timer()
-          // Arm idle timer now that the handshake is complete. Not for
-          // TLS upgrades — the timer is already running from the
-          // plaintext phase.
-          if not _tls_upgrade then
-            _arm_idle_timer()
-          end
-          // _tls_upgrade distinguishes initial SSL (constructor) from
-          // mid-stream TLS upgrade (start_tls). Changing _tls_upgrade
-          // semantics or removing it would break the callback routing
-          // here and in hard_close().
-          if _tls_upgrade then
-            s._on_tls_ready()
-          else
-            match \exhaustive\ s
-            | let c: ClientLifecycleEventReceiver ref =>
-              c._on_connected()
-            | let srv: ServerLifecycleEventReceiver ref =>
-              srv._on_started()
-            end
-          end
+          _state.ssl_handshake_complete(this, s)
         end
       | SSLAuthFail =>
         _ssl_auth_failed = true
@@ -1676,6 +1667,29 @@ class TCPConnection
   fun ref read_again() =>
     _state.read_again(this)
 
+  fun ref _dispatch_io_event(flags: U32, arg: U32) =>
+    """
+    Common I/O dispatch logic for socket events. Shared by all states that
+    have a connected socket and need to process I/O notifications.
+    """
+    if AsioEvent.writeable(flags) then
+      _set_writeable()
+      ifdef windows then
+        _write_completed(arg)
+      else
+        _send_pending_writes()
+      end
+    end
+
+    if AsioEvent.readable(flags) then
+      _set_readable()
+      ifdef windows then
+        _read_completed(arg)
+      else
+        _read()
+      end
+    end
+
   fun ref _do_read_again() =>
     ifdef posix then
       _read()
@@ -1693,21 +1707,23 @@ class TCPConnection
   fun ref _establish_connection(event: AsioEventID, fd: U32) =>
     """
     Called by _ClientConnecting when a Happy Eyeballs connection succeeds.
-    Promotes the event to the connection's own event, transitions to _Open,
-    and sets up the connection for I/O.
+    Promotes the event to the connection's own event, transitions to the
+    appropriate state, and sets up the connection for I/O.
     """
     _event = event
     _fd = fd
-    _state = _Open
     _set_writeable()
     _set_readable()
 
     match \exhaustive\ _ssl
     | let _: SSL ref =>
-      // Flush ClientHello to initiate SSL handshake
+      _state = _SSLHandshaking
+      // Flush ClientHello to initiate SSL handshake.
+      // _on_connected() and _arm_idle_timer() deferred until
+      // ssl_handshake_complete.
       _ssl_flush_sends()
-      // _on_connected() and _arm_idle_timer() deferred until _ssl_ready
     | None =>
+      _state = _Open
       _arm_idle_timer()
       _cancel_connect_timer()
       match _lifecycle_event_receiver
@@ -1887,16 +1903,18 @@ class TCPConnection
     match \exhaustive\ _enclosing
     | let e: TCPConnectionActor ref =>
       _event = PonyAsio.create_event(e, _fd)
-      _state = _Open
       _set_readable()
       _set_writeable()
 
       match \exhaustive\ _ssl
       | let _: SSL ref =>
-        // Flush any initial SSL data (usually no-op for servers)
+        _state = _SSLHandshaking
+        // Flush any initial SSL data (usually no-op for servers).
+        // _on_started() and _arm_idle_timer() deferred until
+        // ssl_handshake_complete.
         _ssl_flush_sends()
-        // _on_started() and _arm_idle_timer() deferred until _ssl_ready
       | None =>
+        _state = _Open
         _arm_idle_timer()
         s._on_started()
       end
