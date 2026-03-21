@@ -80,3 +80,4 @@ actor \nodoc\ Main is TestList
     test(_TestStartTLSSendDuringUpgrade)
     test(_TestStartTLSIsWriteableDuringUpgrade)
     test(_TestStartTLSHandshakeFailure)
+    test(_TestStartTLSAuthFailure)
