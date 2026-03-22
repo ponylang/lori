@@ -62,7 +62,7 @@ lori/
   _test_flow_control.pony   -- Mute/unmute tests
   _test_send.pony           -- Send, sendv, send-after-close tests
   _test_ssl.pony            -- SSL ping-pong, SSL sendv, and SSL handshake state tests
-  _test_start_tls.pony      -- STARTTLS upgrade, precondition, TLS upgrade state, and TLS failure tests
+  _test_start_tls.pony      -- STARTTLS upgrade, precondition, TLS upgrade state, TLS failure, and post-upgrade timer tests
   _test_close_while_connecting.pony -- Close/hard_close during connecting phase
   _test_idle_timeout.pony   -- Idle timeout (plaintext + SSL) tests
   _test_yield_read.pony     -- Yield read tests
