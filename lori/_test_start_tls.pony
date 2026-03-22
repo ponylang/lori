@@ -915,3 +915,189 @@ actor \nodoc\ _TestStartTLSAuthFailureListener is TCPListenerActor
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestStartTLSAuthFailureListener")
+
+class \nodoc\ iso _TestSetTimerAfterTLSUpgrade is UnitTest
+  """
+  Test that set_timer() succeeds after a TLS upgrade and the timer fires.
+  Client connects plaintext, negotiates STARTTLS, upgrades to TLS, then
+  calls set_timer() in _on_tls_ready and verifies it returns a TimerToken
+  and fires with the correct token.
+  """
+  fun name(): String => "SetTimerAfterTLSUpgrade"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9765"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("set_timer succeeded")
+    h.expect_action("timer fired")
+
+    let listener = _TestSetTimerAfterTLSUpgradeListener(
+      port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSetTimerAfterTLSUpgradeClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _sslctx: SSLContext val
+  let _h: TestHelper
+  var _expected_token: (TimerToken | None) = None
+
+  new create(port: String,
+    sslctx: SSLContext val,
+    h: TestHelper)
+  =>
+    _sslctx = sslctx
+    _h = h
+
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(h.env.root),
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+    match MakeBufferSize(2)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
+    end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _tcp_connection.send("STARTTLS")
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    let msg = String.from_array(consume data)
+    if msg == "OK" then
+      match _tcp_connection.start_tls(_sslctx, "localhost")
+      | let _: StartTLSError =>
+        _h.fail("Client start_tls failed")
+        _h.complete(false)
+      end
+    else
+      _h.fail("Client got unexpected: " + msg)
+    end
+
+  fun ref _on_tls_ready() =>
+    match MakeTimerDuration(2_000)
+    | let d: TimerDuration =>
+      match _tcp_connection.set_timer(d)
+      | let t: TimerToken =>
+        _expected_token = t
+        _h.complete_action("set_timer succeeded")
+      | let _: SetTimerError =>
+        _h.fail("set_timer returned error after TLS upgrade")
+        _h.complete(false)
+      end
+    | let _: ValidationFailure =>
+      _h.fail("MakeTimerDuration(2_000) should succeed")
+      _h.complete(false)
+    end
+
+  fun ref _on_timer(token: TimerToken) =>
+    match _expected_token
+    | let t: TimerToken =>
+      _h.assert_true(t == token, "token should match")
+      _h.complete_action("timer fired")
+    else
+      _h.fail("_on_timer fired without expected token")
+      _h.complete(false)
+    end
+
+  fun ref _on_tls_failure(reason: TLSFailureReason) =>
+    _h.fail("Client TLS handshake failed")
+
+actor \nodoc\ _TestSetTimerAfterTLSUpgradeServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _sslctx: SSLContext val
+  let _h: TestHelper
+
+  new create(sslctx: SSLContext val,
+    fd: U32,
+    h: TestHelper)
+  =>
+    _sslctx = sslctx
+    _h = h
+
+    _tcp_connection = TCPConnection.server(
+      TCPServerAuth(_h.env.root),
+      fd,
+      this,
+      this)
+    match MakeBufferSize(8)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
+    end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    let msg = String.from_array(consume data)
+    if msg == "STARTTLS" then
+      _tcp_connection.send("OK")
+      match _tcp_connection.start_tls(_sslctx)
+      | let _: StartTLSError =>
+        _h.fail("Server start_tls failed")
+        _h.complete(false)
+      end
+    else
+      _h.fail("Server got unexpected: " + msg)
+    end
+
+  fun ref _on_tls_failure(reason: TLSFailureReason) =>
+    _h.fail("Server TLS handshake failed")
+
+actor \nodoc\ _TestSetTimerAfterTLSUpgradeListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSetTimerAfterTLSUpgradeClient | None) = None
+  var _server: (_TestSetTimerAfterTLSUpgradeServer | None) = None
+
+  new create(port: String,
+    sslctx: SSLContext val,
+    h: TestHelper)
+  =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSetTimerAfterTLSUpgradeServer =>
+    let server = _TestSetTimerAfterTLSUpgradeServer(_sslctx, fd, _h)
+    _server = server
+    server
+
+  fun ref _on_closed() =>
+    try (_server as _TestSetTimerAfterTLSUpgradeServer).dispose() end
+    try (_client as _TestSetTimerAfterTLSUpgradeClient).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestSetTimerAfterTLSUpgradeClient(
+      _port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSetTimerAfterTLSUpgradeListener")
