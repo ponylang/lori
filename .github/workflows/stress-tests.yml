@@ -73,15 +73,18 @@ jobs:
         run: .ci-scripts\windows-configure-networking.ps1
       - name: Install Pony tools
         run: .ci-scripts\windows-install-pony-tools.ps1 releases
-      - name: Cache SSL libs
-        id: restore-libs
+      - name: Cache LibreSSL libs
+        id: cache-libressl
         uses: actions/cache@v5.0.3
         with:
-          path: build/libs
-          key: libs-windows-2025-${{ hashFiles('make.ps1') }}
-      - name: Build SSL libs
-        if: steps.restore-libs.outputs.cache-hit != 'true'
-        run: .\make.ps1 -Command libs  2>&1;
+          path: |
+            ssl.lib
+            crypto.lib
+            tls.lib
+          key: libressl-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.ci-scripts/windows-install-libressl.ps1') }}
+      - name: Install LibreSSL
+        if: steps.cache-libressl.outputs.cache-hit != 'true'
+        run: .ci-scripts\windows-install-libressl.ps1
       - name: Build
         run: |
           $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
