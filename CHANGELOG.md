@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Changed
 
+- Use prebuilt LibreSSL binaries on Windows ([PR #263](https://github.com/ponylang/lori/pull/263))
 
 ## [0.12.0] - 2026-03-22
 
