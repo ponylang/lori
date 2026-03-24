@@ -1,0 +1,34 @@
+name: arm64 macOS ponyc update breakage test
+
+on:
+  repository_dispatch:
+    types: [ponyc-arm64-macos-nightly-released]
+
+permissions:
+  packages: read
+
+jobs:
+  macos:
+    name: Verify main against the latest ponyc on macOS
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: install pony tools
+        run: bash .ci-scripts/macOS-install-nightly-pony-tools.bash
+      - name: configure networking
+        run: bash .ci-scripts/macOS-configure-networking.bash
+      - name: Test
+        run: |
+          export PATH=/Users/runner/.local/share/ponyup/bin/:$PATH
+          make ci config=debug ssl=libressl
+      - name: Send alert on failure
+        if: ${{ failure() }}
+        uses: zulip/github-actions-zulip/send-message@e4c8f27c732ba9bd98ac6be0583096dea82feea5
+        with:
+          api-key: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_API_KEY }}
+          email: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_EMAIL }}
+          organization-url: 'https://ponylang.zulipchat.com/'
+          to: notifications
+          type: stream
+          topic: ${{ github.repository }} scheduled job failure
+          content: ${{ github.server_url}}/${{ github.repository }}/actions/runs/${{ github.run_id }} failed.
