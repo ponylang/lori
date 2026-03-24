@@ -1,0 +1,49 @@
+name: Windows ponyc update breakage test
+
+on:
+  repository_dispatch:
+    types: [ponyc-windows-nightly-released]
+
+permissions:
+  packages: read
+
+jobs:
+  windows:
+    name: Verify main against the latest ponyc on Windows
+    runs-on: windows-2025
+    steps:
+      - name: Disable Windows Defender
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+      - name: Tune Windows Networking
+        run: .ci-scripts\windows-configure-networking.ps1
+      - name: Install Pony tools
+        run: .ci-scripts\windows-install-pony-tools.ps1 nightlies
+      - name: Cache LibreSSL libs
+        id: cache-libressl
+        uses: actions/cache@v5.0.3
+        with:
+          path: |
+            ssl.lib
+            crypto.lib
+            tls.lib
+          key: libressl-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.ci-scripts/windows-install-libressl.ps1') }}
+      - name: Install LibreSSL
+        if: steps.cache-libressl.outputs.cache-hit != 'true'
+        run: .ci-scripts\windows-install-libressl.ps1
+      - name: Test
+        run: |
+          $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
+          .\make.ps1 -Command test -Config Debug 2>&1;
+      - name: Send alert on failure
+        if: ${{ failure() }}
+        uses: zulip/github-actions-zulip/send-message@e4c8f27c732ba9bd98ac6be0583096dea82feea5
+        with:
+          api-key: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_API_KEY }}
+          email: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_EMAIL }}
+          organization-url: 'https://ponylang.zulipchat.com/'
+          to: notifications
+          type: stream
+          topic: ${{ github.repository }} scheduled job failure
+          content: ${{ github.server_url}}/${{ github.repository }}/actions/runs/${{ github.run_id }} failed.
