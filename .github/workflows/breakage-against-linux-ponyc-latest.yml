@@ -1,4 +1,4 @@
-name: ponyc update breakage test
+name: Linux ponyc update breakage test
 
 on:
   repository_dispatch:
