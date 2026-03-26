@@ -452,6 +452,7 @@ actor \nodoc\ _TestStartTLSSendDuringUpgradeListener is TCPListenerActor
   var _tcp_listener: TCPListener = TCPListener.none()
   let _h: TestHelper
   var _client: (_TestStartTLSSendDuringUpgradeClient | None) = None
+  var _server: (_TestDoNothingServerActor | None) = None
 
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _port = port
@@ -467,12 +468,13 @@ actor \nodoc\ _TestStartTLSSendDuringUpgradeListener is TCPListenerActor
     _tcp_listener
 
   fun ref _on_accept(fd: U32): _TestDoNothingServerActor =>
-    _TestDoNothingServerActor(fd, _h)
+    let server = _TestDoNothingServerActor(fd, _h)
+    _server = server
+    server
 
   fun ref _on_closed() =>
-    try
-      (_client as _TestStartTLSSendDuringUpgradeClient).dispose()
-    end
+    try (_server as _TestDoNothingServerActor).dispose() end
+    try (_client as _TestStartTLSSendDuringUpgradeClient).dispose() end
 
   fun ref _on_listening() =>
     _client = _TestStartTLSSendDuringUpgradeClient(
@@ -609,6 +611,7 @@ actor \nodoc\ _TestStartTLSHandshakeFailureListener is TCPListenerActor
   var _tcp_listener: TCPListener = TCPListener.none()
   let _h: TestHelper
   var _client: (_TestStartTLSHandshakeFailureClient | None) = None
+  var _server: (_TestStartTLSHandshakeFailureServer | None) = None
 
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _port = port
@@ -624,12 +627,13 @@ actor \nodoc\ _TestStartTLSHandshakeFailureListener is TCPListenerActor
     _tcp_listener
 
   fun ref _on_accept(fd: U32): _TestStartTLSHandshakeFailureServer =>
-    _TestStartTLSHandshakeFailureServer(fd, _h)
+    let server = _TestStartTLSHandshakeFailureServer(fd, _h)
+    _server = server
+    server
 
   fun ref _on_closed() =>
-    try
-      (_client as _TestStartTLSHandshakeFailureClient).dispose()
-    end
+    try (_server as _TestStartTLSHandshakeFailureServer).dispose() end
+    try (_client as _TestStartTLSHandshakeFailureClient).dispose() end
 
   fun ref _on_listening() =>
     _client = _TestStartTLSHandshakeFailureClient(
