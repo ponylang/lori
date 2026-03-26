@@ -47,7 +47,11 @@ class _ConnectionNone is _ConnectionState
     _Unreachable()
 
   fun ref hard_close(conn: TCPConnection ref) =>
-    _Unreachable()
+    // _finish_initialization is a self→self message queued during the
+    // constructor. dispose() comes from an external actor. Different senders
+    // have no ordering guarantee, so dispose() can arrive first — unlikely
+    // but possible.
+    None
 
   fun ref start_tls(conn: TCPConnection ref, ssl_ctx: SSLContext val,
     host: String): (None | StartTLSError)
