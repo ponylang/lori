@@ -182,7 +182,7 @@ _Open → _TLSUpgrading (start_tls) → _Open (ssl_handshake_complete)
 
 | State | `is_open()` | `is_closed()` | `sends_allowed()` | Description |
 |---|---|---|---|---|
-| `_ConnectionNone` | false | false | false | Before `_finish_initialization`. All methods call `_Unreachable()`. |
+| `_ConnectionNone` | false | false | false | Before `_finish_initialization`. Most dispatch methods call `_Unreachable()`. Socket options return error values; `idle_timeout` stores the value; `set_timer` returns `SetTimerNotOpen`. `hard_close` is a no-op (dispose can race with initialization). |
 | `_ClientConnecting` | false | false | false | Happy Eyeballs in progress. `close()` transitions to `_UnconnectedClosing`. |
 | `_UnconnectedClosing` | false | true | false | Draining inflight Happy Eyeballs after `close()` during connecting. Fires `_on_connection_failure` when all drain. `hard_close()` short-circuits to `_Closed`. |
 | `_SSLHandshaking` | false | false | false | TCP connected, initial SSL handshake in progress. Application not notified yet. `close()` delegates to `hard_close()`. |
@@ -191,7 +191,7 @@ _Open → _TLSUpgrading (start_tls) → _Open (ssl_handshake_complete)
 | `_Closing` | false | true | false | Graceful shutdown in progress — waiting for peer FIN. Still reads to detect FIN. |
 | `_Closed` | false | true | false | Fully closed. Handles straggler event cleanup only. |
 
-State classes dispatch lifecycle-gated operations (`send`, `close`, `hard_close`, `start_tls`, `read_again`, `ssl_handshake_complete`, `own_event`, `foreign_event`) and delegate to TCPConnection methods for the actual work. All I/O, SSL, buffer, and flow control logic remains on TCPConnection.
+State classes dispatch lifecycle-gated operations (`send`, `close`, `hard_close`, `start_tls`, `read_again`, `ssl_handshake_complete`, `own_event`, `foreign_event`, `keepalive`, `getsockopt`, `getsockopt_u32`, `setsockopt`, `setsockopt_u32`, `idle_timeout`, `set_timer`) and delegate to TCPConnection methods for the actual work. All I/O, SSL, buffer, and flow control logic remains on TCPConnection.
 
 **Private field access**: Pony restricts private field access to the defining type. State classes use helper methods on TCPConnection (`_set_state`, `_decrement_inflight`, `_establish_connection`, `_straggler_cleanup`, etc.) rather than accessing fields directly.
 
@@ -223,7 +223,7 @@ Design: Discussion #252.
 - **`_TLSUpgrading.hard_close()`**: Calls `_hard_close_tls_upgrading()`, which fires `_on_tls_failure(reason)` (where `reason` is `TLSAuthFailed` or `TLSGeneralError` based on `_ssl_auth_failed`) then `_on_closed()` (the application already knew about the plaintext connection).
 - **`_TLSUpgrading.send()`**: Returns `SendErrorNotConnected` — sends are blocked during the TLS handshake.
 - **`_TLSUpgrading.close()`**: Delegates to `hard_close()` — can't send FIN during TLS handshake.
-- **`_TLSUpgrading.is_open()`**: Returns `true` — the application has already been notified. This allows `idle_timeout()` and `set_timer()` to work during TLS upgrades.
+- **`_TLSUpgrading.is_open()`**: Returns `true` — the application has already been notified. `_TLSUpgrading` delegates socket option, `idle_timeout`, and `set_timer` operations to the same helpers as `_Open`.
 - **`_TLSUpgrading.sends_allowed()`**: Returns `false` — prevents `is_writeable()` from returning true during handshake.
 
 Preconditions enforced synchronously: connection must be open, not already TLS, not muted, no buffered read data (CVE-2021-23222), no pending writes. Returns `StartTLSError` on failure (connection unchanged). The "no pending writes" check is platform-aware: on POSIX it checks `_has_pending_writes()` (any unconfirmed bytes); on Windows IOCP it checks for un-submitted data only (`_pending_data.size() > _pending_sent`), since submitted-but-unconfirmed writes are already in the kernel's send buffer.
@@ -285,7 +285,7 @@ Per-connection idle timeout via ASIO timer events. The duration is an `IdleTimeo
 
 Lifecycle:
 
-- **Arm points**: plaintext branch of `_establish_connection` and `_complete_server_initialization`; `_SSLHandshaking.ssl_handshake_complete()` for initial SSL connections. `_arm_idle_timer()` is a no-op when `_idle_timeout_nsec == 0` or when a timer already exists (idempotency guard). Also called from `idle_timeout()` when setting a timeout on an established connection with no existing timer. `idle_timeout()` gates on `is_open()` — `_SSLHandshaking.is_open() = false` blocks arming during initial SSL handshake, while `_TLSUpgrading.is_open() = true` allows it (timer continues from plaintext phase).
+- **Arm points**: plaintext branch of `_establish_connection` and `_complete_server_initialization`; `_SSLHandshaking.ssl_handshake_complete()` for initial SSL connections. `_arm_idle_timer()` is a no-op when `_idle_timeout_nsec == 0` or when a timer already exists (idempotency guard). Also called from `_do_idle_timeout()` when setting a timeout on an established connection with no existing timer. `idle_timeout()` dispatches through the state machine — `_Open` and `_TLSUpgrading` delegate to `_do_idle_timeout()` (stores nsec and manages the timer), while all other states delegate to `_store_idle_timeout()` (stores nsec only).
 - **Reset points**: `_read()` (POSIX, once per read event), `_read_completed()` (Windows, once per read event), `send()` success path (after the SSL/plaintext write block).
 - **Cancel point**: `_hard_close_connecting()` and `_hard_close_cleanup()` (shared by all connected hard-close paths: `_hard_close_connected`, `_hard_close_ssl_handshaking`, `_hard_close_tls_upgrading`).
 - **Event dispatch**: Identity check `event is _timer_event` in `_event_notify`'s `if/elseif/else` chain, before the `event is _event` check. `_timer_event` is cleared synchronously in `_cancel_idle_timer()`, so stale disposable events for cancelled timers fall through to the `else` branch where the disposable check destroys them.
@@ -315,7 +315,7 @@ One-shot general-purpose timer per connection, independent of the idle timeout. 
 - `_user_timer_token: (TimerToken | None)` — the active timer's token, or `None`.
 
 API:
-- `set_timer(duration: TimerDuration): (TimerToken | SetTimerError)` — creates a one-shot timer. Returns `SetTimerNotOpen` if `is_open()` is false (`_SSLHandshaking.is_open() = false` blocks during initial SSL handshake; `_TLSUpgrading.is_open() = true` allows during TLS upgrades). Returns `SetTimerAlreadyActive` if a timer is already active.
+- `set_timer(duration: TimerDuration): (TimerToken | SetTimerError)` — creates a one-shot timer. Dispatches through the state machine: `_Open` and `_TLSUpgrading` delegate to `_do_set_timer()`, all other states return `SetTimerNotOpen`. Returns `SetTimerAlreadyActive` if a timer is already active.
 - `cancel_timer(token: TimerToken)` — cancels the timer if the token matches. No-op for stale/wrong tokens. No connection state check (can cancel during `_Closing`).
 
 Internals:
@@ -381,9 +381,9 @@ For options without dedicated methods, four general-purpose methods expose the f
 - `setsockopt(level, option_name, option): U32` — raw bytes set.
 - `setsockopt_u32(level, option_name, option): U32` — U32 convenience set.
 
-All methods guard with `is_open()`. Setters return 0 on success or errno on failure. Getters return `(errno, value)`. When the connection is not open, setters return 1 and getters return `(1, 0)`. All delegate to `_OSSocket` methods in `ossocket.pony`. Use `OSSockOpt` constants for level and option name parameters.
+All socket option methods dispatch through the state machine. `_Open` and `_TLSUpgrading` delegate to `_do_*` helpers (which call `_OSSocket` methods); all other states return error values. Setters return 0 on success or errno on failure. Getters return `(errno, value)`. When the connection is not open, setters return 1 and getters return `(1, 0)`. Use `OSSockOpt` constants for level and option name parameters.
 
-Note: `keepalive()` predates these methods and uses `_state.is_open()` (updated from the original `_connected` check when the lifecycle state machine was introduced).
+The general-purpose methods (`getsockopt`, `getsockopt_u32`, `setsockopt`, `setsockopt_u32`) and `keepalive` each have their own dispatch method on `_ConnectionState`. The convenience methods (`set_nodelay`, `get_so_rcvbuf`, etc.) are thin wrappers that delegate to the dispatched general methods, mirroring `_OSSocket`'s wrapper structure.
 
 ### Platform differences
 
