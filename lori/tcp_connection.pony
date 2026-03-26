@@ -202,9 +202,7 @@ class TCPConnection
     keepalive is disabled by default. This can only be set on a connected
     socket.
     """
-    if _state.is_open() then
-      PonyTCP.keepalive(_fd, secs)
-    end
+    _state.keepalive(this, secs)
 
   fun set_nodelay(state: Bool): U32 =>
     """
@@ -216,9 +214,8 @@ class TCPConnection
     Returns 0 on success, or a non-zero errno on failure. Only meaningful
     on a connected socket — returns non-zero if the connection is not open.
     """
-    if not is_open() then return 1 end
-    _OSSocket.setsockopt_u32(_fd, OSSockOpt.ipproto_tcp(),
-      OSSockOpt.tcp_nodelay(), if state then 1 else 0 end)
+    setsockopt_u32(OSSockOpt.ipproto_tcp(), OSSockOpt.tcp_nodelay(),
+      if state then 1 else 0 end)
 
   fun get_so_rcvbuf(): (U32, U32) =>
     """
@@ -229,8 +226,7 @@ class TCPConnection
     be ignored. Only meaningful on a connected socket — returns (1, 0) if
     the connection is not open.
     """
-    if not is_open() then return (1, 0) end
-    _OSSocket.get_so_rcvbuf(_fd)
+    getsockopt_u32(OSSockOpt.sol_socket(), OSSockOpt.so_rcvbuf())
 
   fun set_so_rcvbuf(bufsize: U32): U32 =>
     """
@@ -240,8 +236,7 @@ class TCPConnection
     Returns 0 on success, or a non-zero errno on failure. Only meaningful
     on a connected socket — returns non-zero if the connection is not open.
     """
-    if not is_open() then return 1 end
-    _OSSocket.set_so_rcvbuf(_fd, bufsize)
+    setsockopt_u32(OSSockOpt.sol_socket(), OSSockOpt.so_rcvbuf(), bufsize)
 
   fun get_so_sndbuf(): (U32, U32) =>
     """
@@ -252,8 +247,7 @@ class TCPConnection
     be ignored. Only meaningful on a connected socket — returns (1, 0) if
     the connection is not open.
     """
-    if not is_open() then return (1, 0) end
-    _OSSocket.get_so_sndbuf(_fd)
+    getsockopt_u32(OSSockOpt.sol_socket(), OSSockOpt.so_sndbuf())
 
   fun set_so_sndbuf(bufsize: U32): U32 =>
     """
@@ -263,8 +257,7 @@ class TCPConnection
     Returns 0 on success, or a non-zero errno on failure. Only meaningful
     on a connected socket — returns non-zero if the connection is not open.
     """
-    if not is_open() then return 1 end
-    _OSSocket.set_so_sndbuf(_fd, bufsize)
+    setsockopt_u32(OSSockOpt.sol_socket(), OSSockOpt.so_sndbuf(), bufsize)
 
   fun getsockopt(level: I32, option_name: I32,
     option_max_size: USize = 4): (U32, Array[U8] iso^)
@@ -287,8 +280,7 @@ class TCPConnection
     non-blocking mode — lori's event-driven I/O requires non-blocking
     sockets.
     """
-    if not is_open() then return (1, recover Array[U8] end) end
-    _OSSocket.getsockopt(_fd, level, option_name, option_max_size)
+    _state.getsockopt(this, level, option_name, option_max_size)
 
   fun getsockopt_u32(level: I32, option_name: I32): (U32, U32) =>
     """
@@ -304,8 +296,7 @@ class TCPConnection
     non-blocking mode — lori's event-driven I/O requires non-blocking
     sockets.
     """
-    if not is_open() then return (1, 0) end
-    _OSSocket.getsockopt_u32(_fd, level, option_name)
+    _state.getsockopt_u32(this, level, option_name)
 
   fun setsockopt(level: I32, option_name: I32, option: Array[U8]): U32 =>
     """
@@ -324,8 +315,7 @@ class TCPConnection
     non-blocking mode — lori's event-driven I/O requires non-blocking
     sockets.
     """
-    if not is_open() then return 1 end
-    _OSSocket.setsockopt(_fd, level, option_name, option)
+    _state.setsockopt(this, level, option_name, option)
 
   fun setsockopt_u32(level: I32, option_name: I32, option: U32): U32 =>
     """
@@ -340,8 +330,7 @@ class TCPConnection
     non-blocking mode — lori's event-driven I/O requires non-blocking
     sockets.
     """
-    if not is_open() then return 1 end
-    _OSSocket.setsockopt_u32(_fd, level, option_name, option)
+    _state.setsockopt_u32(this, level, option_name, option)
 
   fun ref idle_timeout(duration: (IdleTimeout | None)) =>
     """
@@ -363,25 +352,7 @@ class TCPConnection
     application-level inactivity detection — it fires whether or not the
     peer is alive.
     """
-    match \exhaustive\ duration
-    | let t: IdleTimeout =>
-      _idle_timeout_nsec = t() * 1_000_000
-      // _SSLHandshaking.is_open() = false blocks arming; the timer starts
-      // at ssl_handshake_complete. _TLSUpgrading.is_open() = true allows
-      // arming — the timer is already running from the plaintext phase.
-      if _state.is_open() then
-        if _timer_event.is_null() then
-          _arm_idle_timer()
-        else
-          _reset_idle_timer()
-        end
-      end
-    | None =>
-      _idle_timeout_nsec = 0
-      if _state.is_open() then
-        _cancel_idle_timer()
-      end
-    end
+    _state.idle_timeout(this, duration)
 
   fun ref set_timer(duration: TimerDuration): (TimerToken | SetTimerError) =>
     """
@@ -398,29 +369,14 @@ class TCPConnection
     already active returns `SetTimerAlreadyActive` — call `cancel_timer()`
     first. This prevents silent token invalidation.
 
-    Requires the connection to be application-level connected: `is_open()` must
-    be true and the initial SSL handshake (if any) must have completed. TLS
-    upgrades via `start_tls()` do not block timer creation.
+    Requires the connection to be application-level connected: the connection
+    must be open and the initial SSL handshake (if any) must have completed.
+    TLS upgrades via `start_tls()` do not block timer creation.
 
     The timer survives `close()` (graceful shutdown) but is cancelled by
     `hard_close()`.
     """
-    // _SSLHandshaking.is_open() = false blocks timers during initial SSL
-    // handshake. _TLSUpgrading.is_open() = true allows them — the
-    // application already received _on_connected/_on_started.
-    if not is_open() then return SetTimerNotOpen end
-    if _user_timer_token isnt None then return SetTimerAlreadyActive end
-
-    let nsec = duration() * 1_000_000
-    match \exhaustive\ _enclosing
-    | let e: TCPConnectionActor ref =>
-      _user_timer_event = PonyAsio.create_timer_event(e, nsec)
-    | None =>
-      _Unreachable()
-    end
-    let token = TimerToken._create(_next_timer_id = _next_timer_id + 1)
-    _user_timer_token = token
-    token
+    _state.set_timer(this, duration)
 
   fun ref cancel_timer(token: TimerToken) =>
     """
@@ -832,6 +788,23 @@ class TCPConnection
     not needed.
     """
     _state.start_tls(this, ssl_ctx, host)
+
+  fun _do_keepalive(secs: U32) =>
+    PonyTCP.keepalive(_fd, secs)
+
+  fun _do_getsockopt(level: I32, option_name: I32,
+    option_max_size: USize): (U32, Array[U8] iso^)
+  =>
+    _OSSocket.getsockopt(_fd, level, option_name, option_max_size)
+
+  fun _do_getsockopt_u32(level: I32, option_name: I32): (U32, U32) =>
+    _OSSocket.getsockopt_u32(_fd, level, option_name)
+
+  fun _do_setsockopt(level: I32, option_name: I32, option: Array[U8]): U32 =>
+    _OSSocket.setsockopt(_fd, level, option_name, option)
+
+  fun _do_setsockopt_u32(level: I32, option_name: I32, option: U32): U32 =>
+    _OSSocket.setsockopt_u32(_fd, level, option_name, option)
 
   fun ref _do_start_tls(ssl_ctx: SSLContext val, host: String):
     (None | StartTLSError)
@@ -1470,6 +1443,44 @@ class TCPConnection
     | None =>
       _Unreachable()
     end
+
+  fun ref _do_idle_timeout(duration: (IdleTimeout | None)) =>
+    match \exhaustive\ duration
+    | let t: IdleTimeout =>
+      _idle_timeout_nsec = t() * 1_000_000
+      if _timer_event.is_null() then
+        _arm_idle_timer()
+      else
+        _reset_idle_timer()
+      end
+    | None =>
+      _idle_timeout_nsec = 0
+      _cancel_idle_timer()
+    end
+
+  fun ref _store_idle_timeout(duration: (IdleTimeout | None)) =>
+    match \exhaustive\ duration
+    | let t: IdleTimeout =>
+      _idle_timeout_nsec = t() * 1_000_000
+    | None =>
+      _idle_timeout_nsec = 0
+    end
+
+  fun ref _do_set_timer(duration: TimerDuration):
+    (TimerToken | SetTimerError)
+  =>
+    if _user_timer_token isnt None then return SetTimerAlreadyActive end
+
+    let nsec = duration() * 1_000_000
+    match \exhaustive\ _enclosing
+    | let e: TCPConnectionActor ref =>
+      _user_timer_event = PonyAsio.create_timer_event(e, nsec)
+    | None =>
+      _Unreachable()
+    end
+    let token = TimerToken._create(_next_timer_id = _next_timer_id + 1)
+    _user_timer_token = token
+    token
 
   fun ref _arm_idle_timer() =>
     """

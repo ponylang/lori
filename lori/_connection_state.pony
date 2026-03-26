@@ -13,6 +13,19 @@ trait _ConnectionState
   fun ref read_again(conn: TCPConnection ref)
   fun ref ssl_handshake_complete(conn: TCPConnection ref,
     s: EitherLifecycleEventReceiver ref)
+  fun keepalive(conn: TCPConnection box, secs: U32)
+  fun getsockopt(conn: TCPConnection box, level: I32, option_name: I32,
+    option_max_size: USize): (U32, Array[U8] iso^)
+  fun getsockopt_u32(conn: TCPConnection box, level: I32,
+    option_name: I32): (U32, U32)
+  fun setsockopt(conn: TCPConnection box, level: I32, option_name: I32,
+    option: Array[U8]): U32
+  fun setsockopt_u32(conn: TCPConnection box, level: I32, option_name: I32,
+    option: U32): U32
+  fun ref idle_timeout(conn: TCPConnection ref,
+    duration: (IdleTimeout | None))
+  fun ref set_timer(conn: TCPConnection ref,
+    duration: TimerDuration): (TimerToken | SetTimerError)
   fun is_open(): Bool
   fun is_closed(): Bool
   fun sends_allowed(): Bool
@@ -67,6 +80,38 @@ class _ConnectionNone is _ConnectionState
   =>
     _Unreachable()
 
+  fun keepalive(conn: TCPConnection box, secs: U32) => None
+
+  fun getsockopt(conn: TCPConnection box, level: I32, option_name: I32,
+    option_max_size: USize): (U32, Array[U8] iso^)
+  =>
+    (1, recover Array[U8] end)
+
+  fun getsockopt_u32(conn: TCPConnection box, level: I32,
+    option_name: I32): (U32, U32)
+  =>
+    (1, 0)
+
+  fun setsockopt(conn: TCPConnection box, level: I32, option_name: I32,
+    option: Array[U8]): U32
+  =>
+    1
+
+  fun setsockopt_u32(conn: TCPConnection box, level: I32, option_name: I32,
+    option: U32): U32
+  =>
+    1
+
+  fun ref idle_timeout(conn: TCPConnection ref,
+    duration: (IdleTimeout | None))
+  =>
+    conn._store_idle_timeout(duration)
+
+  fun ref set_timer(conn: TCPConnection ref,
+    duration: TimerDuration): (TimerToken | SetTimerError)
+  =>
+    SetTimerNotOpen
+
   fun is_open(): Bool => false
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
@@ -116,6 +161,38 @@ class _ClientConnecting is _ConnectionState
   =>
     _Unreachable()
 
+  fun keepalive(conn: TCPConnection box, secs: U32) => None
+
+  fun getsockopt(conn: TCPConnection box, level: I32, option_name: I32,
+    option_max_size: USize): (U32, Array[U8] iso^)
+  =>
+    (1, recover Array[U8] end)
+
+  fun getsockopt_u32(conn: TCPConnection box, level: I32,
+    option_name: I32): (U32, U32)
+  =>
+    (1, 0)
+
+  fun setsockopt(conn: TCPConnection box, level: I32, option_name: I32,
+    option: Array[U8]): U32
+  =>
+    1
+
+  fun setsockopt_u32(conn: TCPConnection box, level: I32, option_name: I32,
+    option: U32): U32
+  =>
+    1
+
+  fun ref idle_timeout(conn: TCPConnection ref,
+    duration: (IdleTimeout | None))
+  =>
+    conn._store_idle_timeout(duration)
+
+  fun ref set_timer(conn: TCPConnection ref,
+    duration: TimerDuration): (TimerToken | SetTimerError)
+  =>
+    SetTimerNotOpen
+
   fun is_open(): Bool => false
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
@@ -162,6 +239,39 @@ class _Open is _ConnectionState
     s: EitherLifecycleEventReceiver ref)
   =>
     _Unreachable()
+
+  fun keepalive(conn: TCPConnection box, secs: U32) =>
+    conn._do_keepalive(secs)
+
+  fun getsockopt(conn: TCPConnection box, level: I32, option_name: I32,
+    option_max_size: USize): (U32, Array[U8] iso^)
+  =>
+    conn._do_getsockopt(level, option_name, option_max_size)
+
+  fun getsockopt_u32(conn: TCPConnection box, level: I32,
+    option_name: I32): (U32, U32)
+  =>
+    conn._do_getsockopt_u32(level, option_name)
+
+  fun setsockopt(conn: TCPConnection box, level: I32, option_name: I32,
+    option: Array[U8]): U32
+  =>
+    conn._do_setsockopt(level, option_name, option)
+
+  fun setsockopt_u32(conn: TCPConnection box, level: I32, option_name: I32,
+    option: U32): U32
+  =>
+    conn._do_setsockopt_u32(level, option_name, option)
+
+  fun ref idle_timeout(conn: TCPConnection ref,
+    duration: (IdleTimeout | None))
+  =>
+    conn._do_idle_timeout(duration)
+
+  fun ref set_timer(conn: TCPConnection ref,
+    duration: TimerDuration): (TimerToken | SetTimerError)
+  =>
+    conn._do_set_timer(duration)
 
   fun is_open(): Bool => true
   fun is_closed(): Bool => false
@@ -212,6 +322,38 @@ class _Closing is _ConnectionState
     s: EitherLifecycleEventReceiver ref)
   =>
     _Unreachable()
+
+  fun keepalive(conn: TCPConnection box, secs: U32) => None
+
+  fun getsockopt(conn: TCPConnection box, level: I32, option_name: I32,
+    option_max_size: USize): (U32, Array[U8] iso^)
+  =>
+    (1, recover Array[U8] end)
+
+  fun getsockopt_u32(conn: TCPConnection box, level: I32,
+    option_name: I32): (U32, U32)
+  =>
+    (1, 0)
+
+  fun setsockopt(conn: TCPConnection box, level: I32, option_name: I32,
+    option: Array[U8]): U32
+  =>
+    1
+
+  fun setsockopt_u32(conn: TCPConnection box, level: I32, option_name: I32,
+    option: U32): U32
+  =>
+    1
+
+  fun ref idle_timeout(conn: TCPConnection ref,
+    duration: (IdleTimeout | None))
+  =>
+    conn._store_idle_timeout(duration)
+
+  fun ref set_timer(conn: TCPConnection ref,
+    duration: TimerDuration): (TimerToken | SetTimerError)
+  =>
+    SetTimerNotOpen
 
   fun is_open(): Bool => false
   fun is_closed(): Bool => true
@@ -267,6 +409,38 @@ class _UnconnectedClosing is _ConnectionState
   =>
     _Unreachable()
 
+  fun keepalive(conn: TCPConnection box, secs: U32) => None
+
+  fun getsockopt(conn: TCPConnection box, level: I32, option_name: I32,
+    option_max_size: USize): (U32, Array[U8] iso^)
+  =>
+    (1, recover Array[U8] end)
+
+  fun getsockopt_u32(conn: TCPConnection box, level: I32,
+    option_name: I32): (U32, U32)
+  =>
+    (1, 0)
+
+  fun setsockopt(conn: TCPConnection box, level: I32, option_name: I32,
+    option: Array[U8]): U32
+  =>
+    1
+
+  fun setsockopt_u32(conn: TCPConnection box, level: I32, option_name: I32,
+    option: U32): U32
+  =>
+    1
+
+  fun ref idle_timeout(conn: TCPConnection ref,
+    duration: (IdleTimeout | None))
+  =>
+    conn._store_idle_timeout(duration)
+
+  fun ref set_timer(conn: TCPConnection ref,
+    duration: TimerDuration): (TimerToken | SetTimerError)
+  =>
+    SetTimerNotOpen
+
   fun is_open(): Bool => false
   fun is_closed(): Bool => true
   fun sends_allowed(): Bool => false
@@ -309,6 +483,38 @@ class _Closed is _ConnectionState
     s: EitherLifecycleEventReceiver ref)
   =>
     _Unreachable()
+
+  fun keepalive(conn: TCPConnection box, secs: U32) => None
+
+  fun getsockopt(conn: TCPConnection box, level: I32, option_name: I32,
+    option_max_size: USize): (U32, Array[U8] iso^)
+  =>
+    (1, recover Array[U8] end)
+
+  fun getsockopt_u32(conn: TCPConnection box, level: I32,
+    option_name: I32): (U32, U32)
+  =>
+    (1, 0)
+
+  fun setsockopt(conn: TCPConnection box, level: I32, option_name: I32,
+    option: Array[U8]): U32
+  =>
+    1
+
+  fun setsockopt_u32(conn: TCPConnection box, level: I32, option_name: I32,
+    option: U32): U32
+  =>
+    1
+
+  fun ref idle_timeout(conn: TCPConnection ref,
+    duration: (IdleTimeout | None))
+  =>
+    conn._store_idle_timeout(duration)
+
+  fun ref set_timer(conn: TCPConnection ref,
+    duration: TimerDuration): (TimerToken | SetTimerError)
+  =>
+    SetTimerNotOpen
 
   fun is_open(): Bool => false
   fun is_closed(): Bool => true
@@ -370,6 +576,38 @@ class _SSLHandshaking is _ConnectionState
       srv._on_started()
     end
 
+  fun keepalive(conn: TCPConnection box, secs: U32) => None
+
+  fun getsockopt(conn: TCPConnection box, level: I32, option_name: I32,
+    option_max_size: USize): (U32, Array[U8] iso^)
+  =>
+    (1, recover Array[U8] end)
+
+  fun getsockopt_u32(conn: TCPConnection box, level: I32,
+    option_name: I32): (U32, U32)
+  =>
+    (1, 0)
+
+  fun setsockopt(conn: TCPConnection box, level: I32, option_name: I32,
+    option: Array[U8]): U32
+  =>
+    1
+
+  fun setsockopt_u32(conn: TCPConnection box, level: I32, option_name: I32,
+    option: U32): U32
+  =>
+    1
+
+  fun ref idle_timeout(conn: TCPConnection ref,
+    duration: (IdleTimeout | None))
+  =>
+    conn._store_idle_timeout(duration)
+
+  fun ref set_timer(conn: TCPConnection ref,
+    duration: TimerDuration): (TimerToken | SetTimerError)
+  =>
+    SetTimerNotOpen
+
   fun is_open(): Bool => false
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
@@ -424,6 +662,39 @@ class _TLSUpgrading is _ConnectionState
     // already running from the plaintext phase).
     conn._set_state(_Open)
     s._on_tls_ready()
+
+  fun keepalive(conn: TCPConnection box, secs: U32) =>
+    conn._do_keepalive(secs)
+
+  fun getsockopt(conn: TCPConnection box, level: I32, option_name: I32,
+    option_max_size: USize): (U32, Array[U8] iso^)
+  =>
+    conn._do_getsockopt(level, option_name, option_max_size)
+
+  fun getsockopt_u32(conn: TCPConnection box, level: I32,
+    option_name: I32): (U32, U32)
+  =>
+    conn._do_getsockopt_u32(level, option_name)
+
+  fun setsockopt(conn: TCPConnection box, level: I32, option_name: I32,
+    option: Array[U8]): U32
+  =>
+    conn._do_setsockopt(level, option_name, option)
+
+  fun setsockopt_u32(conn: TCPConnection box, level: I32, option_name: I32,
+    option: U32): U32
+  =>
+    conn._do_setsockopt_u32(level, option_name, option)
+
+  fun ref idle_timeout(conn: TCPConnection ref,
+    duration: (IdleTimeout | None))
+  =>
+    conn._do_idle_timeout(duration)
+
+  fun ref set_timer(conn: TCPConnection ref,
+    duration: TimerDuration): (TimerToken | SetTimerError)
+  =>
+    conn._do_set_timer(duration)
 
   fun is_open(): Bool => true
   fun is_closed(): Bool => false

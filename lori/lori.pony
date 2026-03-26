@@ -417,8 +417,8 @@ back to the minimum size.
 ## Socket Options
 
 `TCPConnection` exposes commonly-tuned socket options for connected sockets.
-All methods guard with `is_open()` and return an error indicator when the
-connection is not open.
+All methods dispatch through the connection state machine and return an error
+indicator when the connection is not open.
 
 **TCP_NODELAY** disables Nagle's algorithm so small writes are sent immediately:
 
