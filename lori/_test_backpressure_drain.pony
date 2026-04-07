@@ -7,15 +7,14 @@ class \nodoc\ iso _TestBackpressureDrain is UnitTest
 
   Sequence:
   1. Client connects, sets small SO_RCVBUF, mutes itself, sends "ready"
-  2. Server receives "ready", sends a payload large enough to trigger
-     backpressure (client is muted with small receive buffer)
+  2. Server receives "ready" (via buffer_until framing), sends a large payload
   3. Server gets throttled, mutes reads, tells listener
   4. Listener tells client to unmute
   5. Client reads all data, sends "ping"
-  6. Server unthrottles, unmutes, receives "ping" — test passes
+  6. Server unthrottles, unmutes, receives "ping" (via buffer_until) — passes
 
   Timeout means the server never saw the ping, reproducing the bug from
-  issue #276.
+  issue #276. POSIX only — the bug is specific to EPOLLONESHOT.
   """
   fun name(): String => "BackpressureDrain"
 
@@ -43,7 +42,7 @@ actor \nodoc\ _TestBackpressureDrainListener is TCPListenerActor
     _h = h
     _tcp_listener = TCPListener(
       TCPListenAuth(_h.env.root),
-      "127.0.0.2",
+      ifdef linux then "127.0.0.2" else "localhost" end,
       "9770",
       this)
 
@@ -79,6 +78,7 @@ actor \nodoc\ _TestBackpressureDrainServer
   let _h: TestHelper
   let _listener: _TestBackpressureDrainListener
   var _payload_size: USize = 0
+  var _got_ready: Bool = false
 
   new create(fd: U32, h: TestHelper,
     listener: _TestBackpressureDrainListener)
@@ -96,6 +96,11 @@ actor \nodoc\ _TestBackpressureDrainServer
 
   fun ref _on_started() =>
     _h.complete_action("server started")
+    // Frame incoming messages: "ready" is 5 bytes
+    match MakeBufferSize(5)
+    | let b: BufferSize => _tcp_connection.buffer_until(b)
+    else _Unreachable()
+    end
 
   fun ref _on_throttled() =>
     _h.complete_action("server throttled")
@@ -107,16 +112,20 @@ actor \nodoc\ _TestBackpressureDrainServer
     _tcp_connection.unmute()
 
   fun ref _on_received(data: Array[U8] iso) =>
-    let received = String.from_array(consume data)
-    if received == "ready" then
-      // Query effective SO_SNDBUF — Linux doubles the requested value and
-      // the default is typically 16KB (effective ~32KB). Send 4x that to
-      // reliably overflow both the send and receive buffers.
+    if not _got_ready then
+      _got_ready = true
+      // Switch framing to expect "ping" (4 bytes)
+      match MakeBufferSize(4)
+      | let b: BufferSize => _tcp_connection.buffer_until(b)
+      else _Unreachable()
+      end
+      // Send payload large enough to trigger backpressure.
+      // Linux doubles SO_SNDBUF; send 4x effective to overflow.
       (_, let sndbuf: U32) = _tcp_connection.get_so_sndbuf()
       _payload_size = (sndbuf.usize() * 4).max(256_000)
       let payload = recover iso Array[U8].init('x', _payload_size) end
       _tcp_connection.send(consume payload)
-    elseif received == "ping" then
+    else
       _h.complete_action("server received ping")
       _h.complete(true)
     end
@@ -132,7 +141,7 @@ actor \nodoc\ _TestBackpressureDrainClient
     _h = h
     _tcp_connection = TCPConnection.client(
       TCPConnectAuth(_h.env.root),
-      "127.0.0.2",
+      ifdef linux then "127.0.0.2" else "localhost" end,
       "9770",
       "",
       this,

@@ -82,4 +82,4 @@ actor \nodoc\ Main is TestList
     test(_TestStartTLSHandshakeFailure)
     test(_TestStartTLSAuthFailure)
     test(_TestSetTimerAfterTLSUpgrade)
-    test(_TestBackpressureDrain)
+    ifdef posix then test(_TestBackpressureDrain) end
