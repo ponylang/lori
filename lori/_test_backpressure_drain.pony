@@ -130,10 +130,11 @@ actor \nodoc\ _TestBackpressureDrainServer
       | let b: BufferSize => _tcp_connection.buffer_until(b)
       else _Unreachable()
       end
-      // Send payload large enough to trigger backpressure.
-      // Linux doubles SO_SNDBUF; send 4x effective to overflow.
-      (_, let sndbuf: U32) = _tcp_connection.get_so_sndbuf()
-      _payload_size = (sndbuf.usize() * 4).max(256_000)
+      // Shrink the send buffer so the pipe is small and drains quickly.
+      // With the client muted and SO_RCVBUF at 4096, we only need to
+      // overflow SO_SNDBUF + SO_RCVBUF to trigger backpressure.
+      _tcp_connection.set_so_sndbuf(16384)
+      _payload_size = 256_000
       let payload = recover iso Array[U8].init('x', _payload_size) end
       match _tcp_connection.send(consume payload)
       | let t: SendToken =>
