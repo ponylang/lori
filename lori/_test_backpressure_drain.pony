@@ -25,6 +25,7 @@ class \nodoc\ iso _TestBackpressureDrain is UnitTest
     h.expect_action("client ready")
     h.expect_action("server throttled")
     h.expect_action("server unthrottled")
+    h.expect_action("client sent ping")
     h.expect_action("server received ping")
 
     let listener = _TestBackpressureDrainListener(h)
@@ -173,6 +174,7 @@ actor \nodoc\ _TestBackpressureDrainClient
     _total_received = _total_received + data.size()
     if not _sent_ping and (_total_received >= _payload_size) then
       _sent_ping = true
+      _h.complete_action("client sent ping")
       _tcp_connection.send("ping")
       _tcp_connection.close()
     end
