@@ -191,6 +191,8 @@ actor \nodoc\ _TestBackpressureDrainClient
       _h.complete_action("client receiving data")
     end
     _total_received = _total_received + data.size()
+    _h.log("client received " + _total_received.string() + " of "
+      + _payload_size.string())
     if not _sent_ping and (_total_received >= _payload_size) then
       _sent_ping = true
       _h.complete_action("client sent ping")
