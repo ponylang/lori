@@ -23,6 +23,8 @@ class \nodoc\ iso _TestBackpressureDrain is UnitTest
     h.expect_action("server started")
     h.expect_action("client connected")
     h.expect_action("client ready")
+    h.expect_action("server queued payload")
+    h.expect_action("server payload delivered")
     h.expect_action("server throttled")
     h.expect_action("server unthrottled")
     h.expect_action("client sent ping")
@@ -80,6 +82,7 @@ actor \nodoc\ _TestBackpressureDrainServer
   let _listener: _TestBackpressureDrainListener
   var _payload_size: USize = 0
   var _got_ready: Bool = false
+  var _payload_token: (SendToken | None) = None
 
   new create(fd: U32, h: TestHelper,
     listener: _TestBackpressureDrainListener)
@@ -112,6 +115,12 @@ actor \nodoc\ _TestBackpressureDrainServer
     _h.complete_action("server unthrottled")
     _tcp_connection.unmute()
 
+  fun ref _on_sent(token: SendToken) =>
+    match _payload_token
+    | let t: SendToken if token is t =>
+      _h.complete_action("server payload delivered")
+    end
+
   fun ref _on_received(data: Array[U8] iso) =>
     if not _got_ready then
       _got_ready = true
@@ -125,7 +134,13 @@ actor \nodoc\ _TestBackpressureDrainServer
       (_, let sndbuf: U32) = _tcp_connection.get_so_sndbuf()
       _payload_size = (sndbuf.usize() * 4).max(256_000)
       let payload = recover iso Array[U8].init('x', _payload_size) end
-      _tcp_connection.send(consume payload)
+      match _tcp_connection.send(consume payload)
+      | let t: SendToken =>
+        _payload_token = t
+        _h.complete_action("server queued payload")
+      | let _: SendError =>
+        _h.fail("server send failed")
+      end
     else
       _h.complete_action("server received ping")
       _tcp_connection.close()
