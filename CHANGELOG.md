@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 
+- Fix connection stall after large write with backpressure ([PR #278](https://github.com/ponylang/lori/pull/278))
 
 ### Added
 
