@@ -127,6 +127,7 @@ actor \nodoc\ _TestBackpressureDrainServer
       _tcp_connection.send(consume payload)
     else
       _h.complete_action("server received ping")
+      _tcp_connection.close()
       _h.complete(true)
     end
 
@@ -136,6 +137,7 @@ actor \nodoc\ _TestBackpressureDrainClient
   let _h: TestHelper
   var _total_received: USize = 0
   var _payload_size: USize = 0
+  var _sent_ping: Bool = false
 
   new create(h: TestHelper) =>
     _h = h
@@ -169,6 +171,8 @@ actor \nodoc\ _TestBackpressureDrainClient
 
   fun ref _on_received(data: Array[U8] iso) =>
     _total_received = _total_received + data.size()
-    if _total_received >= _payload_size then
+    if not _sent_ping and (_total_received >= _payload_size) then
+      _sent_ping = true
       _tcp_connection.send("ping")
+      _tcp_connection.close()
     end
