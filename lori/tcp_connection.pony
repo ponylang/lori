@@ -492,7 +492,7 @@ class TCPConnection
     Start reading off this TCPConnection again after having been muted.
     """
     _muted = false
-    // Trigger a read in case we ignored any previous ASIO notifications
+    _set_readable()
     _queue_read()
 
   fun ref yield_read() =>
@@ -1380,7 +1380,6 @@ class TCPConnection
 
   fun ref _queue_read() =>
     ifdef posix then
-      // Trigger a read in case we ignored any previous ASIO notifications
       match \exhaustive\ _enclosing
       | let e: TCPConnectionActor ref =>
         e._read_again()
@@ -1948,6 +1947,7 @@ class TCPConnection
   fun ref _set_writeable() =>
     _writeable = true
     PonyAsio.set_writeable(_event)
+    _release_backpressure()
 
   fun ref _set_unwriteable() =>
     _writeable = false
