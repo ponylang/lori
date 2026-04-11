@@ -62,6 +62,11 @@ class TCPConnection
   // route the failure reason to ConnectionFailedTimeout. Same pattern as
   // _ssl_auth_failed.
   var _connect_timed_out: Bool = false
+  // COUPLING: Set by _fire_connect_timer_error() before calling hard_close().
+  // Read by _hard_close_connecting() and _hard_close_ssl_handshaking() to
+  // route the failure reason to ConnectionFailedTimerError. Same pattern as
+  // _connect_timed_out.
+  var _connect_timer_errored: Bool = false
 
   // Per-connection user timer via ASIO timer (one-shot, no I/O reset)
   var _user_timer_event: AsioEventID = AsioEvent.none()
@@ -604,7 +609,9 @@ class TCPConnection
     end
     match _lifecycle_event_receiver
     | let c: ClientLifecycleEventReceiver ref =>
-      let reason = if _connect_timed_out then
+      let reason = if _connect_timer_errored then
+        ConnectionFailedTimerError
+      elseif _connect_timed_out then
         ConnectionFailedTimeout
       elseif _had_inflight then
         ConnectionFailedTCP
@@ -714,7 +721,9 @@ class TCPConnection
     | let s: EitherLifecycleEventReceiver ref =>
       match \exhaustive\ s
       | let c: ClientLifecycleEventReceiver ref =>
-        if _connect_timed_out then
+        if _connect_timer_errored then
+          c._on_connection_failure(ConnectionFailedTimerError)
+        elseif _connect_timed_out then
           c._on_connection_failure(ConnectionFailedTimeout)
         else
           c._on_connection_failure(ConnectionFailedSSL)
@@ -1576,6 +1585,17 @@ class TCPConnection
     _cancel_connect_timer()
     hard_close()
 
+  fun ref _fire_connect_timer_error() =>
+    """
+    The connect timer's ASIO subscription failed. Sets
+    `_connect_timer_errored` so that `hard_close()` routes the failure to
+    `ConnectionFailedTimerError`, then cancels the timer and hard-closes
+    the connection.
+    """
+    _connect_timer_errored = true
+    _cancel_connect_timer()
+    hard_close()
+
   fun ref _fire_user_timer() =>
     """
     Dispatch `_on_timer` to the lifecycle event receiver. Called from
@@ -1682,6 +1702,11 @@ class TCPConnection
     Common I/O dispatch logic for socket events. Shared by all states that
     have a connected socket and need to process I/O notifications.
     """
+    if AsioEvent.errored(flags) then
+      hard_close()
+      return
+    end
+
     if AsioEvent.writeable(flags) then
       _set_writeable()
       ifdef windows then
@@ -1790,11 +1815,23 @@ class TCPConnection
     // (stale timer disposables, straggler disposables), otherwise dispatches
     // to foreign_event for Happy Eyeballs stragglers.
     if event is _connect_timer_event then
-      _fire_connect_timeout()
+      if AsioEvent.errored(flags) then
+        _fire_connect_timer_error()
+      else
+        _fire_connect_timeout()
+      end
     elseif event is _timer_event then
-      _fire_idle_timeout()
+      if AsioEvent.errored(flags) then
+        _cancel_idle_timer()
+      else
+        _fire_idle_timeout()
+      end
     elseif event is _user_timer_event then
-      _fire_user_timer()
+      if AsioEvent.errored(flags) then
+        _cancel_user_timer()
+      else
+        _fire_user_timer()
+      end
     elseif event is _event then
       _state.own_event(this, flags, arg)
       // A callback during own_event (e.g., _read_completed(0) → close()) can
@@ -1808,16 +1845,20 @@ class TCPConnection
         _event = AsioEvent.none()
       end
     else
-      // AsioEvent.disposable(flags)
       if AsioEvent.disposable(flags) then
+        PonyAsio.destroy(event)
+      elseif AsioEvent.errored(flags)
+        and PonyAsio.get_disposable(event)
+      then
+        // Stale errored event from a cancelled timer. The timer was
+        // unsubscribed (marking the event struct disposable) before
+        // the errored notification was processed. Destroy it here to
+        // prevent it from reaching foreign_event, where it would be
+        // misidentified as a Happy Eyeballs straggler.
         PonyAsio.destroy(event)
       else
         _state.foreign_event(this, event, flags, arg)
       end
-
-      // if AsioEvent.disposable(flags) then
-      //   PonyAsio.destroy(event)
-      // end
     end
 
   fun ref _connecting_callback() =>

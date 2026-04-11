@@ -23,6 +23,8 @@ Please note that if this library encounters a state that the programmers thought
 - `use "lori"` to include this package
 - `corral run -- ponyc` to compile your application
 
+Requires ponyc 0.63.1 or later.
+
 Note: The ssl transitive dependency requires a C SSL library to be installed. Please see the ssl installation instructions for more information.
 
 ## Usage
