@@ -25,8 +25,17 @@ primitive ConnectionFailedTimeout
   `client` or `ssl_client` constructor.
   """
 
+primitive ConnectionFailedTimerError
+  """
+  The connection was aborted because the connect timer's ASIO event
+  subscription failed. This is distinct from `ConnectionFailedTimeout` —
+  the timeout didn't expire, the underlying timer could not be created
+  (e.g. ENOMEM on kqueue/epoll).
+  """
+
 type ConnectionFailureReason is
   ( ConnectionFailedDNS
   | ConnectionFailedTCP
   | ConnectionFailedSSL
-  | ConnectionFailedTimeout )
+  | ConnectionFailedTimeout
+  | ConnectionFailedTimerError )

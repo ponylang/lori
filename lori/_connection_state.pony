@@ -37,7 +37,9 @@ class _ConnectionNone is _ConnectionState
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
     flags: U32, arg: U32)
   =>
-    if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
+    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
+      or AsioEvent.readable(flags))
+    then
       return
     end
 
@@ -123,6 +125,17 @@ class _ClientConnecting is _ConnectionState
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
     flags: U32, arg: U32)
   =>
+    // Check errored before the writeable/readable guard. An errored event
+    // must NOT flow into _is_socket_connected — the FD might appear
+    // "connected" via getsockopt(SO_ERROR) even though its ASIO subscription
+    // is broken.
+    if AsioEvent.errored(flags) then
+      let fd = PonyAsio.event_fd(event)
+      conn._decrement_inflight()
+      conn._connecting_event_failed(event, fd)
+      return
+    end
+
     if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
       return
     end
@@ -206,7 +219,9 @@ class _Open is _ConnectionState
   =>
     // Removing this guard causes the test suite to hang.
     if PonyAsio.get_disposable(event) then return end
-    if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
+    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
+      or AsioEvent.readable(flags))
+    then
       return
     end
 
@@ -286,7 +301,9 @@ class _Closing is _ConnectionState
   =>
     // Removing this guard causes the test suite to hang.
     if PonyAsio.get_disposable(event) then return end
-    if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
+    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
+      or AsioEvent.readable(flags))
+    then
       return
     end
 
@@ -372,7 +389,9 @@ class _UnconnectedClosing is _ConnectionState
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
     flags: U32, arg: U32)
   =>
-    if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
+    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
+      or AsioEvent.readable(flags))
+    then
       return
     end
 
@@ -452,7 +471,9 @@ class _Closed is _ConnectionState
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
     flags: U32, arg: U32)
   =>
-    if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
+    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
+      or AsioEvent.readable(flags))
+    then
       return
     end
 
@@ -534,7 +555,9 @@ class _SSLHandshaking is _ConnectionState
   =>
     // Removing this guard causes the test suite to hang.
     if PonyAsio.get_disposable(event) then return end
-    if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
+    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
+      or AsioEvent.readable(flags))
+    then
       return
     end
 
@@ -626,7 +649,9 @@ class _TLSUpgrading is _ConnectionState
   =>
     // Removing this guard causes the test suite to hang.
     if PonyAsio.get_disposable(event) then return end
-    if not (AsioEvent.writeable(flags) or AsioEvent.readable(flags)) then
+    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
+      or AsioEvent.readable(flags))
+    then
       return
     end
 

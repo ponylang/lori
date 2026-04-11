@@ -107,7 +107,7 @@ actor MyClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
     _tcp_connection.send("Hello, server!")
 
   fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
-    // DNS, TCP, SSL, or timeout failure
+    // DNS, TCP, SSL, timeout, or timer error failure
     None
 
   fun ref _on_received(data: Array[U8] iso) =>
@@ -313,6 +313,7 @@ fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
   | ConnectionFailedDNS => // name resolution failed
   | ConnectionFailedTCP => // all TCP attempts failed
   | ConnectionFailedSSL => // SSL handshake failed
+  | ConnectionFailedTimerError => // connect timer subscription failed
   end
 ```
 

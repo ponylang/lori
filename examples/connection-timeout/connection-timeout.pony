@@ -48,4 +48,6 @@ actor TimeoutClient
       _out.print("All TCP connection attempts failed.")
     | ConnectionFailedSSL =>
       _out.print("SSL handshake failed.")
+    | ConnectionFailedTimerError =>
+      _out.print("Connect timer subscription failed.")
     end

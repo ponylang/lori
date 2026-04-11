@@ -9,8 +9,11 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 
+- Handle ASIO_ERROR notifications from ponyc runtime ([PR #280](https://github.com/ponylang/lori/pull/280))
 
 ### Changed
+
+- Add `ConnectionFailedTimerError` to `ConnectionFailureReason` type alias ([PR #280](https://github.com/ponylang/lori/pull/280))
 
 
 ## [0.13.1] - 2026-04-07
