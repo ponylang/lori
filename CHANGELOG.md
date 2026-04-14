@@ -2,17 +2,11 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/) and [Keep a CHANGELOG](http://keepachangelog.com/).
 
-## [unreleased] - unreleased
+## [0.14.1] - 2026-04-14
 
 ### Fixed
 
 - Add timer ASIO subscription failure callbacks ([PR #281](https://github.com/ponylang/lori/pull/281))
-
-### Added
-
-
-### Changed
-
 
 ## [0.14.0] - 2026-04-12
 
