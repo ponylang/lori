@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 
+- Add timer ASIO subscription failure callbacks ([PR #281](https://github.com/ponylang/lori/pull/281))
 
 ### Added
 
