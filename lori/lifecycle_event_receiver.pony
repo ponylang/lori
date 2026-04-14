@@ -102,6 +102,28 @@ trait ServerLifecycleEventReceiver
     The timer automatically re-arms after each firing. Call
     `idle_timeout(None)` to disable it. The application decides what action
     to take — close the connection, send a keepalive, log a warning, etc.
+
+    If the idle timer's ASIO event subscription fails,
+    `_on_idle_timer_failure()` is delivered instead of this callback.
+    """
+    None
+
+  fun ref _on_idle_timer_failure() =>
+    """
+    Called when the idle timer's ASIO event subscription fails. This is
+    typically caused by the kernel returning an error (e.g. `ENOMEM`) from
+    `kevent` or `epoll_ctl` when the runtime tries to register the timer.
+
+    Before this callback fires, the idle timer has already been cancelled:
+    the ASIO event is unsubscribed and the configured timeout duration is
+    cleared. Idle timeout detection is no longer active on this connection.
+
+    The connection itself is unaffected and continues running. The
+    application decides how to recover — for example, call
+    `idle_timeout(duration)` from within this callback to re-arm, or
+    `close()` the connection. A re-armed timer can itself fail
+    asynchronously under sustained pressure; if the new subscription also
+    errors, this callback fires again.
     """
     None
 
@@ -113,6 +135,36 @@ trait ServerLifecycleEventReceiver
     Fires once per `set_timer()` call. The timer is consumed before the
     callback, so it is safe to call `set_timer()` from within `_on_timer()`
     to re-arm. No automatic re-arming occurs.
+
+    If the user timer's ASIO event subscription fails, `_on_timer_failure()`
+    is delivered instead of this callback.
+    """
+    None
+
+  fun ref _on_timer_failure() =>
+    """
+    Called when the user timer's ASIO event subscription fails. This is
+    typically caused by the kernel returning an error (e.g. `ENOMEM`) from
+    `kevent` or `epoll_ctl` when the runtime tries to register the timer.
+
+    User timers have two error paths:
+
+    - Synchronous: `set_timer()` returns a `SetTimerError`
+      (`SetTimerNotOpen` or `SetTimerAlreadyActive`) when preconditions
+      prevent the timer from being created at all.
+    - Asynchronous: this callback fires when `set_timer()` succeeded but
+      the ASIO event subscription later failed.
+
+    Before this callback fires, the user timer has already been cancelled:
+    the ASIO event is unsubscribed and the timer token is cleared. The
+    token that the application was waiting on is no longer valid.
+
+    The connection itself is unaffected and continues running. The
+    application decides how to recover — for example, call
+    `set_timer(duration)` from within this callback to create a new timer,
+    or `close()` the connection. A new timer can itself fail
+    asynchronously under sustained pressure; if the new subscription also
+    errors, this callback fires again.
     """
     None
 
@@ -234,6 +286,28 @@ trait ClientLifecycleEventReceiver
     The timer automatically re-arms after each firing. Call
     `idle_timeout(None)` to disable it. The application decides what action
     to take — close the connection, send a keepalive, log a warning, etc.
+
+    If the idle timer's ASIO event subscription fails,
+    `_on_idle_timer_failure()` is delivered instead of this callback.
+    """
+    None
+
+  fun ref _on_idle_timer_failure() =>
+    """
+    Called when the idle timer's ASIO event subscription fails. This is
+    typically caused by the kernel returning an error (e.g. `ENOMEM`) from
+    `kevent` or `epoll_ctl` when the runtime tries to register the timer.
+
+    Before this callback fires, the idle timer has already been cancelled:
+    the ASIO event is unsubscribed and the configured timeout duration is
+    cleared. Idle timeout detection is no longer active on this connection.
+
+    The connection itself is unaffected and continues running. The
+    application decides how to recover — for example, call
+    `idle_timeout(duration)` from within this callback to re-arm, or
+    `close()` the connection. A re-armed timer can itself fail
+    asynchronously under sustained pressure; if the new subscription also
+    errors, this callback fires again.
     """
     None
 
@@ -245,6 +319,36 @@ trait ClientLifecycleEventReceiver
     Fires once per `set_timer()` call. The timer is consumed before the
     callback, so it is safe to call `set_timer()` from within `_on_timer()`
     to re-arm. No automatic re-arming occurs.
+
+    If the user timer's ASIO event subscription fails, `_on_timer_failure()`
+    is delivered instead of this callback.
+    """
+    None
+
+  fun ref _on_timer_failure() =>
+    """
+    Called when the user timer's ASIO event subscription fails. This is
+    typically caused by the kernel returning an error (e.g. `ENOMEM`) from
+    `kevent` or `epoll_ctl` when the runtime tries to register the timer.
+
+    User timers have two error paths:
+
+    - Synchronous: `set_timer()` returns a `SetTimerError`
+      (`SetTimerNotOpen` or `SetTimerAlreadyActive`) when preconditions
+      prevent the timer from being created at all.
+    - Asynchronous: this callback fires when `set_timer()` succeeded but
+      the ASIO event subscription later failed.
+
+    Before this callback fires, the user timer has already been cancelled:
+    the ASIO event is unsubscribed and the timer token is cleared. The
+    token that the application was waiting on is no longer valid.
+
+    The connection itself is unaffected and continues running. The
+    application decides how to recover — for example, call
+    `set_timer(duration)` from within this callback to create a new timer,
+    or `close()` the connection. A new timer can itself fail
+    asynchronously under sustained pressure; if the new subscription also
+    errors, this callback fires again.
     """
     None
 

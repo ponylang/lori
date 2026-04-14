@@ -71,5 +71,8 @@ actor IdleTimeoutEchoer
     _out.print("Connection idle for 10 seconds. Closing.")
     _tcp_connection.close()
 
+  fun ref _on_idle_timer_failure() =>
+    _out.print("Idle timer subscription failed. Idle detection disabled.")
+
   fun ref _on_closed() =>
     _out.print("Connection closed.")
