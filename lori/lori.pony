@@ -282,6 +282,11 @@ The timer resets on every successful `send()` and every received data event.
 It automatically re-arms after each firing — the application decides what to
 do (close, send a keepalive, log, etc.). Call `idle_timeout(None)` to disable.
 
+If the idle timer's ASIO event subscription fails (e.g. under kernel memory
+pressure), the timer is cancelled and `_on_idle_timer_failure()` fires instead
+of `_on_idle_timeout()`. Override it to log, close, or retry
+`idle_timeout(duration)` — the default is a silent no-op.
+
 Idle timeout uses a per-connection ASIO timer event, requiring no extra actors
 or shared state. This avoids the muting-livelock problem that occurs with
 shared `Timers` actors under backpressure.
@@ -348,6 +353,14 @@ calling `set_timer()` while one is active returns
 [`SetTimerAlreadyActive`](/lori/lori-SetTimerAlreadyActive/). Cancel with
 `cancel_timer(token)` before setting a new one. The timer is cancelled by
 `hard_close()` but survives `close()`.
+
+Timers have two error paths. `set_timer()` returns a
+[`SetTimerError`](/lori/lori-SetTimerError/) synchronously when preconditions
+prevent the timer from being created. If `set_timer()` succeeded but the
+ASIO event subscription later fails (e.g. under kernel memory pressure),
+the timer is cancelled and `_on_timer_failure()` fires instead of
+`_on_timer()`. The token the application was waiting on is no longer
+valid; override the callback to retry or close as appropriate.
 
 ## Read Yielding
 

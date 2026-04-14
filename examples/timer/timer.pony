@@ -114,6 +114,10 @@ actor QueryTimeoutClient
       _tcp_connection.close()
     end
 
+  fun ref _on_timer_failure() =>
+    _query_timer = None
+    _out.print("[client] Query timer subscription failed. No timeout armed.")
+
   fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     _out.print("[client] Connection failed.")
 

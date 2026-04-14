@@ -356,6 +356,11 @@ class TCPConnection
     is a transport-level probe that detects dead peers. Idle timeout is
     application-level inactivity detection — it fires whether or not the
     peer is alive.
+
+    If the idle timer's ASIO event subscription fails asynchronously
+    (e.g. `ENOMEM` from `kevent`/`epoll_ctl`), the timer is cancelled and
+    `_on_idle_timer_failure()` is dispatched to the lifecycle event
+    receiver.
     """
     _state.idle_timeout(this, duration)
 
@@ -380,6 +385,13 @@ class TCPConnection
 
     The timer survives `close()` (graceful shutdown) but is cancelled by
     `hard_close()`.
+
+    User timers have two error paths. This method returns a
+    `SetTimerError` synchronously when preconditions prevent the timer
+    from being created (see the return type). When creation succeeds but
+    the ASIO event subscription later fails (e.g. `ENOMEM` from
+    `kevent`/`epoll_ctl`), `_on_timer_failure()` is dispatched to the
+    lifecycle event receiver.
     """
     _state.set_timer(this, duration)
 
@@ -1477,6 +1489,9 @@ class TCPConnection
   fun ref _do_set_timer(duration: TimerDuration):
     (TimerToken | SetTimerError)
   =>
+    // COUPLING: `_fire_user_timer_failure` relies on `_cancel_user_timer`
+    // clearing `_user_timer_token` so that `_on_timer_failure` callbacks can
+    // call `set_timer(duration)` without hitting this guard.
     if _user_timer_token isnt None then return SetTimerAlreadyActive end
 
     let nsec = duration() * 1_000_000
@@ -1499,6 +1514,11 @@ class TCPConnection
     Idempotent — if a timer already exists, this is a no-op. Prevents ASIO
     timer event leaks from double-arm scenarios.
     """
+    // COUPLING: `_fire_idle_timer_failure` relies on `_cancel_idle_timer`
+    // clearing both `_idle_timeout_nsec` and `_timer_event` so that
+    // `_on_idle_timer_failure` callbacks can call `idle_timeout(duration)`
+    // (which runs through `_do_idle_timeout` → `_arm_idle_timer`) without
+    // hitting these guards.
     if _idle_timeout_nsec == 0 then return end
     if not _timer_event.is_null() then return end
     match \exhaustive\ _enclosing
@@ -1525,6 +1545,10 @@ class TCPConnection
     matches `_timer_event` and is destroyed by `_event_notify`'s else
     branch disposable check.
     """
+    // COUPLING: `_fire_idle_timer_failure` depends on this clearing both
+    // `_timer_event` and `_idle_timeout_nsec` so that `_on_idle_timer_failure`
+    // callbacks can re-arm via `idle_timeout(duration)` without tripping
+    // `_arm_idle_timer`'s idempotency guards.
     if not _timer_event.is_null() then
       PonyAsio.unsubscribe(_timer_event)
       _timer_event = AsioEvent.none()
@@ -1545,6 +1569,22 @@ class TCPConnection
     end
     if is_open() and (_idle_timeout_nsec > 0) then
       _reset_idle_timer()
+    end
+
+  fun ref _fire_idle_timer_failure() =>
+    """
+    The idle timer's ASIO subscription failed. Cancel the timer (which
+    unsubscribes the event and zeroes `_idle_timeout_nsec`), then dispatch
+    `_on_idle_timer_failure` to the lifecycle event receiver. Cancelling
+    before dispatch means the callback can call `idle_timeout(duration)`
+    to re-arm without hitting the idempotency guard in `_arm_idle_timer`.
+    """
+    _cancel_idle_timer()
+    match \exhaustive\ _lifecycle_event_receiver
+    | let s: EitherLifecycleEventReceiver ref =>
+      s._on_idle_timer_failure()
+    | None =>
+      _Unreachable()
     end
 
   fun ref _arm_connect_timer() =>
@@ -1627,10 +1667,30 @@ class TCPConnection
     longer match `_user_timer_event` and are destroyed by
     `_event_notify`'s else branch disposable check.
     """
+    // COUPLING: `_fire_user_timer_failure` depends on this clearing
+    // `_user_timer_token` so that `_on_timer_failure` callbacks can call
+    // `set_timer(duration)` without hitting the `SetTimerAlreadyActive`
+    // guard in `_do_set_timer`.
     if not _user_timer_event.is_null() then
       PonyAsio.unsubscribe(_user_timer_event)
       _user_timer_event = AsioEvent.none()
       _user_timer_token = None
+    end
+
+  fun ref _fire_user_timer_failure() =>
+    """
+    The user timer's ASIO subscription failed. Cancel the timer (which
+    unsubscribes the event and clears `_user_timer_token`), then dispatch
+    `_on_timer_failure` to the lifecycle event receiver. Cancelling before
+    dispatch means the callback can call `set_timer(duration)` to create
+    a new timer without hitting the `SetTimerAlreadyActive` guard.
+    """
+    _cancel_user_timer()
+    match \exhaustive\ _lifecycle_event_receiver
+    | let s: EitherLifecycleEventReceiver ref =>
+      s._on_timer_failure()
+    | None =>
+      _Unreachable()
     end
 
   fun ref _ssl_flush_sends() =>
@@ -1814,6 +1874,13 @@ class TCPConnection
     // before `event is _event`. The else branch checks disposable first
     // (stale timer disposables, straggler disposables), otherwise dispatches
     // to foreign_event for Happy Eyeballs stragglers.
+    //
+    // Timer branches (connect, idle, user) don't call
+    // `_check_shutdown_complete` after their dispatches. Timer callbacks
+    // can transition state (e.g. `close()` → `_Closing`) but cannot set
+    // `_shutdown_peer` (that requires a zero-byte socket read), so the
+    // graceful-shutdown check would be a no-op. Only `own_event` dispatches
+    // (below) can trigger both flags.
     if event is _connect_timer_event then
       if AsioEvent.errored(flags) then
         _fire_connect_timer_error()
@@ -1822,13 +1889,13 @@ class TCPConnection
       end
     elseif event is _timer_event then
       if AsioEvent.errored(flags) then
-        _cancel_idle_timer()
+        _fire_idle_timer_failure()
       else
         _fire_idle_timeout()
       end
     elseif event is _user_timer_event then
       if AsioEvent.errored(flags) then
-        _cancel_user_timer()
+        _fire_user_timer_failure()
       else
         _fire_user_timer()
       end

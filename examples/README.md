@@ -22,7 +22,8 @@ Length-prefixed message framing with `buffer_until()`. Each message has a 4-byte
 
 Server that closes connections after 10 seconds of inactivity. Demonstrates
 `idle_timeout()` for setting a per-connection timer and `_on_idle_timeout()`
-for handling the expiration — no extra actors or shared timers needed.
+for handling the expiration — no extra actors or shared timers needed. Also
+shows `_on_idle_timer_failure()` for handling ASIO subscription failures.
 
 ## [connection-timeout](connection-timeout/)
 
@@ -30,7 +31,7 @@ Client that connects to a non-routable address (192.0.2.1, RFC 5737 TEST-NET-1) 
 
 ## [timer](timer/)
 
-Query-timeout simulation using `set_timer()`. A client connects, sends a "query", and sets a 3-second timer. The server never responds. When the timer fires, `_on_timer()` logs the timeout and closes the connection. Shows how `set_timer()` fires unconditionally regardless of I/O activity, unlike `idle_timeout()` which resets on every send/receive.
+Query-timeout simulation using `set_timer()`. A client connects, sends a "query", and sets a 3-second timer. The server never responds. When the timer fires, `_on_timer()` logs the timeout and closes the connection. Shows how `set_timer()` fires unconditionally regardless of I/O activity, unlike `idle_timeout()` which resets on every send/receive. Also shows `_on_timer_failure()` for handling ASIO subscription failures.
 
 ## [backpressure](backpressure/)
 

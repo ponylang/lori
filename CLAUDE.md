@@ -100,7 +100,7 @@ Lori separates connection logic (class) from actor scheduling (trait):
 
 1. **`TCPConnection`** (class) — All TCP state and I/O logic including SSL. Created with `TCPConnection.client(...)`, `TCPConnection.server(...)`, `TCPConnection.ssl_client(...)`, or `TCPConnection.ssl_server(...)`. All four real constructors accept an optional `read_buffer_size: ReadBufferSize = DefaultReadBufferSize()` parameter that sets both the initial buffer allocation and the shrink-back minimum. Client and SSL client constructors also accept an optional `ip_version: IPVersion = DualStack` parameter to restrict to IPv4 (`IP4`) or IPv6 (`IP6`), and an optional `connection_timeout: (ConnectionTimeout | None) = None` parameter to bound the connect-to-ready phase. Existing plaintext connections can be upgraded to TLS via `start_tls()`. Not an actor itself.
 2. **`TCPConnectionActor`** (trait) — The actor trait users implement. Requires `fun ref _connection(): TCPConnection`. Provides behaviors that delegate to the TCPConnection: `_event_notify`, `_read_again`, `dispose`, etc.
-3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure(reason)`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure(reason)`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_start_failure(reason)`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure(reason)`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_throttled`/`_on_unthrottled`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure`, `_on_idle_timeout`, `_on_timer`.
+3. **Lifecycle event receivers** — `ClientLifecycleEventReceiver` (callbacks: `_on_connected`, `_on_connecting`, `_on_connection_failure(reason)`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure(reason)`, etc.) and `ServerLifecycleEventReceiver` (callbacks: `_on_started`, `_on_start_failure(reason)`, `_on_received`, `_on_closed`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure(reason)`, etc.). Both share common callbacks like `_on_received`, `_on_closed`, `_on_throttled`/`_on_unthrottled`, `_on_sent`, `_on_send_failed`, `_on_tls_ready`, `_on_tls_failure`, `_on_idle_timeout`, `_on_idle_timer_failure`, `_on_timer`, `_on_timer_failure`.
 
 ### How to implement a server
 
@@ -289,7 +289,7 @@ Lifecycle:
 - **Arm points**: plaintext branch of `_establish_connection` and `_complete_server_initialization`; `_SSLHandshaking.ssl_handshake_complete()` for initial SSL connections. `_arm_idle_timer()` is a no-op when `_idle_timeout_nsec == 0` or when a timer already exists (idempotency guard). Also called from `_do_idle_timeout()` when setting a timeout on an established connection with no existing timer. `idle_timeout()` dispatches through the state machine — `_Open` and `_TLSUpgrading` delegate to `_do_idle_timeout()` (stores nsec and manages the timer), while all other states delegate to `_store_idle_timeout()` (stores nsec only).
 - **Reset points**: `_read()` (POSIX, once per read event), `_read_completed()` (Windows, once per read event), `send()` success path (after the SSL/plaintext write block).
 - **Cancel point**: `_hard_close_connecting()` and `_hard_close_cleanup()` (shared by all connected hard-close paths: `_hard_close_connected`, `_hard_close_ssl_handshaking`, `_hard_close_tls_upgrading`).
-- **Event dispatch**: Identity check `event is _timer_event` in `_event_notify`'s `if/elseif/else` chain, before the `event is _event` check. `_timer_event` is cleared synchronously in `_cancel_idle_timer()`, so stale disposable events for cancelled timers fall through to the `else` branch where the disposable check destroys them.
+- **Event dispatch**: Identity check `event is _timer_event` in `_event_notify`'s `if/elseif/else` chain, before the `event is _event` check. Checks `AsioEvent.errored(flags)` first — if errored, calls `_fire_idle_timer_failure()` which cancels the timer via `_cancel_idle_timer()` (unsubscribing the event and zeroing `_idle_timeout_nsec`) before dispatching `_on_idle_timer_failure`. Cancelling before dispatch lets the callback call `idle_timeout(duration)` to re-arm without hitting the `_arm_idle_timer` idempotency guard. `_timer_event` is cleared synchronously in `_cancel_idle_timer()`, so stale disposable events for cancelled timers fall through to the `else` branch where the disposable check destroys them.
 
 ### Connection timeout
 
@@ -320,11 +320,16 @@ API:
 - `set_timer(duration: TimerDuration): (TimerToken | SetTimerError)` — creates a one-shot timer. Dispatches through the state machine: `_Open` and `_TLSUpgrading` delegate to `_do_set_timer()`, all other states return `SetTimerNotOpen`. Returns `SetTimerAlreadyActive` if a timer is already active.
 - `cancel_timer(token: TimerToken)` — cancels the timer if the token matches. No-op for stale/wrong tokens. No connection state check (can cancel during `_Closing`).
 
+Error paths:
+- **Synchronous**: `set_timer()` returns a `SetTimerError` when preconditions fail — `SetTimerNotOpen` (any non-`_Open`/`_TLSUpgrading` state) or `SetTimerAlreadyActive` (a timer is already armed).
+- **Asynchronous**: `_on_timer_failure` fires when `set_timer()` succeeded but the ASIO event subscription later failed (e.g. `ENOMEM` from `kevent`/`epoll_ctl`). The timer is cancelled before dispatch, so the callback can call `set_timer()` to create a new timer without hitting `SetTimerAlreadyActive`.
+
 Internals:
 - `_fire_user_timer()` — clears token and event before the callback, then dispatches `_on_timer(token)`. Clearing before dispatch prevents aliasing when the callback calls `set_timer()`.
+- `_fire_user_timer_failure()` — cancels the timer via `_cancel_user_timer()` (unsubscribing the event and clearing the token) before dispatching `_on_timer_failure`. Cancel-before-dispatch mirrors `_fire_user_timer` and enables immediate re-arm from the callback.
 - `_cancel_user_timer()` — cleanup path for `hard_close`. Unsubscribes and clears without firing the callback.
 
-Event dispatch: identity check `event is _user_timer_event` in `_event_notify`'s `if/elseif/else` chain, after the idle timer check and before the `event is _event` check.
+Event dispatch: identity check `event is _user_timer_event` in `_event_notify`'s `if/elseif/else` chain, after the idle timer check and before the `event is _event` check. Checks `AsioEvent.errored(flags)` first — if errored, calls `_fire_user_timer_failure()` instead of `_fire_user_timer()`.
 
 Cleanup: `_cancel_user_timer()` called from `_hard_close_connecting()` (defensive) and `_hard_close_cleanup()` (shared by all connected hard-close paths). Timers survive `close()` (graceful shutdown) but are cancelled by `hard_close()`.
 
