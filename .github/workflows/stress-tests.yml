@@ -13,7 +13,7 @@ jobs:
 
     name: Linux
     container:
-      image: ghcr.io/ponylang/shared-docker-ci-standard-builder-with-libressl-4.2.0:release
+      image: ghcr.io/ponylang/shared-docker-ci-standard-builder-with-libressl-4.2.1:release
     steps:
       - name: Checkout
         uses: actions/checkout@v6.0.2
