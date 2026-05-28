@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Changed
 
+- Require ponyc 0.64.0 or later ([PR #289](https://github.com/ponylang/lori/pull/289))
 
 ## [0.14.1] - 2026-04-14
 
