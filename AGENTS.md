@@ -79,6 +79,7 @@ lori/
   ossocketopt.pony          -- OSSockOpt: socket option constants (large, generated)
   _connection_state.pony    -- _ConnectionState trait and lifecycle state classes (including _SSLHandshaking, _TLSUpgrading)
   _panics.pony              -- _Unreachable primitive for impossible states
+  socket_result.pony        -- SocketResult primitives + decoder for pony_os_* return values (mirrors ponyc internal type)
   _test.pony                -- Test runner (Main only)
   _test_connection.pony     -- Connection basics, ping-pong, buffer_until, listener tests
   _test_backpressure_drain.pony -- Backpressure drain + unmute read recovery test
@@ -285,7 +286,7 @@ The write path uses an enqueue-then-flush pattern:
 2. Platform flush: `_send_pending_writes()` (POSIX) or `_iocp_submit_pending()` (Windows). Both call `PonyTCP.writev`, which builds the platform-specific IOV array internally.
 3. `_manage_pending_buffer(bytes_sent)` walks `_pending_data`, trims fully-sent entries, and updates `_pending_first_buffer_offset`. Shared across both platforms.
 
-`PonyTCP.writev` takes `Array[ByteSeq] box` and builds `iovec` (POSIX) or `WSABUF` (Windows) arrays internally, hiding the platform-specific tuple layout. Returns bytes sent (POSIX) or buffer count submitted (Windows).
+`PonyTCP.writev` takes `Array[ByteSeq] box` and builds `iovec` (POSIX) or `WSABUF` (Windows) arrays internally, hiding the platform-specific tuple layout. Returns `(SocketResult, USize)`: a tri-state result (`SocketResultOk`, `SocketResultRetry`, `SocketResultError`) plus a count — bytes sent on POSIX, buffer count submitted on Windows. `SocketResultRetry` signals backpressure (EWOULDBLOCK); `SocketResultError` signals an unrecoverable error or peer-close.
 
 Design: Discussion #150.
 

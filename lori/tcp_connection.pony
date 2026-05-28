@@ -835,8 +835,9 @@ class TCPConnection
     end
 
     // On POSIX, _has_pending_writes() checks whether any data remains
-    // unsent (writev is synchronous — returns bytes written or EWOULDBLOCK).
-    // On Windows IOCP, submitted-but-unconfirmed writes are already in the
+    // unsent (writev is synchronous — returns OK with a byte count,
+    // Retry on EWOULDBLOCK, or Error). On Windows IOCP,
+    // submitted-but-unconfirmed writes are already in the
     // kernel's send buffer, so only un-submitted entries block TLS upgrade.
     // After send("OK") + _iocp_submit_pending(), _pending_writev_total > 0
     // but _pending_data.size() == _pending_sent — the data is in the kernel
@@ -1050,18 +1051,23 @@ class TCPConnection
               total
             end
 
-          // writev syscall — returns bytes sent, 0 on EWOULDBLOCK
-          let len = PonyTCP.writev(_event, _pending_data,
+          // writev syscall — three-state result with bytes-sent count
+          match \exhaustive\ PonyTCP.writev(_event, _pending_data,
             0, num_to_send, _pending_first_buffer_offset)?
-
-          if len < bytes_to_send then
-            _manage_pending_buffer(len)
+          | (SocketResultOk, let len: USize) =>
+            if len < bytes_to_send then
+              _manage_pending_buffer(len)
+              _apply_backpressure()
+            else
+              _manage_pending_buffer(bytes_to_send)
+            end
+          | (SocketResultRetry, _) =>
             _apply_backpressure()
-          else
-            _manage_pending_buffer(bytes_to_send)
+          | (SocketResultError, _) => error
           end
         else
-          // writev error — non-graceful shutdown
+          // writev error or unreachable Array.apply bounds — non-graceful
+          // shutdown
           hard_close()
           return
         end
@@ -1100,13 +1106,14 @@ class TCPConnection
       if num_to_send == 0 then return end
 
       try
-        let len = PonyTCP.writev(_event, _pending_data,
+        match \exhaustive\ PonyTCP.writev(_event, _pending_data,
           0, num_to_send, _pending_first_buffer_offset)?
-
-        if len == 0 then
-          _apply_backpressure()
-        else
+        | (SocketResultOk, let len: USize) =>
+          // On Windows IOCP, the count is wsacnt (buffers submitted), not
+          // bytes. ABI guarantees count > 0 since num_to_send > 0.
           _pending_sent = len
+        | (SocketResultRetry, _) => _apply_backpressure()
+        | (SocketResultError, _) => hard_close()
         end
       else
         hard_close()
@@ -1225,19 +1232,19 @@ class TCPConnection
 
             _resize_read_buffer_if_needed()
 
-            let bytes_read = PonyTCP.receive(_event,
+            match \exhaustive\ PonyTCP.receive(_event,
               _read_buffer.cpointer(_bytes_in_read_buffer),
-              _read_buffer.size() - _bytes_in_read_buffer)?
-
-            if bytes_read == 0 then
+              _read_buffer.size() - _bytes_in_read_buffer)
+            | (SocketResultOk, let bytes_read: USize) =>
+              _bytes_in_read_buffer = _bytes_in_read_buffer + bytes_read
+              total_bytes_read = total_bytes_read + bytes_read
+            | (SocketResultRetry, _) =>
               // would block. try again later
               _set_unreadable()
               PonyAsio.resubscribe_read(_event)
               return
+            | (SocketResultError, _) => error
             end
-
-            _bytes_in_read_buffer = _bytes_in_read_buffer + bytes_read
-            total_bytes_read = total_bytes_read + bytes_read
           end
         else
           // The socket has been closed from the other side.
@@ -1252,12 +1259,14 @@ class TCPConnection
 
   fun ref _iocp_read() =>
     ifdef windows then
-      try
-        PonyTCP.receive(_event,
-          _read_buffer.cpointer(_bytes_in_read_buffer),
-          _read_buffer.size() - _bytes_in_read_buffer)?
-      else
-        close()
+      // Windows IOCP `pony_os_recv` is binary (queued or failed) — Retry is
+      // unreachable per the ABI but `\exhaustive\` requires the arm.
+      match \exhaustive\ PonyTCP.receive(_event,
+        _read_buffer.cpointer(_bytes_in_read_buffer),
+        _read_buffer.size() - _bytes_in_read_buffer)
+      | (SocketResultOk, _) => None
+      | (SocketResultRetry, _) => close()
+      | (SocketResultError, _) => close()
       end
     else
       _Unreachable()

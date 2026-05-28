@@ -40,7 +40,7 @@ jobs:
     needs:
       - pre-artefact-creation
     container:
-      image: ghcr.io/ponylang/library-documentation-action-v2:release
+      image: ghcr.io/ponylang/library-documentation-action-v2:nightly
     steps:
       - name: Checkout
         uses: actions/checkout@v6.0.2
