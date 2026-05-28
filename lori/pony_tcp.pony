@@ -25,21 +25,25 @@ use @pony_os_listen_tcp6[AsioEventID](the_actor: AsioEventNotify,
   host: Pointer[U8] tag,
   port: Pointer[U8] tag)
 use @pony_os_peername[Bool](fd: U32, ip: net.NetAddress ref)
-use @pony_os_recv[USize](event: AsioEventID,
+use @pony_os_recv[U8](event: AsioEventID,
   buffer: Pointer[U8] tag,
-  offset: USize) ?
-use @pony_os_send[USize](event: AsioEventID,
+  size: USize,
+  count_out: Pointer[USize])
+use @pony_os_send[U8](event: AsioEventID,
   buffer: Pointer[U8] tag,
-  from_offset: USize) ?
+  size: USize,
+  count_out: Pointer[USize])
 use @pony_os_socket_close[None](fd: U32)
 use @pony_os_socket_shutdown[None](fd: U32)
 use @pony_os_sockname[Bool](fd: U32, ip: net.NetAddress ref)
-use @pony_os_writev[USize](ev: AsioEventID,
+use @pony_os_writev[U8](ev: AsioEventID,
   wsa: Pointer[(USize, Pointer[U8] tag)] tag,
-  wsacnt: I32) ? if windows
-use @pony_os_writev[USize](ev: AsioEventID,
+  wsacnt: I32,
+  count_out: Pointer[USize]) if windows
+use @pony_os_writev[U8](ev: AsioEventID,
   iov: Pointer[(Pointer[U8] tag, USize)] tag,
-  iovcnt: I32) ? if not windows
+  iovcnt: I32,
+  count_out: Pointer[USize]) if not windows
 use @pony_os_writev_max[I32]()
 
 use net = "net"
@@ -103,19 +107,38 @@ primitive PonyTCP
 
   fun receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
-    offset: USize)
-    : USize ?
+    size: USize)
+    : (SocketResult, USize)
   =>
-    @pony_os_recv(event, buffer, offset)?
+    """
+    Receive up to `size` bytes into `buffer`. Returns the tri-state socket
+    result plus the number of bytes received on `SocketResultOk`. On
+    Windows IOCP, `SocketResultOk` always returns a count of 0 — the
+    actual byte count arrives asynchronously via the read-completion
+    callback.
+    """
+    var count: USize = 0
+    let result = SocketResultDecoder(
+      @pony_os_recv(event, buffer, size, addressof count))
+    (result, count)
 
   fun send(event: AsioEventID,
     buffer: ByteSeq,
     from_offset: USize = 0)
-    : USize ?
+    : (SocketResult, USize)
   =>
-    @pony_os_send(event,
-      buffer.cpointer(from_offset),
-      buffer.size() - from_offset)?
+    """
+    Send bytes from `buffer` starting at `from_offset`. Returns the
+    tri-state socket result plus the number of bytes accepted by the OS
+    (POSIX) or queued for IOCP (Windows) on `SocketResultOk`.
+    """
+    var count: USize = 0
+    let result = SocketResultDecoder(
+      @pony_os_send(event,
+        buffer.cpointer(from_offset),
+        buffer.size() - from_offset,
+        addressof count))
+    (result, count)
 
   fun shutdown(fd: U32) =>
     @pony_os_socket_shutdown(fd)
@@ -125,7 +148,7 @@ primitive PonyTCP
 
   fun writev(event: AsioEventID, data: Array[ByteSeq] box,
     from: USize, count: USize,
-    first_buffer_byte_offset: USize = 0): USize ?
+    first_buffer_byte_offset: USize = 0): (SocketResult, USize) ?
   =>
     """
     Send `count` buffers from `data` starting at index `from` via writev.
@@ -135,37 +158,45 @@ primitive PonyTCP
     `first_buffer_byte_offset` skips bytes in `data(from)` for partial
     write resume.
 
-    Returns bytes sent (POSIX) or buffer count submitted (Windows).
+    Returns the tri-state socket result plus a count: bytes sent on POSIX,
+    buffer count submitted on Windows.
     """
-    ifdef windows then
-      let wsa = Array[(USize, Pointer[U8] tag)](count)
-      var i = from
-      while i < (from + count) do
-        let entry = data(i)?
-        if (i == from) and (first_buffer_byte_offset > 0) then
-          wsa.push((entry.size() - first_buffer_byte_offset,
-            entry.cpointer(first_buffer_byte_offset)))
-        else
-          wsa.push((entry.size(), entry.cpointer()))
+    var bytes_or_buffers: USize = 0
+    let result =
+      ifdef windows then
+        let wsa = Array[(USize, Pointer[U8] tag)](count)
+        var i = from
+        while i < (from + count) do
+          let entry = data(i)?
+          if (i == from) and (first_buffer_byte_offset > 0) then
+            wsa.push((entry.size() - first_buffer_byte_offset,
+              entry.cpointer(first_buffer_byte_offset)))
+          else
+            wsa.push((entry.size(), entry.cpointer()))
+          end
+          i = i + 1
         end
-        i = i + 1
-      end
-      @pony_os_writev(event, wsa.cpointer(), count.i32())?
-    else
-      let iov = Array[(Pointer[U8] tag, USize)](count)
-      var i = from
-      while i < (from + count) do
-        let entry = data(i)?
-        if (i == from) and (first_buffer_byte_offset > 0) then
-          iov.push((entry.cpointer(first_buffer_byte_offset),
-            entry.size() - first_buffer_byte_offset))
-        else
-          iov.push((entry.cpointer(), entry.size()))
+        SocketResultDecoder(
+          @pony_os_writev(event, wsa.cpointer(), count.i32(),
+            addressof bytes_or_buffers))
+      else
+        let iov = Array[(Pointer[U8] tag, USize)](count)
+        var i = from
+        while i < (from + count) do
+          let entry = data(i)?
+          if (i == from) and (first_buffer_byte_offset > 0) then
+            iov.push((entry.cpointer(first_buffer_byte_offset),
+              entry.size() - first_buffer_byte_offset))
+          else
+            iov.push((entry.cpointer(), entry.size()))
+          end
+          i = i + 1
         end
-        i = i + 1
+        SocketResultDecoder(
+          @pony_os_writev(event, iov.cpointer(), count.i32(),
+            addressof bytes_or_buffers))
       end
-      @pony_os_writev(event, iov.cpointer(), count.i32())?
-    end
+    (result, bytes_or_buffers)
 
   fun writev_max(): I32 =>
     """
