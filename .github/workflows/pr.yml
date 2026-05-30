@@ -21,7 +21,7 @@ jobs:
     name: Linux
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/ponylang/shared-docker-ci-standard-builder-with-libressl-4.2.1:nightly
+      image: ghcr.io/ponylang/shared-docker-ci-standard-builder-with-libressl-4.2.1:release
     steps:
       - uses: actions/checkout@v6.0.2
       - name: config=debug
@@ -37,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
       - name: install pony tools
-        run: bash .ci-scripts/macOS-install-nightly-pony-tools.bash
+        run: bash .ci-scripts/macOS-install-release-pony-tools.bash
       - name: configure networking
         run: bash .ci-scripts/macOS-configure-networking.bash
       - name: config=debug
@@ -62,7 +62,7 @@ jobs:
       - name: Tune Windows Networking
         run: .ci-scripts\windows-configure-networking.ps1
       - name: Install Pony tools
-        run: .ci-scripts\windows-install-pony-tools.ps1 nightlies
+        run: .ci-scripts\windows-install-pony-tools.ps1 releases
       - name: Cache LibreSSL libs
         id: cache-libressl
         uses: actions/cache@v5.0.3
