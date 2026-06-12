@@ -1,6 +1,5 @@
 config ?= release
 static ?= false
-linker ?=
 
 PACKAGE := lori
 GET_DEPENDENCIES_WITH := corral fetch
@@ -36,10 +35,6 @@ endif
 
 ifeq ($(static),true)
 	LINKER += --static
-endif
-
-ifneq ($(linker),)
-	LINKER += --link-ldcmd=$(linker)
 endif
 
 ifeq (,$(filter $(MAKECMDGOALS),clean docs realclean TAGS))
