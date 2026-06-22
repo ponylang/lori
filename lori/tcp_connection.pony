@@ -1795,19 +1795,32 @@ class TCPConnection
     else
       // Runs on every write-only event (EPOLLOUT, no readable flag).
       // EPOLLONESHOT disarms the whole fd on any event, dropping pending read
-      // interest. When the write fully drains, backpressure isn't re-applied,
-      // so neither read re-arm path runs (_apply_backpressure's resubscribe
-      // and _read's EAGAIN resubscribe are both skipped) and the connection
-      // goes permanently read-deaf (issue #294). Re-arming reads here covers
-      // that case; on a partial drain — where _apply_backpressure already
-      // re-armed reads — this is a harmless redundant resubscribe.
+      // interest. The write branch above already ran _set_writeable(), which
+      // releases backpressure. So on a full drain _apply_backpressure() is
+      // never re-entered, and neither read re-arm path runs (its resubscribe
+      // and _read's EAGAIN resubscribe are both skipped), leaving the
+      // connection permanently read-deaf (issue #294). Re-arming reads here
+      // covers that. On a partial drain _apply_backpressure() does re-enter,
+      // and because PonyAsio.resubscribe re-arms whichever directions are
+      // not-ready (the read/write names signal intent, not effect), its write
+      // resubscribe also re-arms reads, so the resubscribe here is redundant
+      // but harmless.
       //
       // Skip when _event is disposable: _send_pending_writes() above can
       // hard_close() on a write error, which unsubscribes _event, and
-      // resubscribing a disposed event asserts in debug builds. We check
-      // disposability rather than is_closed() because is_closed() is also
-      // true during _Closing, where the socket is still open and we must
-      // keep reading to detect the peer FIN.
+      // resubscribing a disposed event asserts in debug builds.
+      //
+      // The guard is deliberately disposability, NOT is_closed() or is_open().
+      // This branch is shared by _Open, _Closing, _SSLHandshaking, and
+      // _TLSUpgrading. During _Closing the socket's read side is still open and
+      // we must keep re-arming reads to detect the peer FIN, yet is_closed() is
+      // true there — an is_closed() guard would skip the re-arm and hang the
+      // close. Likewise is_open() is false during _SSLHandshaking, where reads
+      // must stay armed to finish the handshake. Only _Open is exercised by a
+      // test (WriteOnlyEventReadRecovery); the write-only full-drain can't be
+      // triggered deterministically in the other three states, so neither the
+      // compiler nor the suite will catch a regression here. Do not weaken this
+      // guard. See issue #296.
       ifdef posix then
         if not PonyAsio.get_disposable(_event) then
           PonyAsio.resubscribe_read(_event)
