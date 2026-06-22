@@ -83,3 +83,4 @@ actor \nodoc\ Main is TestList
     test(_TestStartTLSAuthFailure)
     test(_TestSetTimerAfterTLSUpgrade)
     ifdef posix then test(_TestBackpressureDrain) end
+    ifdef posix then test(_TestWriteOnlyEventReadRecovery) end
