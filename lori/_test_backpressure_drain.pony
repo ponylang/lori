@@ -200,3 +200,191 @@ actor \nodoc\ _TestBackpressureDrainClient
       _tcp_connection.send("ping")
       _tcp_connection.close()
     end
+
+class \nodoc\ iso _TestWriteOnlyEventReadRecovery is UnitTest
+  """
+  Verify that a connection still receives data after a write-only oneshot
+  event fully drains its pending writes under backpressure.
+
+  Same shape as BackpressureDrain, but the server sends from outside the read
+  path: it never mutes on throttle or unmutes on unthrottle. The fix for issue
+  #276 restored read interest via unmute()'s _set_readable() + _read(); a relay
+  / proxy / streaming server that never mutes doesn't take that path. When a
+  write-only EPOLLOUT oneshot event drains the last of the payload, the whole
+  fd is disarmed and nothing re-arms reads, so the follow-up "ping" never
+  reaches _on_received.
+
+  Sequence:
+  1. Client connects, sets small SO_RCVBUF, mutes itself, sends "ready"
+  2. Server receives "ready", sends a large payload (never mutes)
+  3. Server gets throttled, tells the listener (does NOT mute)
+  4. Listener tells client to unmute
+  5. Client drains all data, sends "ping"
+  6. Server receives "ping" — passes
+
+  Timeout means the server went read-deaf, reproducing issue #294. POSIX only —
+  the bug is specific to EPOLLONESHOT.
+  """
+  fun name(): String => "WriteOnlyEventReadRecovery"
+
+  fun ref apply(h: TestHelper) =>
+    h.expect_action("listener listening")
+    h.expect_action("server started")
+    h.expect_action("client connected")
+    h.expect_action("server queued payload")
+    h.expect_action("server throttled")
+    h.expect_action("client receiving data")
+    h.expect_action("client sent ping")
+    h.expect_action("server received ping")
+
+    let listener = _TestWriteOnlyEventReadRecoveryListener(h)
+    h.dispose_when_done(listener)
+
+    h.long_test(30_000_000_000)
+
+actor \nodoc\ _TestWriteOnlyEventReadRecoveryListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestWriteOnlyEventReadRecoveryServer | None) = None
+  var _client: (_TestWriteOnlyEventReadRecoveryClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      ifdef linux then "127.0.0.2" else "localhost" end,
+      "9771",
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestWriteOnlyEventReadRecoveryServer =>
+    let s = _TestWriteOnlyEventReadRecoveryServer(fd, _h, this)
+    _server = s
+    s
+
+  fun ref _on_listen_failure() =>
+    _h.fail("listener failed to start")
+
+  fun ref _on_listening() =>
+    _h.complete_action("listener listening")
+    _client = _TestWriteOnlyEventReadRecoveryClient(_h)
+
+  be server_throttled(payload_size: USize) =>
+    try
+      (_client as _TestWriteOnlyEventReadRecoveryClient)
+        .start_reading(payload_size)
+    end
+
+  be dispose() =>
+    try (_client as _TestWriteOnlyEventReadRecoveryClient).dispose() end
+    try (_server as _TestWriteOnlyEventReadRecoveryServer).dispose() end
+    _tcp_listener.close()
+
+actor \nodoc\ _TestWriteOnlyEventReadRecoveryServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  let _listener: _TestWriteOnlyEventReadRecoveryListener
+  var _payload_size: USize = 0
+  var _got_ready: Bool = false
+
+  new create(fd: U32, h: TestHelper,
+    listener: _TestWriteOnlyEventReadRecoveryListener)
+  =>
+    _h = h
+    _listener = listener
+    _tcp_connection = TCPConnection.server(
+      TCPServerAuth(_h.env.root),
+      fd,
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    _h.complete_action("server started")
+    match MakeBufferSize(5)
+    | let b: BufferSize => _tcp_connection.buffer_until(b)
+    else _Unreachable()
+    end
+
+  fun ref _on_throttled() =>
+    // Crucially: do NOT mute. A relay/proxy/streaming server sending from
+    // outside the read path keeps reading enabled while it backpressures.
+    _h.complete_action("server throttled")
+    _listener.server_throttled(_payload_size)
+
+  fun ref _on_unthrottled() =>
+    // Crucially: do NOT unmute. unmute() is what re-armed reads after the
+    // #276 fix; a server that never muted can't rely on it.
+    None
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    if not _got_ready then
+      _got_ready = true
+      match MakeBufferSize(4)
+      | let b: BufferSize => _tcp_connection.buffer_until(b)
+      else _Unreachable()
+      end
+      _tcp_connection.set_so_sndbuf(16384)
+      _payload_size = 256_000
+      let payload = recover iso Array[U8].init('x', _payload_size) end
+      match _tcp_connection.send(consume payload)
+      | let _: SendToken =>
+        _h.complete_action("server queued payload")
+      | let _: SendError =>
+        _h.fail("server send failed")
+      end
+    else
+      _h.complete_action("server received ping")
+      _tcp_connection.close()
+      _h.complete(true)
+    end
+
+actor \nodoc\ _TestWriteOnlyEventReadRecoveryClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _total_received: USize = 0
+  var _payload_size: USize = 0
+  var _sent_ping: Bool = false
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(_h.env.root),
+      ifdef linux then "127.0.0.2" else "localhost" end,
+      "9771",
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _h.complete_action("client connected")
+    _tcp_connection.set_so_rcvbuf(4096)
+    _tcp_connection.mute()
+    _tcp_connection.send("ready")
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+
+  be start_reading(payload_size: USize) =>
+    _payload_size = payload_size
+    _tcp_connection.unmute()
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    if _total_received == 0 then
+      _h.complete_action("client receiving data")
+    end
+    _total_received = _total_received + data.size()
+    if not _sent_ping and (_total_received >= _payload_size) then
+      _sent_ping = true
+      _h.complete_action("client sent ping")
+      _tcp_connection.send("ping")
+    end

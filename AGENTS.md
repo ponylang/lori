@@ -82,7 +82,7 @@ lori/
   socket_result.pony        -- SocketResult primitives + decoder for pony_os_* return values (mirrors ponyc internal type)
   _test.pony                -- Test runner (Main only)
   _test_connection.pony     -- Connection basics, ping-pong, buffer_until, listener tests
-  _test_backpressure_drain.pony -- Backpressure drain + unmute read recovery test
+  _test_backpressure_drain.pony -- Backpressure drain + unmute read recovery and write-only oneshot read recovery tests
   _test_flow_control.pony   -- Mute/unmute tests
   _test_send.pony           -- Send, sendv, send-after-close tests
   _test_ssl.pony            -- SSL ping-pong, SSL sendv, and SSL handshake state tests

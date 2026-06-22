@@ -1792,6 +1792,27 @@ class TCPConnection
       else
         _read()
       end
+    else
+      // Runs on every write-only event (EPOLLOUT, no readable flag).
+      // EPOLLONESHOT disarms the whole fd on any event, dropping pending read
+      // interest. When the write fully drains, backpressure isn't re-applied,
+      // so neither read re-arm path runs (_apply_backpressure's resubscribe
+      // and _read's EAGAIN resubscribe are both skipped) and the connection
+      // goes permanently read-deaf (issue #294). Re-arming reads here covers
+      // that case; on a partial drain — where _apply_backpressure already
+      // re-armed reads — this is a harmless redundant resubscribe.
+      //
+      // Skip when _event is disposable: _send_pending_writes() above can
+      // hard_close() on a write error, which unsubscribes _event, and
+      // resubscribing a disposed event asserts in debug builds. We check
+      // disposability rather than is_closed() because is_closed() is also
+      // true during _Closing, where the socket is still open and we must
+      // keep reading to detect the peer FIN.
+      ifdef posix then
+        if not PonyAsio.get_disposable(_event) then
+          PonyAsio.resubscribe_read(_event)
+        end
+      end
     end
 
   fun ref _do_read_again() =>
