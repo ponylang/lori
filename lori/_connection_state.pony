@@ -1,9 +1,9 @@
 use "ssl/net"
 
 trait _ConnectionState
-  fun ref own_event(conn: TCPConnection ref, flags: U32, arg: U32)
+  fun ref own_event(conn: TCPConnection ref, flags: U32)
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
-    flags: U32, arg: U32)
+    flags: U32)
   fun ref send(conn: TCPConnection ref,
     data: (ByteSeq | ByteSeqIter)): (SendToken | SendError)
   fun ref close(conn: TCPConnection ref)
@@ -31,11 +31,11 @@ trait _ConnectionState
   fun sends_allowed(): Bool
 
 class _ConnectionNone is _ConnectionState
-  fun ref own_event(conn: TCPConnection ref, flags: U32, arg: U32) =>
+  fun ref own_event(conn: TCPConnection ref, flags: U32) =>
     _Unreachable()
 
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
-    flags: U32, arg: U32)
+    flags: U32)
   =>
     if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
       or AsioEvent.readable(flags))
@@ -50,7 +50,7 @@ class _ConnectionNone is _ConnectionState
     if not PonyAsio.get_disposable(event) then
       PonyAsio.unsubscribe(event)
     end
-    PonyTCP.close(PonyAsio.event_fd(event))
+    conn._close_event_fd(PonyAsio.event_fd(event))
 
   fun ref send(conn: TCPConnection ref,
     data: (ByteSeq | ByteSeqIter)): (SendToken | SendError)
@@ -119,11 +119,11 @@ class _ConnectionNone is _ConnectionState
   fun sends_allowed(): Bool => false
 
 class _ClientConnecting is _ConnectionState
-  fun ref own_event(conn: TCPConnection ref, flags: U32, arg: U32) =>
+  fun ref own_event(conn: TCPConnection ref, flags: U32) =>
     _Unreachable()
 
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
-    flags: U32, arg: U32)
+    flags: U32)
   =>
     // Check errored before the writeable/readable guard. An errored event
     // must NOT flow into _is_socket_connected — the FD might appear
@@ -211,11 +211,11 @@ class _ClientConnecting is _ConnectionState
   fun sends_allowed(): Bool => false
 
 class _Open is _ConnectionState
-  fun ref own_event(conn: TCPConnection ref, flags: U32, arg: U32) =>
-    conn._dispatch_io_event(flags, arg)
+  fun ref own_event(conn: TCPConnection ref, flags: U32) =>
+    conn._dispatch_io_event(flags)
 
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
-    flags: U32, arg: U32)
+    flags: U32)
   =>
     // Removing this guard causes the test suite to hang.
     if PonyAsio.get_disposable(event) then return end
@@ -293,11 +293,11 @@ class _Open is _ConnectionState
   fun sends_allowed(): Bool => true
 
 class _Closing is _ConnectionState
-  fun ref own_event(conn: TCPConnection ref, flags: U32, arg: U32) =>
-    conn._dispatch_io_event(flags, arg)
+  fun ref own_event(conn: TCPConnection ref, flags: U32) =>
+    conn._dispatch_io_event(flags)
 
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
-    flags: U32, arg: U32)
+    flags: U32)
   =>
     // Removing this guard causes the test suite to hang.
     if PonyAsio.get_disposable(event) then return end
@@ -383,11 +383,11 @@ class _UnconnectedClosing is _ConnectionState
   connections drain. hard_close() can interrupt this drain (e.g., connection
   timeout fires during drain), transitioning to _Closed immediately.
   """
-  fun ref own_event(conn: TCPConnection ref, flags: U32, arg: U32) =>
+  fun ref own_event(conn: TCPConnection ref, flags: U32) =>
     _Unreachable()
 
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
-    flags: U32, arg: U32)
+    flags: U32)
   =>
     if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
       or AsioEvent.readable(flags))
@@ -465,11 +465,11 @@ class _UnconnectedClosing is _ConnectionState
   fun sends_allowed(): Bool => false
 
 class _Closed is _ConnectionState
-  fun ref own_event(conn: TCPConnection ref, flags: U32, arg: U32) =>
+  fun ref own_event(conn: TCPConnection ref, flags: U32) =>
     None
 
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
-    flags: U32, arg: U32)
+    flags: U32)
   =>
     if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
       or AsioEvent.readable(flags))
@@ -547,11 +547,11 @@ class _SSLHandshaking is _ConnectionState
   been notified yet — `_on_connected`/`_on_started` fires only after the
   handshake completes.
   """
-  fun ref own_event(conn: TCPConnection ref, flags: U32, arg: U32) =>
-    conn._dispatch_io_event(flags, arg)
+  fun ref own_event(conn: TCPConnection ref, flags: U32) =>
+    conn._dispatch_io_event(flags)
 
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
-    flags: U32, arg: U32)
+    flags: U32)
   =>
     // Removing this guard causes the test suite to hang.
     if PonyAsio.get_disposable(event) then return end
@@ -641,11 +641,11 @@ class _TLSUpgrading is _ConnectionState
   has already been notified of the plaintext connection — `_on_tls_ready`
   fires when the handshake completes.
   """
-  fun ref own_event(conn: TCPConnection ref, flags: U32, arg: U32) =>
-    conn._dispatch_io_event(flags, arg)
+  fun ref own_event(conn: TCPConnection ref, flags: U32) =>
+    conn._dispatch_io_event(flags)
 
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
-    flags: U32, arg: U32)
+    flags: U32)
   =>
     // Removing this guard causes the test suite to hang.
     if PonyAsio.get_disposable(event) then return end

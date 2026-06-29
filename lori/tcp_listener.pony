@@ -40,7 +40,15 @@ class TCPListener
 
         if not _event.is_null() then
           PonyAsio.unsubscribe(_event)
-          PonyTCP.close(_fd)
+          // POSIX closes the listener fd here. On Windows the readiness backend
+          // owns the close: it happens when the deferred
+          // ProcessSocketNotifications REMOVE from the unsubscribe above is
+          // seen, so closing here would strand the disposal handshake. The
+          // accepted/rejected fds in _accept are raw (never subscribed), so
+          // those closes stay cross-platform.
+          ifdef not windows then
+            PonyTCP.close(_fd)
+          end
           _fd = -1
           e._on_closed()
         end
@@ -60,7 +68,7 @@ class TCPListener
       ip
     end
 
-  fun ref _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
+  fun ref _event_notify(event: AsioEventID, flags: U32) =>
     if event isnt _event then
       return
     end
@@ -71,7 +79,7 @@ class TCPListener
     end
 
     if AsioEvent.readable(flags) then
-      _accept(arg)
+      _accept()
     end
 
     if AsioEvent.disposable(flags) then
@@ -80,66 +88,33 @@ class TCPListener
       _listening = false
     end
 
-  fun ref _accept(arg: U32 = 0) =>
+  fun ref _accept() =>
     match \exhaustive\ _enclosing
     | let e: TCPListenerActor ref =>
       if _listening then
-        ifdef windows then
-          // Unsubscribe if we get an invalid socket in an event
-          if arg == -1 then
-            PonyAsio.unsubscribe(_event)
+        while not _at_connection_limit() do
+          var fd = PonyTCP.accept(_event)
+
+          // 0: would block, -1: error
+          if fd <= 0 then
             return
           end
 
           try
-            if arg > 0 then
-              let opened = e._on_accept(arg)?
-              opened._register_spawner(e)
-              _open_connections = _open_connections + 1
-            end
-
-            if not _at_connection_limit() then
-              PonyTCP.accept(_event)
-            else
-              _paused = true
-            end
+            let opened = e._on_accept(fd.u32())?
+            opened._register_spawner(e)
+            _open_connections = _open_connections + 1
           else
-            PonyTCP.close(arg)
+            // Rejected before an event was created — raw fd, close on both
+            // platforms.
+            PonyTCP.close(fd.u32())
           end
-        else
-          while not _at_connection_limit() do
-            var fd = PonyTCP.accept(_event)
-
-            // 0: would block, -1: error
-            if fd <= 0 then
-              return
-            end
-
-            try
-              let opened = e._on_accept(fd.u32())?
-              opened._register_spawner(e)
-              _open_connections = _open_connections + 1
-            else
-              PonyTCP.close(fd.u32())
-            end
-          end
-
-          _paused = true
         end
+
+        _paused = true
       else
         // It's possible that after closing, we got an event for a connection
-        // attempt. If that is the case or the listener is otherwise not open,
-        // return and do not start a new connection
-        ifdef windows then
-          if arg == -1 then
-            PonyAsio.unsubscribe(_event)
-            return
-          end
-
-          if arg > 0 then
-            PonyTCP.close(arg)
-          end
-        end
+        // attempt. If the listener is not open, do not start a new connection.
         return
       end
     | None =>

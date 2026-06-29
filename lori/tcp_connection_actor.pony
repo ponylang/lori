@@ -10,13 +10,14 @@ trait tag TCPConnectionActor is AsioEventNotify
     _connection().hard_close()
 
   be _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
-    _connection()._event_notify(event, flags, arg)
+    // `arg` carried the IOCP completion byte count under the old Windows
+    // backend. With readiness notifications it is unused on every platform.
+    _connection()._event_notify(event, flags)
 
   be _read_again() =>
     """
-    Resume reading. On POSIX, re-enters the read loop which processes buffered
-    data and reads from the socket. On Windows, processes buffered data first
-    then submits a new IOCP read.
+    Resume reading: re-enter the read loop, which processes any buffered data
+    and then reads from the socket. Same on every platform.
     """
     _connection().read_again()
 

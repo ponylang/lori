@@ -31,7 +31,9 @@ trait tag TCPListenerActor is AsioEventNotify
     _listener().close()
 
   be _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
-    _listener()._event_notify(event, flags, arg)
+    // `arg` is part of the runtime AsioEventNotify interface; the listener
+    // does not use it (it carried the IOCP accept fd under the old backend).
+    _listener()._event_notify(event, flags)
 
   be _connection_closed() =>
     _listener()._connection_closed()

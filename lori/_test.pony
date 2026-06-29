@@ -82,5 +82,8 @@ actor \nodoc\ Main is TestList
     test(_TestStartTLSHandshakeFailure)
     test(_TestStartTLSAuthFailure)
     test(_TestSetTimerAfterTLSUpgrade)
+    // POSIX only: these provoke write backpressure with a fixed payload, which
+    // Windows loopback won't trigger (it buffers far beyond SO_SNDBUF/RCVBUF).
+    // The drain and write-only re-arm logic they cover is platform-neutral.
     ifdef posix then test(_TestBackpressureDrain) end
     ifdef posix then test(_TestWriteOnlyEventReadRecovery) end

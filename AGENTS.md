@@ -250,7 +250,7 @@ Design: Discussion #252.
 - **`_TLSUpgrading.is_open()`**: Returns `true` — the application has already been notified. `_TLSUpgrading` delegates socket option, `idle_timeout`, and `set_timer` operations to the same helpers as `_Open`.
 - **`_TLSUpgrading.sends_allowed()`**: Returns `false` — prevents `is_writeable()` from returning true during handshake.
 
-Preconditions enforced synchronously: connection must be open, not already TLS, not muted, no buffered read data (CVE-2021-23222), no pending writes. Returns `StartTLSError` on failure (connection unchanged). The "no pending writes" check is platform-aware: on POSIX it checks `_has_pending_writes()` (any unconfirmed bytes); on Windows IOCP it checks for un-submitted data only (`_pending_data.size() > _pending_sent`), since submitted-but-unconfirmed writes are already in the kernel's send buffer.
+Preconditions enforced synchronously: connection must be open, not already TLS, not muted, no buffered read data (CVE-2021-23222), no pending writes. Returns `StartTLSError` on failure (connection unchanged). The "no pending writes" check is `_has_pending_writes()` (any unsent bytes) on every platform — writev is synchronous everywhere, so any remaining pending bytes mean the write hasn't fully drained.
 
 Design: Discussion #252.
 
@@ -273,20 +273,19 @@ The library does not queue data on behalf of the application during backpressure
 
 #### Write internals
 
-Pending writes use writev on both POSIX and Windows. The internal fields:
+Pending writes use writev on every platform. The internal fields:
 
 - `_pending_data: Array[ByteSeq]` — buffers awaiting delivery. Also keeps `ByteSeq` values alive for the GC while raw pointers reference them in the IOV array built by `PonyTCP.writev`.
 - `_pending_writev_total: USize` — total bytes remaining (accounts for `_pending_first_buffer_offset`).
 - `_pending_first_buffer_offset: USize` — bytes already sent from `_pending_data(0)`, for partial write resume. COUPLING: points into the buffer owned by `_pending_data(0)` — trimming `_pending_data` without resetting the offset causes a dangling pointer. `_manage_pending_buffer` maintains both.
-- `_pending_sent: USize` — Windows only. IOCP entries submitted but not yet completed. Only one WSASend is outstanding at a time; `_iocp_submit_pending()` is a no-op while `_pending_sent > 0`.
 
 The write path uses an enqueue-then-flush pattern:
 
-1. `_enqueue(data)` pushes to `_pending_data` and updates `_pending_writev_total`. Platform-neutral, no I/O.
-2. Platform flush: `_send_pending_writes()` (POSIX) or `_iocp_submit_pending()` (Windows). Both call `PonyTCP.writev`, which builds the platform-specific IOV array internally.
-3. `_manage_pending_buffer(bytes_sent)` walks `_pending_data`, trims fully-sent entries, and updates `_pending_first_buffer_offset`. Shared across both platforms.
+1. `_enqueue(data)` pushes to `_pending_data` and updates `_pending_writev_total`. No I/O.
+2. `_send_pending_writes()` flushes via `PonyTCP.writev`, which builds the IOV array internally. It loops while writeable and there is pending data, applying backpressure on a partial write or `SocketResultRetry`.
+3. `_manage_pending_buffer(bytes_sent)` walks `_pending_data`, trims fully-sent entries, and updates `_pending_first_buffer_offset`.
 
-`PonyTCP.writev` takes `Array[ByteSeq] box` and builds `iovec` (POSIX) or `WSABUF` (Windows) arrays internally, hiding the platform-specific tuple layout. Returns `(SocketResult, USize)`: a tri-state result (`SocketResultOk`, `SocketResultRetry`, `SocketResultError`) plus a count — bytes sent on POSIX, buffer count submitted on Windows. `SocketResultRetry` signals backpressure (EWOULDBLOCK); `SocketResultError` signals an unrecoverable error or peer-close.
+`PonyTCP.writev` takes `Array[ByteSeq] box` and builds the `(pointer, size)` IOV array internally; the runtime turns it into `iovec` (POSIX) or `WSABUF` (Windows). Returns `(SocketResult, USize)`: a tri-state result (`SocketResultOk`, `SocketResultRetry`, `SocketResultError`) plus the number of bytes sent. `SocketResultRetry` signals backpressure (`EWOULDBLOCK`/`WSAEWOULDBLOCK`); `SocketResultError` signals an unrecoverable error or peer-close. `PonyTCP.writev_max()` is `IOV_MAX` on POSIX and 1 on Windows, so the flush loop batches accordingly.
 
 Design: Discussion #150.
 
@@ -310,7 +309,7 @@ Per-connection idle timeout via ASIO timer events. The duration is an `IdleTimeo
 Lifecycle:
 
 - **Arm points**: plaintext branch of `_establish_connection` and `_complete_server_initialization`; `_SSLHandshaking.ssl_handshake_complete()` for initial SSL connections. `_arm_idle_timer()` is a no-op when `_idle_timeout_nsec == 0` or when a timer already exists (idempotency guard). Also called from `_do_idle_timeout()` when setting a timeout on an established connection with no existing timer. `idle_timeout()` dispatches through the state machine — `_Open` and `_TLSUpgrading` delegate to `_do_idle_timeout()` (stores nsec and manages the timer), while all other states delegate to `_store_idle_timeout()` (stores nsec only).
-- **Reset points**: `_read()` (POSIX, once per read event), `_read_completed()` (Windows, once per read event), `send()` success path (after the SSL/plaintext write block).
+- **Reset points**: `_read()` (once per read event), `send()` success path (after the SSL/plaintext write block).
 - **Cancel point**: `_hard_close_connecting()` and `_hard_close_cleanup()` (shared by all connected hard-close paths: `_hard_close_connected`, `_hard_close_ssl_handshaking`, `_hard_close_tls_upgrading`).
 - **Event dispatch**: Identity check `event is _timer_event` in `_event_notify`'s `if/elseif/else` chain, before the `event is _event` check. Checks `AsioEvent.errored(flags)` first — if errored, calls `_fire_idle_timer_failure()` which cancels the timer via `_cancel_idle_timer()` (unsubscribing the event and zeroing `_idle_timeout_nsec`) before dispatching `_on_idle_timer_failure`. Cancelling before dispatch lets the callback call `idle_timeout(duration)` to re-arm without hitting the `_arm_idle_timer` idempotency guard. `_timer_event` is cleared synchronously in `_cancel_idle_timer()`, so stale disposable events for cancelled timers fall through to the `else` branch where the disposable check destroys them.
 
@@ -378,7 +377,7 @@ API:
 
 `_user_buffer_until()` returns the unwrapped buffer-until value as `USize` (0 when `Streaming`) for invariant checks against buffer sizes. `_tcp_buffer_until()` returns the value the TCP read layer should use — `Streaming` when SSL is active, otherwise `_buffer_until`.
 
-Shrink-back happens in `_resize_read_buffer_if_needed()` when `_bytes_in_read_buffer == 0` and `_read_buffer_size > _read_buffer_min`. On Windows, a post-loop call to `_resize_read_buffer_if_needed()` was added in `_read_completed()` and `_windows_resume_read()` because the existing calls inside the `while _there_is_buffered_read_data()` loop can never see `_bytes_in_read_buffer == 0`.
+Shrink-back happens in `_resize_read_buffer_if_needed()` when `_bytes_in_read_buffer == 0` and `_read_buffer_size > _read_buffer_min`.
 
 Design: Discussion #212 (implementation plan), Discussion #199 section 11 (design).
 
@@ -388,11 +387,7 @@ Design: Discussion #212 (implementation plan), Discussion #199 section 11 (desig
 
 - `_yield_read: Bool` — set by `yield_read()`, cleared by the yield check in the dispatch loop.
 
-The yield check is placed immediately after `_deliver_received()` in three locations:
-
-- **POSIX `_read()`**: Inside the inner `while not _muted and _there_is_buffered_read_data()` loop. When triggered, calls `e._read_again()` and returns, exiting both inner and outer loops. On resume, `_read()` re-enters and processes remaining buffered data before reading from the socket.
-- **Windows `_read_completed()`**: Same position. The return skips the `_queue_read()` at the end — resumption happens via `_read_again()` instead.
-- **Windows `_windows_resume_read()`**: Mirrors the `_read_completed()` dispatch loop. Needed because on Windows, yielding with unprocessed buffered data and just calling `_queue_read()` (which submits an IOCP read) would leave the buffered data unprocessed until new data arrives from the peer. `_windows_resume_read()` processes buffered data first, then submits the IOCP read. The state machine guards against calling this after `hard_close()`: `_Closed.read_again()` is a no-op, while `_Closing.read_again()` correctly calls `_windows_resume_read()` because the socket is still connected and needs an IOCP read to detect the peer's FIN.
+The yield check is placed immediately after `_deliver_received()` in `_read()`'s inner `while not _muted and _there_is_buffered_read_data()` loop. When triggered, it calls `e._read_again()` and returns, exiting both inner and outer loops. On resume, `_read()` re-enters (via `_do_read_again()`) and processes remaining buffered data before reading from the socket. The state machine guards resume against calling after `hard_close()`: `_Closed.read_again()` is a no-op, while `_Closing.read_again()` still calls `_read()` because the socket's read side is open and needs to detect the peer's FIN.
 
 **SSL granularity**: `yield_read()` operates at TCP-read granularity. All SSL-decrypted messages from a single `ssl.receive()` call are delivered inside `_ssl_poll()` before the yield check fires. Per-SSL-message yielding would require changes to `_ssl_poll()` and handling partially-consumed SSL buffers on resume.
 
@@ -417,7 +412,12 @@ The general-purpose methods (`getsockopt`, `getsockopt_u32`, `setsockopt`, `sets
 
 ### Platform differences
 
-POSIX and Windows (IOCP) have distinct code paths throughout `TCPConnection`, guarded by `ifdef posix`/`ifdef windows`. POSIX uses edge-triggered oneshot events with resubscription; Windows uses IOCP completion callbacks.
+POSIX and Windows share a single readiness-based I/O path. Both use one-shot readiness events (epoll/kqueue on POSIX, `ProcessSocketNotifications` on Windows) with resubscription via `PonyAsio.resubscribe_read`/`resubscribe_write`, and call `PonyTCP.receive`/`PonyTCP.writev` synchronously in response. Windows requires ponyc 0.66.0 or later (the release that removed IOCP); the Windows floor is Windows 11 / Windows Server 2022.
+
+Two platform-specific rules remain:
+
+- **writev batch size**: `PonyTCP.writev_max()` is `IOV_MAX` on POSIX, 1 on Windows. The `_send_pending_writes()` loop batches accordingly.
+- **Subscribed-fd close**: a subscribed socket fd (one with an ASIO event) is closed via `PonyTCP.close` only on POSIX. On Windows the readiness backend owns the close — it happens when the deferred `ProcessSocketNotifications` REMOVE from `unsubscribe` is processed, so closing earlier strands the disposal handshake and leaks the fd/event. `_close_event_fd()` (used by all subscribed-fd close sites, including the listener) guards this with `ifdef not windows`. Raw, never-subscribed fds (rejected accepts) are closed cross-platform.
 
 ## Conventions
 
