@@ -74,10 +74,7 @@ jobs:
       - name: Tune Windows Networking
         run: .ci-scripts\windows-configure-networking.ps1
       - name: Install Pony tools
-        # nightlies until ponyc 0.66.0 ships: Windows networking needs the
-        # readiness backend (IOCP was removed post-0.65.0). Revert to releases
-        # once 0.66.0 is out. Linux/macOS still build against release ponyc.
-        run: .ci-scripts\windows-install-pony-tools.ps1 nightlies
+        run: .ci-scripts\windows-install-pony-tools.ps1 releases
       - name: Cache LibreSSL libs
         id: cache-libressl
         uses: actions/cache@v5.0.3
