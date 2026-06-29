@@ -1,11 +1,11 @@
 primitive SocketResultOk
   """
   The socket operation completed. For send/writev, the runtime accepted some
-  bytes (POSIX) or queued some buffers (Windows IOCP); for recv, bytes were
-  read into the supplied buffer. The accompanying count is the number of
-  bytes or buffers handled. On Windows IOCP `recv`, the count is always 0 —
-  the actual byte count arrives asynchronously via the read-completion
-  callback.
+  bytes; for recv, bytes were read into the supplied buffer. The accompanying
+  count is the number of bytes handled. The operation is synchronous and
+  non-blocking on every platform (the Windows backend uses readiness
+  notifications, not overlapped IOCP), so the count is always the bytes
+  transferred by this call.
   """
   fun apply(): U8 => 0
 

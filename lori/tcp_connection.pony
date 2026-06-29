@@ -26,7 +26,6 @@ class TCPConnection
   embed _pending_data: Array[ByteSeq] = _pending_data.create()
   var _pending_writev_total: USize = 0
   var _pending_first_buffer_offset: USize = 0
-  var _pending_sent: USize = 0
   var _read_buffer: Array[U8] iso = recover Array[U8] end
   var _bytes_in_read_buffer: USize = 0
   var _read_buffer_size: USize = 16384
@@ -640,9 +639,10 @@ class TCPConnection
     """
     Common teardown for hard-closing an established connection. Handles
     shutdown flags, send_failed for pending token, clearing pending buffers,
-    cancelling all timers, unsubscribing the event, closing the fd, and
-    disposing SSL. Order is load-bearing: timer cancel before event
-    unsubscribe, SSL dispose after fd close.
+    cancelling all timers, unsubscribing the event, releasing the fd (see
+    `_close_event_fd` — closed here on POSIX, deferred to the unsubscribe
+    REMOVE on Windows), and disposing SSL. Order is load-bearing: timer cancel
+    before event unsubscribe, SSL dispose after the fd is released.
 
     Does NOT set `_ssl = None` — the connection is terminal and nothing
     accesses it afterward. The caller must set `_state = _Closed` before
@@ -662,9 +662,6 @@ class TCPConnection
     _pending_data.clear()
     _pending_writev_total = 0
     _pending_first_buffer_offset = 0
-    ifdef windows then
-      _pending_sent = 0
-    end
     _pending_token = None
 
     _cancel_idle_timer()
@@ -674,8 +671,7 @@ class TCPConnection
     _set_unreadable()
     _set_unwriteable()
 
-    // On windows, this will also cancel all outstanding IOCP operations.
-    PonyTCP.close(_fd)
+    _close_event_fd(_fd)
     _fd = -1
 
     match _ssl
@@ -834,21 +830,10 @@ class TCPConnection
     | let _: SSL ref => return StartTLSAlreadyTLS
     end
 
-    // On POSIX, _has_pending_writes() checks whether any data remains
-    // unsent (writev is synchronous — returns OK with a byte count,
-    // Retry on EWOULDBLOCK, or Error). On Windows IOCP,
-    // submitted-but-unconfirmed writes are already in the
-    // kernel's send buffer, so only un-submitted entries block TLS upgrade.
-    // After send("OK") + _iocp_submit_pending(), _pending_writev_total > 0
-    // but _pending_data.size() == _pending_sent — the data is in the kernel
-    // and TLS can safely proceed.
-    let has_unsent_writes: Bool = ifdef windows then
-      _pending_data.size() > _pending_sent
-    else
-      _has_pending_writes()
-    end
-
-    if _muted or (_bytes_in_read_buffer > 0) or has_unsent_writes then
+    // writev is synchronous on every platform now — it returns OK with a
+    // byte count, Retry on EWOULDBLOCK, or Error. Any remaining pending
+    // bytes mean the write didn't fully drain, so the TLS upgrade must wait.
+    if _muted or (_bytes_in_read_buffer > 0) or _has_pending_writes() then
       return StartTLSNotReady
     end
 
@@ -919,11 +904,7 @@ class TCPConnection
           _enqueue(v)
         end
       end
-      ifdef windows then
-        _iocp_submit_pending()
-      else
-        _send_pending_writes()
-      end
+      _send_pending_writes()
     end
 
     _reset_idle_timer()
@@ -965,9 +946,8 @@ class TCPConnection
 
   fun ref _enqueue(data: ByteSeq) =>
     """
-    Add a buffer to the pending write queue. Callers must call the
-    platform-specific flush after enqueuing: `_send_pending_writes()` on
-    POSIX, `_iocp_submit_pending()` on Windows.
+    Add a buffer to the pending write queue. Callers must call
+    `_send_pending_writes()` to flush after enqueuing.
 
     Uses `not is_closed()` rather than `is_open()` because `_ssl_flush_sends()`
     calls `_enqueue()` during `_SSLHandshaking` (where `is_open() = false`)
@@ -1024,147 +1004,69 @@ class TCPConnection
 
   fun ref _send_pending_writes() =>
     """
-    Flush pending write data using writev.
-    This is POSIX only.
+    Flush pending write data using writev. Synchronous and non-blocking on
+    every platform: a partial write or `SocketResultRetry` (the kernel send
+    buffer is full) applies backpressure and leaves the rest queued for the
+    next writeable event.
     """
-    ifdef posix then
-      let writev_batch_size: USize = PonyTCP.writev_max().usize()
+    let writev_batch_size: USize = PonyTCP.writev_max().usize()
 
-      while _writeable and (_pending_writev_total > 0) do
-        try
-          // Determine batch size and byte count
-          let num_to_send: USize =
-            _pending_data.size().min(writev_batch_size)
-
-          let bytes_to_send: USize =
-            if num_to_send == _pending_data.size() then
-              _pending_writev_total
-            else
-              var total: USize = 0
-              var i: USize = 0
-              while i < num_to_send do
-                let s = _pending_data(i)?.size()
-                total = total +
-                  if i == 0 then s - _pending_first_buffer_offset else s end
-                i = i + 1
-              end
-              total
-            end
-
-          // writev syscall — three-state result with bytes-sent count
-          match \exhaustive\ PonyTCP.writev(_event, _pending_data,
-            0, num_to_send, _pending_first_buffer_offset)?
-          | (SocketResultOk, let len: USize) =>
-            if len < bytes_to_send then
-              _manage_pending_buffer(len)
-              _apply_backpressure()
-            else
-              _manage_pending_buffer(bytes_to_send)
-            end
-          | (SocketResultRetry, _) =>
-            _apply_backpressure()
-          | (SocketResultError, _) => error
-          end
-        else
-          // writev error or unreachable Array.apply bounds — non-graceful
-          // shutdown
-          hard_close()
-          return
-        end
-      end
-
-      if _pending_writev_total == 0 then
-        _release_backpressure()
-
-        match _pending_token
-        | let t: SendToken =>
-          _pending_token = None
-          match \exhaustive\ _enclosing
-          | let e: TCPConnectionActor ref =>
-            e._notify_sent(t)
-          | None =>
-            _Unreachable()
-          end
-        end
-      end
-    else
-      _Unreachable()
-    end
-
-  fun ref _iocp_submit_pending() =>
-    """
-    Submit all pending write buffers to IOCP in a single WSASend.
-    Only one IOCP write is outstanding at a time — if a previous WSASend
-    hasn't completed yet, this is a no-op and the data waits in
-    `_pending_data` until `_write_completed` resubmits.
-    This is Windows only.
-    """
-    ifdef windows then
-      if _pending_sent > 0 then return end
-
-      let num_to_send = _pending_data.size()
-      if num_to_send == 0 then return end
-
+    while _writeable and (_pending_writev_total > 0) do
       try
+        // Determine batch size and byte count
+        let num_to_send: USize =
+          _pending_data.size().min(writev_batch_size)
+
+        let bytes_to_send: USize =
+          if num_to_send == _pending_data.size() then
+            _pending_writev_total
+          else
+            var total: USize = 0
+            var i: USize = 0
+            while i < num_to_send do
+              let s = _pending_data(i)?.size()
+              total = total +
+                if i == 0 then s - _pending_first_buffer_offset else s end
+              i = i + 1
+            end
+            total
+          end
+
+        // writev syscall — three-state result with bytes-sent count
         match \exhaustive\ PonyTCP.writev(_event, _pending_data,
           0, num_to_send, _pending_first_buffer_offset)?
         | (SocketResultOk, let len: USize) =>
-          // On Windows IOCP, the count is wsacnt (buffers submitted), not
-          // bytes. ABI guarantees count > 0 since num_to_send > 0.
-          _pending_sent = len
-        | (SocketResultRetry, _) => _apply_backpressure()
-        | (SocketResultError, _) => hard_close()
+          if len < bytes_to_send then
+            _manage_pending_buffer(len)
+            _apply_backpressure()
+          else
+            _manage_pending_buffer(bytes_to_send)
+          end
+        | (SocketResultRetry, _) =>
+          _apply_backpressure()
+        | (SocketResultError, _) => error
         end
       else
-        hard_close()
-      end
-    else
-      _Unreachable()
-    end
-
-  fun ref _write_completed(len: U32) =>
-    """
-    The OS has informed us that `len` bytes of pending writes have completed.
-    This occurs only with IOCP on Windows.
-
-    A single WSASend call covers all submitted entries. When the IOCP
-    completion fires, the entire operation is done — none of the entries
-    are in-flight anymore. We reset `_pending_sent` to 0 and resubmit
-    any remaining data.
-    """
-    ifdef windows then
-      if len == 0 then
+        // writev error or unreachable Array.apply bounds — non-graceful
+        // shutdown
         hard_close()
         return
       end
+    end
 
-      _manage_pending_buffer(len.usize())
-      // The WSASend IOCP operation has completed. All entries covered by
-      // this operation are no longer in-flight.
-      _pending_sent = 0
+    if _pending_writev_total == 0 then
+      _release_backpressure()
 
-      if _pending_writev_total == 0 then
-        _release_backpressure()
-
-        match _pending_token
-        | let t: SendToken =>
-          _pending_token = None
-          match \exhaustive\ _enclosing
-          | let e: TCPConnectionActor ref =>
-            e._notify_sent(t)
-          | None =>
-            _Unreachable()
-          end
-        end
-      else
-        // Resubmit remaining data
-        _iocp_submit_pending()
-        if _pending_sent < 16 then
-          _release_backpressure()
+      match _pending_token
+      | let t: SendToken =>
+        _pending_token = None
+        match \exhaustive\ _enclosing
+        | let e: TCPConnectionActor ref =>
+          e._notify_sent(t)
+        | None =>
+          _Unreachable()
         end
       end
-    else
-      _Unreachable()
     end
 
   fun ref _deliver_received(s: EitherLifecycleEventReceiver ref,
@@ -1183,200 +1085,73 @@ class TCPConnection
     end
 
   fun ref _read() =>
-    ifdef posix then
-      _reset_idle_timer()
-      match \exhaustive\ _lifecycle_event_receiver
-      | let s: EitherLifecycleEventReceiver ref =>
-        try
-          var total_bytes_read: USize = 0
+    _reset_idle_timer()
+    match \exhaustive\ _lifecycle_event_receiver
+    | let s: EitherLifecycleEventReceiver ref =>
+      try
+        var total_bytes_read: USize = 0
 
-          while _readable do
-            // exit if muted
-            if _muted then
-              return
+        while _readable do
+          // exit if muted
+          if _muted then
+            return
+          end
+
+          // Handle any data already in the read buffer
+          while not _muted and _there_is_buffered_read_data() do
+            let bytes_to_consume = match \exhaustive\ _tcp_buffer_until()
+            | let e: BufferSize => e()
+            | Streaming => _bytes_in_read_buffer
             end
 
-            // Handle any data already in the read buffer
-            while not _muted and _there_is_buffered_read_data() do
-              let bytes_to_consume = match \exhaustive\ _tcp_buffer_until()
-              | let e: BufferSize => e()
-              | Streaming => _bytes_in_read_buffer
+            let x = _read_buffer = recover Array[U8] end
+            (let data', _read_buffer) = (consume x).chop(bytes_to_consume)
+            _bytes_in_read_buffer = _bytes_in_read_buffer - bytes_to_consume
+
+            _deliver_received(s, consume data')
+
+            // COUPLING: This check must remain immediately after
+            // _deliver_received() — moving it would change when the yield
+            // takes effect relative to application callbacks.
+            if _yield_read then
+              _yield_read = false
+              match \exhaustive\ _enclosing
+              | let e: TCPConnectionActor ref => e._read_again()
+              | None => _Unreachable()
               end
-
-              let x = _read_buffer = recover Array[U8] end
-              (let data', _read_buffer) = (consume x).chop(bytes_to_consume)
-              _bytes_in_read_buffer = _bytes_in_read_buffer - bytes_to_consume
-
-              _deliver_received(s, consume data')
-
-              // COUPLING: This check must remain immediately after
-              // _deliver_received() — moving it would change when the yield
-              // takes effect relative to application callbacks.
-              if _yield_read then
-                _yield_read = false
-                match \exhaustive\ _enclosing
-                | let e: TCPConnectionActor ref => e._read_again()
-                | None => _Unreachable()
-                end
-                return
-              end
-            end
-
-            // Yield after reading a buffer's worth of data to allow GC and
-            // other actors to run. _queue_read() schedules _read_again to
-            // resume.
-            if total_bytes_read >= _read_buffer_size then
-              _queue_read()
               return
-            end
-
-            _resize_read_buffer_if_needed()
-
-            match \exhaustive\ PonyTCP.receive(_event,
-              _read_buffer.cpointer(_bytes_in_read_buffer),
-              _read_buffer.size() - _bytes_in_read_buffer)
-            | (SocketResultOk, let bytes_read: USize) =>
-              _bytes_in_read_buffer = _bytes_in_read_buffer + bytes_read
-              total_bytes_read = total_bytes_read + bytes_read
-            | (SocketResultRetry, _) =>
-              // would block. try again later
-              _set_unreadable()
-              PonyAsio.resubscribe_read(_event)
-              return
-            | (SocketResultError, _) => error
             end
           end
-        else
-          // The socket has been closed from the other side.
-          hard_close()
-        end
-      | None =>
-        _Unreachable()
-      end
-    else
-      _Unreachable()
-    end
 
-  fun ref _iocp_read() =>
-    ifdef windows then
-      // Windows IOCP `pony_os_recv` is binary (queued or failed) — Retry is
-      // unreachable per the ABI but `\exhaustive\` requires the arm.
-      match \exhaustive\ PonyTCP.receive(_event,
-        _read_buffer.cpointer(_bytes_in_read_buffer),
-        _read_buffer.size() - _bytes_in_read_buffer)
-      | (SocketResultOk, _) => None
-      | (SocketResultRetry, _) => close()
-      | (SocketResultError, _) => close()
-      end
-    else
-      _Unreachable()
-    end
-
-  fun ref _read_completed(len: U32) =>
-    """
-    The OS has informed us that `len` bytes of data has been read and is now
-    available.
-    """
-    ifdef windows then
-      _reset_idle_timer()
-      match \exhaustive\ _lifecycle_event_receiver
-      | let s: EitherLifecycleEventReceiver ref =>
-        if len == 0 then
-          // The socket has been closed from the other side, or a hard close has
-          // cancelled the queued read.
-          _set_unreadable()
-          _shutdown_peer = true
-          close()
-          return
-        end
-
-        // Handle the data
-        _bytes_in_read_buffer = _bytes_in_read_buffer + len.usize()
-
-        while not _muted and _there_is_buffered_read_data()
-        do
-          // get data to be distributed and update `_bytes_in_read_buffer`
-          let chop_at = match \exhaustive\ _tcp_buffer_until()
-          | let e: BufferSize => e()
-          | Streaming => _bytes_in_read_buffer
-          end
-          (let data, _read_buffer) = (consume _read_buffer).chop(chop_at)
-          _bytes_in_read_buffer = _bytes_in_read_buffer - chop_at
-
-          _deliver_received(s, consume data)
-
-          // COUPLING: This check must remain immediately after
-          // _deliver_received() — moving it would change when the yield
-          // takes effect relative to application callbacks.
-          if _yield_read then
-            _yield_read = false
-            match \exhaustive\ _enclosing
-            | let e: TCPConnectionActor ref => e._read_again()
-            | None => _Unreachable()
-            end
+          // Yield after reading a buffer's worth of data to allow GC and
+          // other actors to run. _queue_read() schedules _read_again to
+          // resume.
+          if total_bytes_read >= _read_buffer_size then
+            _queue_read()
             return
           end
 
           _resize_read_buffer_if_needed()
-        end
 
-        _resize_read_buffer_if_needed()
-        _queue_read()
-      | None =>
-        _Unreachable()
-      end
-    else
-      _Unreachable()
-    end
-
-  fun ref _windows_resume_read() =>
-    """
-    Resume reading after a yield on Windows. Processes any buffered data first,
-    then submits an IOCP read for new data. Without this, yielding with
-    unprocessed buffered data and calling `_queue_read()` directly would leave
-    the buffered data unprocessed until new data arrives from the peer — which
-    might be never.
-
-    Called via `_do_read_again()` from the `_read_again()` behavior, which is
-    deferred. The state machine guards against calling this after hard_close():
-    `_Closed.read_again()` is a no-op. `_Closing.read_again()` correctly
-    calls this because the socket is still connected and we need an IOCP read
-    to detect the peer's FIN.
-    """
-    ifdef windows then
-      match \exhaustive\ _lifecycle_event_receiver
-      | let s: EitherLifecycleEventReceiver ref =>
-        while not _muted and _there_is_buffered_read_data() do
-          let chop_at = match \exhaustive\ _tcp_buffer_until()
-          | let e: BufferSize => e()
-          | Streaming => _bytes_in_read_buffer
-          end
-          (let data, _read_buffer) = (consume _read_buffer).chop(chop_at)
-          _bytes_in_read_buffer = _bytes_in_read_buffer - chop_at
-
-          _deliver_received(s, consume data)
-
-          // COUPLING: This check must remain immediately after
-          // _deliver_received() — moving it would change when the yield
-          // takes effect relative to application callbacks.
-          if _yield_read then
-            _yield_read = false
-            match \exhaustive\ _enclosing
-            | let e: TCPConnectionActor ref => e._read_again()
-            | None => _Unreachable()
-            end
+          match \exhaustive\ PonyTCP.receive(_event,
+            _read_buffer.cpointer(_bytes_in_read_buffer),
+            _read_buffer.size() - _bytes_in_read_buffer)
+          | (SocketResultOk, let bytes_read: USize) =>
+            _bytes_in_read_buffer = _bytes_in_read_buffer + bytes_read
+            total_bytes_read = total_bytes_read + bytes_read
+          | (SocketResultRetry, _) =>
+            // would block. try again later
+            _set_unreadable()
+            PonyAsio.resubscribe_read(_event)
             return
+          | (SocketResultError, _) => error
           end
-
-          _resize_read_buffer_if_needed()
         end
-
-        _resize_read_buffer_if_needed()
-        _queue_read()
-      | None =>
-        _Unreachable()
+      else
+        // The socket has been closed from the other side.
+        hard_close()
       end
-    else
+    | None =>
       _Unreachable()
     end
 
@@ -1409,16 +1184,16 @@ class TCPConnection
     end
 
   fun ref _queue_read() =>
-    ifdef posix then
-      match \exhaustive\ _enclosing
-      | let e: TCPConnectionActor ref =>
-        e._read_again()
-        return
-      | None =>
-        _Unreachable()
-      end
-    else
-      _iocp_read()
+    """
+    Schedule reading to resume in a later turn via the `_read_again` behavior.
+    Used to yield after a buffer's worth of data and to (re)start reading after
+    establishing a connection or unmuting.
+    """
+    match \exhaustive\ _enclosing
+    | let e: TCPConnectionActor ref =>
+      e._read_again()
+    | None =>
+      _Unreachable()
     end
 
   fun ref _apply_backpressure() =>
@@ -1429,9 +1204,7 @@ class TCPConnection
         // throttled means we are also unwriteable
         // being unthrottled doesn't however mean we are writable
         _set_unwriteable()
-        ifdef not windows then
-          PonyAsio.resubscribe_write(_event)
-        end
+        PonyAsio.resubscribe_write(_event)
         s._on_throttled()
       end
     | None =>
@@ -1715,11 +1488,7 @@ class TCPConnection
           _enqueue(ssl.send()?)
         end
       end
-      ifdef windows then
-        _iocp_submit_pending()
-      else
-        _send_pending_writes()
-      end
+      _send_pending_writes()
     end
 
   fun ref _ssl_poll(s: EitherLifecycleEventReceiver ref) =>
@@ -1766,10 +1535,11 @@ class TCPConnection
   fun ref read_again() =>
     _state.read_again(this)
 
-  fun ref _dispatch_io_event(flags: U32, arg: U32) =>
+  fun ref _dispatch_io_event(flags: U32) =>
     """
     Common I/O dispatch logic for socket events. Shared by all states that
-    have a connected socket and need to process I/O notifications.
+    have a connected socket and need to process I/O notifications. Identical
+    on every platform: readiness edges drive synchronous recv/writev.
     """
     if AsioEvent.errored(flags) then
       hard_close()
@@ -1778,62 +1548,59 @@ class TCPConnection
 
     if AsioEvent.writeable(flags) then
       _set_writeable()
-      ifdef windows then
-        _write_completed(arg)
-      else
-        _send_pending_writes()
-      end
+      _send_pending_writes()
     end
 
     if AsioEvent.readable(flags) then
       _set_readable()
-      ifdef windows then
-        _read_completed(arg)
-      else
-        _read()
-      end
+      _read()
     else
-      // Runs on every write-only event (EPOLLOUT, no readable flag).
-      // EPOLLONESHOT disarms the whole fd on any event, dropping pending read
-      // interest. The write branch above already ran _set_writeable(), which
-      // releases backpressure. So on a full drain _apply_backpressure() is
-      // never re-entered, and neither read re-arm path runs (its resubscribe
-      // and _read's EAGAIN resubscribe are both skipped), leaving the
-      // connection permanently read-deaf (issue #294). Re-arming reads here
-      // covers that. On a partial drain _apply_backpressure() does re-enter,
-      // and because PonyAsio.resubscribe re-arms whichever directions are
-      // not-ready (the read/write names signal intent, not effect), its write
-      // resubscribe also re-arms reads, so the resubscribe here is redundant
-      // but harmless.
+      // Runs on every write-only event (writeable, no readable flag).
+      // One-shot readiness (EPOLLONESHOT on Linux, the equivalent gating on
+      // macOS/BSD kqueue and Windows ProcessSocketNotifications) disarms the
+      // whole fd on any event, dropping pending read interest. The write
+      // branch above already ran _set_writeable(), which releases
+      // backpressure. So on a full drain _apply_backpressure() is never
+      // re-entered, and neither read re-arm path runs (its resubscribe and
+      // _read's EAGAIN resubscribe are both skipped), leaving the connection
+      // permanently read-deaf (issue #294). Re-arming reads here covers that.
+      // On a partial drain _apply_backpressure() does re-enter, and because
+      // PonyAsio.resubscribe re-arms whichever directions are not-ready (the
+      // read/write names signal intent, not effect), its write resubscribe
+      // also re-arms reads, so the resubscribe here is redundant but harmless.
       //
-      // Skip when _event is disposable: _send_pending_writes() above can
-      // hard_close() on a write error, which unsubscribes _event, and
-      // resubscribing a disposed event asserts in debug builds.
+      // Skip the re-arm unless the socket is still healthy and fully drained,
+      // which `_writeable` captures: `_set_writeable()` above set it true, and
+      // nothing cleared it means no hard_close and no backpressure this turn.
+      // `_send_pending_writes()` above can hard_close() on a write error (peer
+      // RST with data queued), and `_hard_close_cleanup` then unsubscribes the
+      // event and calls `_set_unwriteable()`. Resubscribing after that is wrong:
+      // on POSIX the event is already disposable (the resubscribe would assert
+      // in debug); on Windows the close is DEFERRED — `unsubscribe` only marks
+      // the event `removing`, so `get_disposable` still returns false and the
+      // resubscribe would re-enable a socket whose REMOVE is already in flight,
+      // stranding the deferred-close handshake. `_writeable` is false in both
+      // cases, so it is the load-bearing guard; `get_disposable` is kept as
+      // POSIX defense in depth. `_writeable` is also false after a partial-drain
+      // backpressure, where `_apply_backpressure`'s resubscribe already re-arms
+      // reads, so skipping here is redundant, not harmful.
       //
-      // The guard is deliberately disposability, NOT is_closed() or is_open().
-      // This branch is shared by _Open, _Closing, _SSLHandshaking, and
-      // _TLSUpgrading. During _Closing the socket's read side is still open and
-      // we must keep re-arming reads to detect the peer FIN, yet is_closed() is
-      // true there — an is_closed() guard would skip the re-arm and hang the
-      // close. Likewise is_open() is false during _SSLHandshaking, where reads
-      // must stay armed to finish the handshake. Only _Open is exercised by a
-      // test (WriteOnlyEventReadRecovery); the write-only full-drain can't be
-      // triggered deterministically in the other three states, so neither the
-      // compiler nor the suite will catch a regression here. Do not weaken this
-      // guard. See issue #296.
-      ifdef posix then
-        if not PonyAsio.get_disposable(_event) then
-          PonyAsio.resubscribe_read(_event)
-        end
+      // `_writeable` (not is_closed()/is_open()) is deliberate: this branch is
+      // shared by _Open, _Closing, _SSLHandshaking, and _TLSUpgrading. During
+      // _Closing the read side is still open and reads must stay armed to detect
+      // the peer FIN, yet is_closed() is true there; during _SSLHandshaking
+      // is_open() is false but reads must stay armed to finish the handshake.
+      // Only _Open is exercised by a test (WriteOnlyEventReadRecovery, POSIX
+      // only); the full-drain can't be triggered deterministically in the other
+      // states, so neither the compiler nor the suite catches a regression here.
+      // Do not weaken this guard. See issues #294 and #296.
+      if _writeable and not PonyAsio.get_disposable(_event) then
+        PonyAsio.resubscribe_read(_event)
       end
     end
 
   fun ref _do_read_again() =>
-    ifdef posix then
-      _read()
-    else
-      _windows_resume_read()
-    end
+    _read()
 
   fun ref _set_state(state: _ConnectionState ref) =>
     _state = state
@@ -1870,13 +1637,27 @@ class TCPConnection
       end
     end
 
-    ifdef windows then
-      _queue_read()
-    else
-      _read()
-      if _has_pending_writes() then
-        _send_pending_writes()
-      end
+    _read()
+    if _has_pending_writes() then
+      _send_pending_writes()
+    end
+
+  fun ref _close_event_fd(fd: U32) =>
+    """
+    Close the fd backing a subscribed event. On POSIX the stdlib owns the
+    close (the readiness backend never owns fds). On Windows the readiness
+    backend owns it: the fd is closed when the deferred
+    ProcessSocketNotifications REMOVE (issued by the unsubscribe) is seen, so
+    closing here would emit no REMOVE and strand the disposal handshake,
+    leaking the fd and event.
+
+    Use this for every fd whose event was created via
+    `pony_asio_event_create`. Raw, never-subscribed fds (e.g. an accepted fd
+    rejected before an event is created) are closed directly with
+    `PonyTCP.close` on both platforms.
+    """
+    ifdef not windows then
+      PonyTCP.close(fd)
     end
 
   fun ref _connecting_event_failed(event: AsioEventID, fd: U32) =>
@@ -1894,7 +1675,7 @@ class TCPConnection
     if not PonyAsio.get_disposable(event) then
       PonyAsio.unsubscribe(event)
     end
-    PonyTCP.close(fd)
+    _close_event_fd(fd)
     _connecting_callback()
 
   fun ref _straggler_cleanup(event: AsioEventID) =>
@@ -1910,9 +1691,9 @@ class TCPConnection
     if not PonyAsio.get_disposable(event) then
       PonyAsio.unsubscribe(event)
     end
-    PonyTCP.close(PonyAsio.event_fd(event))
+    _close_event_fd(PonyAsio.event_fd(event))
 
-  fun ref _event_notify(event: AsioEventID, flags: U32, arg: U32) =>
+  fun ref _event_notify(event: AsioEventID, flags: U32) =>
     // Explicit dispatch on event identity. Timer identity checks must come
     // before `event is _event`. The else branch checks disposable first
     // (stale timer disposables, straggler disposables), otherwise dispatches
@@ -1943,10 +1724,10 @@ class TCPConnection
         _fire_user_timer()
       end
     elseif event is _event then
-      _state.own_event(this, flags, arg)
-      // A callback during own_event (e.g., _read_completed(0) → close()) can
-      // transition to _Closing and set _shutdown/_shutdown_peer, but
-      // _Open.own_event() won't check for shutdown completion. This ensures
+      _state.own_event(this, flags)
+      // A callback during own_event (e.g., a zero-byte read in _read() →
+      // close()) can transition to _Closing and set _shutdown/_shutdown_peer,
+      // but _Open.own_event() won't check for shutdown completion. This ensures
       // the check runs after every own-event dispatch, regardless of which
       // state handled it.
       _check_shutdown_complete()
@@ -1967,7 +1748,7 @@ class TCPConnection
         // misidentified as a Happy Eyeballs straggler.
         PonyAsio.destroy(event)
       else
-        _state.foreign_event(this, event, flags, arg)
+        _state.foreign_event(this, event, flags)
       end
     end
 
@@ -1986,13 +1767,8 @@ class TCPConnection
     end
 
   fun _is_socket_connected(fd: U32): Bool =>
-    ifdef windows then
-      (let errno: U32, let value: U32) = _OSSocket.get_so_connect_time(fd)
-      (errno == 0) and (value != 0xffffffff)
-    else
-      (let errno: U32, let value: U32) = _OSSocket.get_so_error(fd)
-      (errno == 0) and (value == 0)
-    end
+    (let errno: U32, let value: U32) = _OSSocket.get_so_error(fd)
+    (errno == 0) and (value == 0)
 
   fun ref _register_spawner(listener: TCPListenerActor) =>
     if _spawned_by is None then
@@ -2033,14 +1809,8 @@ class TCPConnection
     | let e: TCPConnectionActor ref =>
       _state = _ClientConnecting
 
-      let asio_flags = ifdef windows then
-        AsioEvent.read_write()
-      else
-        AsioEvent.read_write_oneshot()
-      end
-
       _inflight_connections = PonyTCP.connect(e, _host, _port, _from,
-        asio_flags where ip_version = _ip_version)
+        AsioEvent.read_write_oneshot() where ip_version = _ip_version)
       _had_inflight = _inflight_connections > 0
       if _had_inflight then
         _arm_connect_timer()
@@ -2054,6 +1824,10 @@ class TCPConnection
     s: ServerLifecycleEventReceiver ref)
   =>
     if _ssl_failed then
+      // Raw fd: no ASIO event has been created for it yet (that happens below,
+      // after this early return), so close it directly on every platform. Do
+      // NOT route this through `_close_event_fd` — that defers to the readiness
+      // backend on Windows, which would never close this never-subscribed fd.
       PonyTCP.close(_fd)
       _fd = -1
       _state = _Closed

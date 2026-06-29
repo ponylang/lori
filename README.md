@@ -23,7 +23,7 @@ Please note that if this library encounters a state that the programmers thought
 - `use "lori"` to include this package
 - `corral run -- ponyc` to compile your application
 
-Requires ponyc 0.64.0 or later.
+Requires ponyc 0.64.0 or later. On Windows, requires ponyc 0.66.0 or later, the release that switched Windows networking from IOCP to readiness notifications.
 
 Note: The ssl transitive dependency requires a C SSL library to be installed. Please see the ssl installation instructions for more information.
 

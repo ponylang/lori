@@ -14,7 +14,14 @@ class \nodoc\ iso _TestBackpressureDrain is UnitTest
   6. Server unthrottles, unmutes, receives "ping" (via buffer_until) — passes
 
   Timeout means the server never saw the ping, reproducing the bug from
-  issue #276. POSIX only — the bug is specific to EPOLLONESHOT.
+  issue #276.
+
+  POSIX only. The production drain logic is platform-neutral, but this test
+  needs to provoke write backpressure with a fixed-size payload, and Windows
+  loopback buffers far more than the requested SO_SNDBUF/SO_RCVBUF (a 16 MB
+  send still drains without throttling). Triggering backpressure on Windows
+  requires a send-until-throttled loop rather than a fixed payload; the
+  stdlib's net/TCPThrottle test uses that pattern.
   """
   fun name(): String => "BackpressureDrain"
 
@@ -210,9 +217,11 @@ class \nodoc\ iso _TestWriteOnlyEventReadRecovery is UnitTest
   path: it never mutes on throttle or unmutes on unthrottle. The fix for issue
   #276 restored read interest via unmute()'s _set_readable() + _read(); a relay
   / proxy / streaming server that never mutes doesn't take that path. When a
-  write-only EPOLLOUT oneshot event drains the last of the payload, the whole
-  fd is disarmed and nothing re-arms reads, so the follow-up "ping" never
-  reaches _on_received.
+  write-only (writeable, no readable) one-shot event drains the last of the
+  payload, the whole fd is disarmed and nothing re-arms reads, so the follow-up
+  "ping" never reaches _on_received. The write-only re-arm fix is platform-
+  neutral (every platform now uses one-shot readiness), but see the note on
+  BackpressureDrain for why this test is POSIX only.
 
   Sequence:
   1. Client connects, sets small SO_RCVBUF, mutes itself, sends "ready"
@@ -222,8 +231,7 @@ class \nodoc\ iso _TestWriteOnlyEventReadRecovery is UnitTest
   5. Client drains all data, sends "ping"
   6. Server receives "ping" — passes
 
-  Timeout means the server went read-deaf, reproducing issue #294. POSIX only —
-  the bug is specific to EPOLLONESHOT.
+  Timeout means the server went read-deaf, reproducing issue #294.
   """
   fun name(): String => "WriteOnlyEventReadRecovery"
 
