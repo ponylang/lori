@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Changed
 
+- Replace Windows IOCP socket I/O with readiness notifications ([PR #298](https://github.com/ponylang/lori/pull/298))
 
 ## [0.15.1] - 2026-06-22
 
