@@ -1056,10 +1056,7 @@ class TCPConnection
       end
     end
 
-    // A successful writev is outgoing traffic, whether it came from an
-    // application send() or from draining buffered writes on a writeable
-    // event. Reset the idle timer so a slow-but-progressing transfer to a
-    // slow peer is not closed as idle while bytes are still moving.
+    // A drain is outgoing traffic too; reset the idle timer.
     if wrote_bytes then
       _reset_idle_timer()
     end
