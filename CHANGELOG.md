@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 
+- Fix idle timeout closing connections that are still transferring data ([PR #300](https://github.com/ponylang/lori/pull/300))
 
 ### Added
 
