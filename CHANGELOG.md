@@ -2,17 +2,11 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/) and [Keep a CHANGELOG](http://keepachangelog.com/).
 
-## [unreleased] - unreleased
+## [0.16.1] - 2026-06-30
 
 ### Fixed
 
 - Fix idle timeout closing connections that are still transferring data ([PR #300](https://github.com/ponylang/lori/pull/300))
-
-### Added
-
-
-### Changed
-
 
 ## [0.16.0] - 2026-06-29
 
