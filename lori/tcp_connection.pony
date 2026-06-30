@@ -907,8 +907,6 @@ class TCPConnection
       _send_pending_writes()
     end
 
-    _reset_idle_timer()
-
     // Determine when to fire _on_sent
     if not _has_pending_writes() then
       // All data sent to OS immediately; defer _on_sent
@@ -1010,6 +1008,7 @@ class TCPConnection
     next writeable event.
     """
     let writev_batch_size: USize = PonyTCP.writev_max().usize()
+    var wrote_bytes: Bool = false
 
     while _writeable and (_pending_writev_total > 0) do
       try
@@ -1036,6 +1035,9 @@ class TCPConnection
         match \exhaustive\ PonyTCP.writev(_event, _pending_data,
           0, num_to_send, _pending_first_buffer_offset)?
         | (SocketResultOk, let len: USize) =>
+          if len > 0 then
+            wrote_bytes = true
+          end
           if len < bytes_to_send then
             _manage_pending_buffer(len)
             _apply_backpressure()
@@ -1052,6 +1054,14 @@ class TCPConnection
         hard_close()
         return
       end
+    end
+
+    // A successful writev is outgoing traffic, whether it came from an
+    // application send() or from draining buffered writes on a writeable
+    // event. Reset the idle timer so a slow-but-progressing transfer to a
+    // slow peer is not closed as idle while bytes are still moving.
+    if wrote_bytes then
+      _reset_idle_timer()
     end
 
     if _pending_writev_total == 0 then
@@ -1312,9 +1322,9 @@ class TCPConnection
 
   fun ref _reset_idle_timer() =>
     """
-    Reset the idle timer to the configured duration. Called on I/O activity
-    (successful send, data received). Only resets an existing timer — does
-    not create one.
+    Reset the idle timer to the configured duration. Called on I/O activity:
+    a successful `writev` (an application send or a buffered-write drain) or
+    data received. Only resets an existing timer — does not create one.
     """
     if not _timer_event.is_null() then
       PonyAsio.set_timer(_timer_event, _idle_timeout_nsec)
