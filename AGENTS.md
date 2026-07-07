@@ -104,6 +104,7 @@ examples/
   infinite-ping-pong/       -- Ping-pong client+server
   ip-version/               -- IPv4-only echo server
   read-buffer-size/         -- Configurable read buffer sizing
+  send-completion/          -- Per-send completion tracking with SendToken
   socket-options/           -- TCP_NODELAY and OS buffer size tuning
   net-ssl-echo-server/      -- SSL echo server
   net-ssl-infinite-ping-pong/ -- SSL ping-pong
@@ -258,7 +259,7 @@ Design: Discussion #252.
 
 `send(data: (ByteSeq | ByteSeqIter))` is fallible — it returns `(SendToken | SendError)` instead of silently dropping data:
 
-- `SendToken` — opaque token identifying the send operation. Delivered to `_on_sent(token)` when data is fully handed to the OS.
+- `SendToken` — opaque token identifying the send operation. Each accepted `send()` gets exactly one terminal callback: `_on_sent(token)` when its bytes are handed to the OS (kernel send buffer, not peer receipt), or `_on_send_failed(token)` if the connection closes first. Callbacks fire in send order.
 - `SendErrorNotConnected` — connection not open (permanent).
 - `SendErrorNotWriteable` — socket under backpressure (transient, wait for `_on_unthrottled`).
 During SSL handshake (`_SSLHandshaking` or `_TLSUpgrading`), returns `SendErrorNotConnected` directly from the state class without reaching `_do_send()`.
@@ -267,7 +268,7 @@ During SSL handshake (`_SSLHandshaking` or `_TLSUpgrading`), returns `SendErrorN
 
 `is_writeable()` lets the application check writeability before calling `send()`.
 
-`_on_sent(token)` always fires in a subsequent behavior turn (via `_notify_sent` on `TCPConnectionActor`), never synchronously during `send()`. If the connection closes with a pending partial write, `_on_send_failed(token)` fires (via `_notify_send_failed`) to notify the application that the accepted send could not be delivered. `_on_send_failed` always arrives after `_on_closed`, which fires synchronously during `hard_close()`.
+`_on_sent(token)` always fires in a subsequent behavior turn (via `_notify_sent` on `TCPConnectionActor`), never synchronously during `send()`. On a hard close, every accepted send still pending (not yet `_on_sent`) fires `_on_send_failed(token)` (via `_notify_send_failed`) in send order, so the split between tokens that got `_on_sent` and tokens that got `_on_send_failed` marks exactly how far delivery to the OS reached. `_on_send_failed` always arrives after `_on_closed`, which fires synchronously during `hard_close()`. Because `_on_sent` is delivered by a queued behavior, a token whose bytes reached the OS just as the connection closed can fire `_on_sent` after `_on_closed`.
 
 The library does not queue data on behalf of the application during backpressure. `send()` returns `SendErrorNotWriteable` and the application decides what to do (queue, drop, close, etc.).
 
@@ -278,12 +279,16 @@ Pending writes use writev on every platform. The internal fields:
 - `_pending_data: Array[ByteSeq]` — buffers awaiting delivery. Also keeps `ByteSeq` values alive for the GC while raw pointers reference them in the IOV array built by `PonyTCP.writev`.
 - `_pending_writev_total: USize` — total bytes remaining (accounts for `_pending_first_buffer_offset`).
 - `_pending_first_buffer_offset: USize` — bytes already sent from `_pending_data(0)`, for partial write resume. COUPLING: points into the buffer owned by `_pending_data(0)` — trimming `_pending_data` without resetting the offset causes a dangling pointer. `_manage_pending_buffer` maintains both.
+- `_pending_tokens: List[(USize, SendToken)]` — FIFO of (completion offset, token). Each accepted send records the cumulative enqueued-byte offset — into the wire-byte stream `_pending_data` drains, not an index into the array — at which its bytes finish. For SSL the offsets are over ciphertext (enqueued synchronously by `_ssl_enqueue_sends()`), for plaintext over the application bytes.
+- `_cumulative_enqueued` / `_cumulative_sent: USize` — running byte totals over `_pending_data`. `_fire_completed_sends()` fires `_on_sent` for every token whose completion offset `<= _cumulative_sent`, in FIFO order. Both counters reset to 0 when the queue empties, so the offsets stay small.
 
 The write path uses an enqueue-then-flush pattern:
 
-1. `_enqueue(data)` pushes to `_pending_data` and updates `_pending_writev_total`. No I/O.
-2. `_send_pending_writes()` flushes via `PonyTCP.writev`, which builds the IOV array internally. It loops while writeable and there is pending data, applying backpressure on a partial write or `SocketResultRetry`.
-3. `_manage_pending_buffer(bytes_sent)` walks `_pending_data`, trims fully-sent entries, and updates `_pending_first_buffer_offset`.
+1. `_enqueue(data)` pushes to `_pending_data` and updates `_pending_writev_total` and `_cumulative_enqueued`. No I/O.
+2. `_send_pending_writes()` flushes via `PonyTCP.writev`, which builds the IOV array internally. It loops while writeable and there is pending data, applying backpressure on a partial write or `SocketResultRetry`, then calls `_fire_completed_sends()` to fire `_on_sent` for the tokens the drain completed.
+3. `_manage_pending_buffer(bytes_sent)` walks `_pending_data`, trims fully-sent entries, and updates `_pending_first_buffer_offset` and `_cumulative_sent`.
+
+`hard_close()` drains `_pending_tokens` to `_on_send_failed` (every remaining token, in FIFO order) via `_hard_close_cleanup`. The token-mint step in `_do_send` runs only after the flush and the still-open check, so a send that errored out never burns a token id.
 
 `PonyTCP.writev` takes `Array[ByteSeq] box` and builds the `(pointer, size)` IOV array internally; the runtime turns it into `iovec` (POSIX) or `WSABUF` (Windows). Returns `(SocketResult, USize)`: a tri-state result (`SocketResultOk`, `SocketResultRetry`, `SocketResultError`) plus the number of bytes sent. `SocketResultRetry` signals backpressure (`EWOULDBLOCK`/`WSAEWOULDBLOCK`); `SocketResultError` signals an unrecoverable error or peer-close. `PonyTCP.writev_max()` is `IOV_MAX` on POSIX and 1 on Windows, so the flush loop batches accordingly.
 
