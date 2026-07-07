@@ -112,7 +112,7 @@ examples/
   timer/                    -- Query-timeout simulation with set_timer()
   yield-read/               -- Cooperative scheduler fairness with yield_read()
 stress-tests/
-  open-close/               -- Connection open/close stress test
+  tcp-swarm/                -- Swarm TCP stress test: churn + per-connection echo oracle
 ```
 
 ## Architecture

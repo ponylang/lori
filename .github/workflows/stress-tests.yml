@@ -3,6 +3,7 @@ name: Stress tests
 on:
   schedule:
     - cron: "30 6 * * *"
+  workflow_dispatch:
 
 permissions:
   packages: read
@@ -10,6 +11,7 @@ permissions:
 jobs:
   x86_64-linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 200
 
     name: Linux
     container:
@@ -19,10 +21,22 @@ jobs:
         uses: actions/checkout@v6.0.2
       - name: Build
         run: make stress-tests config=debug ssl=libressl
-      - name: Run
-        run: build/debug/open-close 15000000
+      - name: Run TCP swarm
+        run: |
+          python3 stress-tests/tcp-swarm/orchestrate_tcp.py \
+            --binary build/debug/tcp-swarm \
+            --start ${{ github.run_id }} \
+            --budget-seconds 3000 --timeout-seconds 5400 \
+            --out rt-stress-out
+      - name: Upload failure bundles
+        if: ${{ failure() || cancelled() }}
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: tcp-swarm-bundles-linux
+          path: rt-stress-out/*.json
+          if-no-files-found: ignore
       - name: Send alert on failure
-        if: ${{ failure() }}
+        if: ${{ failure() || cancelled() }}
         uses: zulip/github-actions-zulip/send-message@bd8ec52de371d139ae8313661b7d8318c19266aa
         with:
           api-key: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_API_KEY }}
@@ -35,6 +49,7 @@ jobs:
 
   macos:
     runs-on: macos-26
+    timeout-minutes: 200
 
     name: MacOS
     steps:
@@ -48,10 +63,22 @@ jobs:
         run: |
           export PATH=/Users/runner/.local/share/ponyup/bin/:$PATH
           make ci config=debug ssl=libressl
-      - name: Run
-        run: build/debug/open-close 3750000
+      - name: Run TCP swarm
+        run: |
+          python3 stress-tests/tcp-swarm/orchestrate_tcp.py \
+            --binary build/debug/tcp-swarm \
+            --start ${{ github.run_id }} \
+            --budget-seconds 3000 --timeout-seconds 5400 \
+            --out rt-stress-out
+      - name: Upload failure bundles
+        if: ${{ failure() || cancelled() }}
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: tcp-swarm-bundles-macos
+          path: rt-stress-out/*.json
+          if-no-files-found: ignore
       - name: Send alert on failure
-        if: ${{ failure() }}
+        if: ${{ failure() || cancelled() }}
         uses: zulip/github-actions-zulip/send-message@bd8ec52de371d139ae8313661b7d8318c19266aa
         with:
           api-key: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_API_KEY }}
@@ -64,6 +91,7 @@ jobs:
 
   windows:
     runs-on: windows-2025-vs2026
+    timeout-minutes: 200
 
     name: Windows
     steps:
@@ -91,12 +119,24 @@ jobs:
         run: |
           $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
           .\make.ps1 -Command stress-tests -Config Debug 2>&1;
-      - name: Run
+      - name: Run TCP swarm
         run: |
           $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
-          .\build\debug\open-close 1500
+          python stress-tests\tcp-swarm\orchestrate_tcp.py `
+            --binary build\debug\tcp-swarm.exe `
+            --start ${{ github.run_id }} `
+            --budget-seconds 3000 --timeout-seconds 5400 `
+            --max-connections 1000 `
+            --out rt-stress-out
+      - name: Upload failure bundles
+        if: ${{ failure() || cancelled() }}
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: tcp-swarm-bundles-windows
+          path: rt-stress-out/*.json
+          if-no-files-found: ignore
       - name: Send alert on failure
-        if: ${{ failure() }}
+        if: ${{ failure() || cancelled() }}
         uses: zulip/github-actions-zulip/send-message@bd8ec52de371d139ae8313661b7d8318c19266aa
         with:
           api-key: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_API_KEY }}

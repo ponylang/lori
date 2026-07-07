@@ -6,3 +6,5 @@ tags
 lock.json
 _corral/
 _repos/
+__pycache__/
+*.pyc
