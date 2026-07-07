@@ -1,0 +1,47 @@
+name: Lint and Test Python Scripts
+
+on: pull_request
+
+concurrency:
+  group: lint-python-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  packages: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+      - name: Check Python files under stress-tests/
+        # ruff 0.15.12
+        uses: docker://ghcr.io/astral-sh/ruff@sha256:e42f3866bb9f701dbc459cdec3f5aca06511e6a38e6e04bfd4d04a2be26d4fd4
+        with:
+          args: check stress-tests
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+      - name: Run stress-tests Python tests
+        # Every `*_test.py` under stress-tests/ is self-contained (no pytest):
+        # python3-runnable, exits non-zero on failure. New tests are picked up
+        # automatically by this glob -- no registration needed. Each is run from the
+        # repo root; Python puts the script's own dir on sys.path, so a sibling
+        # `import orchestrate_tcp` resolves.
+        run: |
+          set -e
+          tests=$(find stress-tests -name '*_test.py' | sort)
+          if [ -z "$tests" ]; then
+            echo "No stress-tests/**/*_test.py found -- glob or path broken?" >&2
+            exit 1
+          fi
+          for t in $tests; do
+            echo "== $t =="
+            python3 "$t"
+          done

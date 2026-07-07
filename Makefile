@@ -55,7 +55,10 @@ SOURCE_FILES := $(shell find $(SRC_DIR) -name *.pony)
 EXAMPLES := $(notdir $(shell find $(EXAMPLES_DIR)/* -maxdepth 0 -type d))
 EXAMPLES_SOURCE_FILES := $(shell find $(EXAMPLES_DIR) -name *.pony)
 EXAMPLES_BINARIES := $(addprefix $(BUILD_DIR)/,$(EXAMPLES))
-STRESS_TESTS := $(notdir $(shell find $(STRESS_TESTS_DIR)/* -type d))
+# -maxdepth 0: only immediate subdirs are stress tests. Without it, find recurses
+# and a nested dir (e.g. a Python __pycache__ from the orchestrator tests) becomes
+# a bogus build target. Mirrors the EXAMPLES line above.
+STRESS_TESTS := $(notdir $(shell find $(STRESS_TESTS_DIR)/* -maxdepth 0 -type d))
 STRESS_TESTS_SOURCE_FILES := $(shell find $(STRESS_TESTS_DIR) -name *.pony)
 STRESS_TESTS_BINARIES := $(addprefix $(BUILD_DIR)/,$(STRESS_TESTS))
 

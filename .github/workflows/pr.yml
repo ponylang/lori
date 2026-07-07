@@ -28,8 +28,9 @@ jobs:
         run: make ci config=debug ssl=libressl
       - name: config=release
         run: make ci config=release ssl=libressl
-      - name: open/close stress test
-        run: build/debug/open-close 1000000
+      - name: tcp swarm smoke test
+        timeout-minutes: 5
+        run: build/debug/tcp-swarm --connections 2000 --concurrency 64 --payload-size 256 --messages 2
 
   macos:
     name: MacOS
@@ -48,8 +49,9 @@ jobs:
         run: |
           export PATH=/Users/runner/.local/share/ponyup/bin/:$PATH
           make ci config=release ssl=libressl
-      - name: open/close stress test
-        run: build/debug/open-close 250000
+      - name: tcp swarm smoke test
+        timeout-minutes: 5
+        run: build/debug/tcp-swarm --connections 1000 --concurrency 64 --payload-size 256 --messages 2
 
   windows:
     name: Windows
@@ -89,7 +91,8 @@ jobs:
         run: |
           $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
           .\make.ps1 -Command stress-tests -Config Debug 2>&1;
-      - name: open/close stress test
+      - name: tcp swarm smoke test
+        timeout-minutes: 5
         run: |
           $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
-          .\build\debug\open-close 100
+          .\build\debug\tcp-swarm --connections 100 --concurrency 16 --payload-size 256 --messages 2
