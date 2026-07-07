@@ -150,15 +150,20 @@ memory budget, the watchdog, the run classifiers): `python3 orchestrate_tcp_test
 
 ## Memory and time bounds
 
-- **Memory** — the orchestrator caps each run at 8 GiB of address space
-  (`RLIMIT_AS`, Linux), and the draw is separately kept under that cap: the
+- **Memory** — the orchestrator caps each run at 14 GiB of address space
+  (`RLIMIT_AS`, Linux), and the draw is trimmed to keep well under that cap: the
   memory-driving levers (connections, concurrency, messages, payload, writev-chunks,
   read-buffer) are drawn against a shared budget in a per-seed random order, so the
-  trimmed lever rotates and every lever still reaches large on some seeds. The
-  budget's cost constants (`MEM_OBJ_BYTES`, `MEM_RB_FACTOR`) were calibrated against
-  ponyc's `net` stack, not measured on lori; the model's *shape* carries over, but
-  the constants are unconfirmed for lori and the budget is deliberately conservative
-  (2 GiB of workload under the 8 GiB cap). Confirm them with a raised-cap run before
+  trimmed lever rotates and every lever still reaches large on some seeds. The cap is
+  on *virtual* address space, but the budget estimates *live* bytes — on ponyc's `net`
+  stack that measured ~4-7x under the pool allocator's virtual high-water mark, which grows
+  as the run is CPU-starved (a draw the budget put at ~1.2 GiB peaked ~5 GiB virtual on fast
+  cores but ~8.4 GiB on 2 cores, where it reproduces the CI OOM; ~120 MiB RSS throughout).
+  Virtual is nearly free (RSS is the scarce resource, the runner has 16 GiB), so the cap is
+  set high enough to clear that ~8.4 GiB worst case with margin. The budget's
+  cost constants (`MEM_OBJ_BYTES`, `MEM_RB_FACTOR`) were calibrated against ponyc's `net`
+  stack, not measured on lori — the *shape* carries over but the constants are unconfirmed
+  here, so lori is at least as exposed; confirm with a raised-cap run on lori before
   trusting the budget as a tight bound.
 - **Time** — the per-run clamp bounds round-trips (`connections * messages`) and
   total bytes (`connections * messages * payload`), so an outsized draw is trimmed.
