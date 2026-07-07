@@ -45,13 +45,17 @@ DEFAULT_NO_PROGRESS_SECONDS = 300
 # can't run unbounded, but that is NOT a failure (outcome "incomplete") -- the run
 # was healthy, it just ran long. Only the no-progress hang above fails a seed.
 DEFAULT_TIMEOUT_SECONDS = 6000
-# 8 GiB, not 4: the Pony runtime reserves a flat ~3.5 GiB of VIRTUAL address space
-# (measured, constant across configs), and RLIMIT_AS caps virtual, not RSS -- so a
-# 4 GiB cap sits ~86% full before the workload runs and a high --ponymaxthreads run
-# could trip a FALSE OOM. 8 GiB has no downside and removes that risk. This cap is
-# the backstop, not the primary bound: the draw is separately kept under it by the
-# memory budget below (see est_peak_bytes), so a healthy workload never reaches it.
-DEFAULT_MEM_LIMIT_MB = 8192
+# 14 GiB, on VIRTUAL address space (RLIMIT_AS caps virtual, not RSS). This budget is a copy
+# of ponyc's tcp-swarm model, where the failing seed the budget estimated at ~1.2 GiB
+# measured ~5 GiB of virtual on fast cores but ~8.4 GiB pinned to 2 cores (~120 MiB RSS
+# throughout), the 2-core run reproducing the CI OOM: the pool allocator's virtual high-water
+# mark under the in-flight backlog runs ~4-7x over est_peak_bytes' live-byte estimate and
+# grows as the run is CPU-starved. Virtual is nearly free (RSS is the scarce resource, the
+# runner has 16 GiB), so 14 clears ponyc's measured ~8.4 GiB worst case with margin at no RAM
+# cost. Those numbers are ponyc's `net` stack; lori's OWN TCP stack was not independently
+# measured and its constants were borrowed from ponyc unvalidated, so lori is at least as
+# exposed -- confirm with a raised-cap run on lori if you want the budget to be a tight bound.
+DEFAULT_MEM_LIMIT_MB = 14336
 
 
 def info(message):
@@ -136,13 +140,15 @@ def draw_bucketed(rng, buckets):
 
 # --------------------------------------------------------------- memory budget
 
-# The draw must never pick a workload whose peak memory exceeds the RLIMIT_AS cap the
-# orchestrator runs each seed under (see _capture / DEFAULT_MEM_LIMIT_MB). A workload
-# that does is killed by the runtime's own out-of-memory abort (ponyint_virt_alloc) --
-# which reads like a runtime crash but is really the test asking for more memory than
-# its own cap allows, a false failure. So every memory-driving lever is drawn against
-# a shared budget: the draw spends it, and once it is spent the remaining levers are
-# trimmed to fit.
+# The draw is trimmed to keep a workload's peak well under the RLIMIT_AS cap each seed
+# runs under (see _capture / DEFAULT_MEM_LIMIT_MB). A workload over the cap is killed by
+# the runtime's own out-of-memory abort (ponyint_virt_alloc) -- which reads like a runtime
+# crash but is really the test asking for more address space than its cap allows, a false
+# failure. Every memory-driving lever is drawn against a shared budget: the draw spends it,
+# and once it is spent the remaining levers trim to fit. The budget bounds LIVE bytes,
+# though, which runs well under the pool allocator's virtual high-water mark -- so it is a
+# coverage-shaping trim, not a hard guarantee; the cap's slack (see DEFAULT_MEM_LIMIT_MB)
+# is what actually absorbs the gap.
 #
 # The levers are drawn in a per-seed RANDOM order (see _draw_memory_levers), and that
 # is the point. A fixed trim order would always shave the same lever -- we would never
@@ -152,18 +158,21 @@ def draw_bucketed(rng, buckets):
 # wins and writev-chunks is forced to 4. Every lever still reaches large on some
 # fraction of seeds, so the sacrificed lever is not always the same one.
 #
-# est_peak_bytes estimates peak WORKLOAD bytes on top of the runtime's flat virtual
-# reservation. The SHAPE of the model carries to lori -- pending vectored-send
-# buffers, live read buffers, bytes in flight, and per-connection churn -- but the
-# constants (MEM_OBJ_BYTES, MEM_RB_FACTOR) were calibrated against ponyc's `net`
-# stack, NOT measured on lori. They are UNCONFIRMED best guesses for lori; the budget
-# is deliberately conservative (2 GiB workload under the 8 GiB cap) so an
-# under-estimate has headroom before it reaches the RLIMIT_AS abort. Confirm them with
-# a raised-cap run before trusting the budget as a tight bound.
+# est_peak_bytes estimates peak live WORKLOAD bytes (pending vectored-send buffers, live
+# read buffers, bytes in flight, per-connection churn). This is NOT what the cap bounds:
+# RLIMIT_AS caps virtual, and on ponyc's `net` stack the pool allocator's virtual high-water
+# mark under the in-flight backlog measured ~4-7x over these live-byte terms and grows as the
+# run is CPU-starved (a 53k-connection draw the budget put at ~1.2 GiB peaked ~5 GiB virtual
+# on fast cores, ~8.4 GiB on 2 cores where it reproduces the CI OOM; ~120 MiB RSS throughout).
+# The SHAPE carries to lori, but the constants were calibrated on ponyc's `net`, NOT measured
+# on lori's OWN TCP stack -- so they are UNCONFIRMED here and lori is at least as exposed. The
+# response was to raise the cap so its slack absorbs the underestimate, not to re-fit: pool
+# reservation is a high-water artifact that varies with core count and stack. Confirm with a
+# raised-cap run on lori if you want the budget to be a tight bound.
 # COUPLING: the constants track the engine's per-object and per-read-buffer memory --
 # re-measure if _Keystream.make_chunks, the read buffer size, or lori's TCPConnection
 # buffering changes.
-MEM_BUDGET_BYTES = 2 * 1024 * 1024 * 1024   # 2 GiB workload, well under the 8 GiB cap
+MEM_BUDGET_BYTES = 2 * 1024 * 1024 * 1024   # 2 GiB workload, well under the 14 GiB cap
 MEM_OBJ_BYTES = 2048        # per pending writev buffer object (margin over ~832 B virt)
 MEM_RB_FACTOR = 4           # live read buffers: client + server, plus headroom
 
