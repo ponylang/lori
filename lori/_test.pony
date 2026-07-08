@@ -95,3 +95,4 @@ actor \nodoc\ Main is TestList
     ifdef posix then test(_TestSendSSLPerTokenCompletion) end
     ifdef posix then test(_TestSendSSLMidFlightDropBoundary) end
     ifdef posix then test(_TestSendGracefulCloseWithPending) end
+    ifdef posix then test(_TestReadableEventWriteRecovery) end

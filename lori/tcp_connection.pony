@@ -1644,18 +1644,21 @@ class TCPConnection
       _read()
     else
       // Runs on every write-only event (writeable, no readable flag).
-      // One-shot readiness (EPOLLONESHOT on Linux, the equivalent gating on
-      // macOS/BSD kqueue and Windows ProcessSocketNotifications) disarms the
-      // whole fd on any event, dropping pending read interest. The write
-      // branch above already ran _set_writeable(), which releases
-      // backpressure. So on a full drain _apply_backpressure() is never
-      // re-entered, and neither read re-arm path runs (its resubscribe and
-      // _read's EAGAIN resubscribe are both skipped), leaving the connection
-      // permanently read-deaf (issue #294). Re-arming reads here covers that.
-      // On a partial drain _apply_backpressure() does re-enter, and because
-      // PonyAsio.resubscribe re-arms whichever directions are not-ready (the
-      // read/write names signal intent, not effect), its write resubscribe
-      // also re-arms reads, so the resubscribe here is redundant but harmless.
+      // Where one subscription covers the whole fd (Linux EPOLLONESHOT,
+      // Windows ProcessSocketNotifications), any event disarms it, dropping
+      // pending read interest. (macOS kqueue arms read and write as
+      // independent one-shot filters, so a write-only event leaves reads armed
+      // and this re-arm is a harmless no-op there — issue #294 was a Linux
+      // report.) The write branch above already ran _set_writeable(), which
+      // releases backpressure. So on a full drain _apply_backpressure() is
+      // never re-entered, and neither read re-arm path runs (its resubscribe
+      // and _read's EAGAIN resubscribe are both skipped), leaving the
+      // connection permanently read-deaf. Re-arming reads here covers that.
+      // On a partial drain _apply_backpressure() does re-enter,
+      // and because on the whole-fd backends PonyAsio.resubscribe re-arms
+      // whichever directions are not-ready (the read/write names signal
+      // intent, not effect), its write resubscribe also re-arms reads, so the
+      // resubscribe here is redundant but harmless.
       //
       // Skip the re-arm unless the socket is still healthy and fully drained,
       // which `_writeable` captures: `_set_writeable()` above set it true, and
@@ -1685,6 +1688,44 @@ class TCPConnection
       if _writeable and not PonyAsio.get_disposable(_event) then
         PonyAsio.resubscribe_read(_event)
       end
+    end
+
+    // Mirror image of the read re-arm above, for the write side. On backends
+    // where one subscription covers the whole fd (Linux EPOLLONESHOT, Windows
+    // ProcessSocketNotifications), any event consumes it, so a readable event
+    // drops the write interest a prior `_apply_backpressure()` armed. The read
+    // path re-arms write as a side effect whenever it reaches its EAGAIN
+    // resubscribe (that resubscribe re-arms every not-ready direction), so most
+    // reads self-heal. The one path that does not is a read that ends in
+    // `mute()` before EAGAIN — exactly what a backpressured echo peer does when
+    // it stashes a chunk it cannot echo. Nothing then re-arms the pending
+    // write: if still throttled, the writeable edge never arrives, backpressure
+    // never releases, `_on_unthrottled` never fires, and the connection wedges.
+    // A lost-wakeup deadlock, seen under sustained backpressure with two or
+    // more scheduler threads (the readable edge has to land between the
+    // `resubscribe_write` and the writeable edge). macOS kqueue arms read and
+    // write as independent one-shot filters, so a readable event leaves write
+    // armed and this re-arm is a harmless no-op there. See issues #294 and #296
+    // for the read-side counterpart.
+    //
+    // Guarded by `is_open()`: `_throttled` alone is not enough because
+    // `_hard_close_cleanup` does not clear it. After a hard_close the event is
+    // gone in both regimes — disposable immediately on POSIX (resubscribe would
+    // assert in debug), and on Windows the REMOVE is only deferred so
+    // `get_disposable` still returns false, where resubscribing would strand
+    // the deferred-close handshake. `is_open()` is true only in
+    // `_Open`/`_TLSUpgrading`, never after a hard_close (which moves to
+    // `_Closed`), so it excludes that case on every platform. Excluding the
+    // other dispatching states is safe: `_SSLHandshaking` delivers no data to
+    // the application, so its read path never mutes and reaches EAGAIN (whose
+    // resubscribe re-arms a throttled write). `_Closing` can mute — an app may
+    // call `mute()` from `_on_received` during graceful shutdown — but a muted
+    // `_Closing` connection is already waiting on the peer's FIN it won't read,
+    // so re-arming write cannot move it forward and its absence is not the
+    // wedge this fixes. `get_disposable` is kept as defense in depth, matching
+    // the read guard.
+    if _throttled and is_open() and not PonyAsio.get_disposable(_event) then
+      PonyAsio.resubscribe_write(_event)
     end
 
   fun ref _do_read_again() =>
