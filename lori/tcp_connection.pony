@@ -1160,10 +1160,10 @@ class TCPConnection
             return
           end
 
-          // Handle any data already in the read buffer. `_state.socket_open()`
+          // Handle any data already in the read buffer. `_state.can_receive()`
           // stops mid-delivery if an `_on_received` hard_closed us — see the
           // guard after this loop for the rationale.
-          while not _muted and _state.socket_open()
+          while not _muted and _state.can_receive()
             and _there_is_buffered_read_data()
           do
             let bytes_to_consume = match \exhaustive\ _tcp_buffer_until()
@@ -1194,9 +1194,9 @@ class TCPConnection
           // which can hard_close() this connection, transitioning it to
           // `_Closed`. Break the loop on that transition rather than fall
           // through to a socket read on the just-closed fd. Graceful close
-          // (`_Closing`) stays `socket_open()`, so it keeps reading here to
+          // (`_Closing`) stays `can_receive()`, so it keeps reading here to
           // detect the peer FIN. (Mute is handled by the top-of-loop check.)
-          if not _state.socket_open() then
+          if not _state.can_receive() then
             return
           end
 
@@ -1210,7 +1210,7 @@ class TCPConnection
 
           _resize_read_buffer_if_needed()
 
-          match \exhaustive\ _state.read_socket(_event,
+          match \exhaustive\ _state.receive(_event,
             _read_buffer.cpointer(_bytes_in_read_buffer),
             _read_buffer.size() - _bytes_in_read_buffer)
           | (SocketResultOk, let bytes_read: USize) =>

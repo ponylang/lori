@@ -375,7 +375,7 @@ class \nodoc\ iso _TestHardCloseDuringReceive is UnitTest
   `mute()` + `close()` in `_on_received` routes to `hard_close()`, which
   transitions the connection to `_Closed` while `_read` is still on the stack.
   `_read` must stop on that transition. If it doesn't, it reaches
-  `_state.read_socket()` in `_Closed` — which is `_Unreachable()` — so a
+  `_state.receive()` in `_Closed` — which is `_Unreachable()` — so a
   regression trips that here; in production it read a closed fd, and under
   connection churn a reused blocking fd would hang a scheduler thread.
 
@@ -492,7 +492,7 @@ class \nodoc\ iso _TestHardCloseAfterFramedReceive is UnitTest
   time from a single buffered read. A `hard_close()` in the first frame's
   `_on_received` transitions the connection to `_Closed`; the loop must stop
   rather than deliver the buffered second frame after `_on_closed` fired. The
-  close is unmuted, so `socket_open()` — not `_muted` — is what has to stop it.
+  close is unmuted, so `can_receive()` — not `_muted` — is what has to stop it.
   The delivery count is checked in a self-behavior that runs after `_read`
   returns, so a regression fails with a clear assertion, not a process exit.
 
