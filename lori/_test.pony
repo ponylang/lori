@@ -26,6 +26,7 @@ actor \nodoc\ Main is TestList
     test(_TestSendvEmpty)
     test(_TestSendvMixedEmpty)
     test(_TestSSLSendv)
+    test(_TestSendSSLLargeSingleSend)
     test(_TestIdleTimeout)
     test(_TestIdleTimeoutReset)
     test(_TestIdleTimeoutDisable)
@@ -87,3 +88,8 @@ actor \nodoc\ Main is TestList
     // The drain and write-only re-arm logic they cover is platform-neutral.
     ifdef posix then test(_TestBackpressureDrain) end
     ifdef posix then test(_TestWriteOnlyEventReadRecovery) end
+    ifdef posix then test(_TestSendPerTokenCompletion) end
+    ifdef posix then test(_TestSendMidFlightDropBoundary) end
+    ifdef posix then test(_TestSendSSLPerTokenCompletion) end
+    ifdef posix then test(_TestSendSSLMidFlightDropBoundary) end
+    ifdef posix then test(_TestSendGracefulCloseWithPending) end

@@ -1,7 +1,13 @@
 class val SendToken is Equatable[SendToken]
   """
-  Identifies a send operation. Returned by `send()` on success and delivered
-  to `_on_sent()` when the data has been fully handed to the OS.
+  Identifies a single `send()`. Returned by `send()` on success, then
+  delivered exactly once: to `_on_sent()` when that send's bytes have been
+  handed to the OS, or to `_on_send_failed()` if the connection closes before
+  then.
+
+  "Handed to the OS" means written to the kernel send buffer, not received by
+  the peer. End-to-end delivery is an application concern -- use your own
+  acknowledgements if you need it.
 
   Tokens use structural equality based on their ID, which is scoped per
   connection. Applications managing multiple connections should pair tokens

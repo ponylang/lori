@@ -131,7 +131,7 @@ Unlike many networking libraries, `send()` is fallible. It returns
 ```pony
 match _tcp_connection.send("some data")
 | let token: SendToken =>
-  // Data accepted. token will arrive in _on_sent when fully written.
+  // Accepted. The token comes back in _on_sent, or _on_send_failed on a drop.
   None
 | SendErrorNotConnected =>
   // Connection is not open.
@@ -143,10 +143,11 @@ end
 ```
 
 [`SendToken`](/lori/lori-SendToken/) is an opaque value identifying the send
-operation. When the data has been fully handed to the OS, lori delivers the
-same token to `_on_sent`. If the connection closes while a write is still
-partially pending, `_on_send_failed` fires instead. Both callbacks always arrive
-in a subsequent behavior turn, never during `send()` itself.
+operation. Each accepted `send()` gets exactly one terminal callback: the
+token comes back to `_on_sent` once its bytes reach the OS, or to
+`_on_send_failed` if the connection closes first. Callbacks arrive in send
+order, always in a later behavior turn, never during `send()`. "Handed to the
+OS" means written to the kernel send buffer, not received by the peer.
 
 The library does not queue data during backpressure. When `send()` returns
 [`SendErrorNotWriteable`](/lori/lori-SendErrorNotWriteable/), the application

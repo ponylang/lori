@@ -1,4 +1,5 @@
 use net = "net"
+use "collections"
 use "ssl/net"
 
 use @printf[I32](fmt: Pointer[U8] tag, ...)
@@ -32,9 +33,16 @@ class TCPConnection
   var _read_buffer_min: USize = 16384
   var _buffer_until: (BufferSize | Streaming) = Streaming
 
-  // Send token tracking
+  // Send token tracking. _pending_tokens is a FIFO of (completion offset,
+  // token): each accepted send records the cumulative byte offset -- into the
+  // wire-byte stream _pending_data drains (ciphertext for SSL, plaintext
+  // otherwise) -- at which its bytes finish. _on_sent fires for a token once
+  // _cumulative_sent reaches its offset. Both counters reset to 0 whenever the
+  // queue empties, so the offsets stay small.
   var _next_token_id: USize = 0
-  var _pending_token: (SendToken | None) = None
+  embed _pending_tokens: List[(USize, SendToken)] = _pending_tokens.create()
+  var _cumulative_enqueued: USize = 0
+  var _cumulative_sent: USize = 0
 
   // Built-in SSL support
   var _ssl: (SSL ref | None) = None
@@ -638,9 +646,9 @@ class TCPConnection
   fun ref _hard_close_cleanup() =>
     """
     Common teardown for hard-closing an established connection. Handles
-    shutdown flags, send_failed for pending token, clearing pending buffers,
-    cancelling all timers, unsubscribing the event, releasing the fd (see
-    `_close_event_fd` — closed here on POSIX, deferred to the unsubscribe
+    shutdown flags, send_failed for every pending token, clearing pending
+    buffers, cancelling all timers, unsubscribing the event, releasing the fd
+    (see `_close_event_fd` — closed here on POSIX, deferred to the unsubscribe
     REMOVE on Windows), and disposing SSL. Order is load-bearing: timer cancel
     before event unsubscribe, SSL dispose after the fd is released.
 
@@ -651,18 +659,27 @@ class TCPConnection
     _shutdown = true
     _shutdown_peer = true
 
-    // Fire _on_send_failed for any accepted-but-undelivered send before
-    // clearing the pending buffer. This is deferred via _notify_send_failed
-    // so it arrives in a subsequent turn, after _on_closed.
-    match (_pending_token, _enclosing)
-    | (let t: SendToken, let e: TCPConnectionActor ref) =>
-      e._notify_send_failed(t)
+    // Fire _on_send_failed for every accepted-but-undelivered send before
+    // clearing the pending buffer. Deferred via _notify_send_failed so each
+    // arrives in a subsequent turn, after _on_closed.
+    match _enclosing
+    | let e: TCPConnectionActor ref =>
+      try
+        while _pending_tokens.size() > 0 do
+          (_, let token) = _pending_tokens.shift()?
+          e._notify_send_failed(token)
+        end
+      else
+        // Guarded by size() > 0, so shift() never errors.
+        _Unreachable()
+      end
     end
 
     _pending_data.clear()
     _pending_writev_total = 0
     _pending_first_buffer_offset = 0
-    _pending_token = None
+    _cumulative_enqueued = 0
+    _cumulative_sent = 0
 
     _cancel_idle_timer()
     _cancel_connect_timer()
@@ -864,8 +881,10 @@ class TCPConnection
     syscall overhead and the cost of copying into a contiguous buffer.
 
     Returns a `SendToken` on success, or a `SendError` explaining the
-    failure. When successful, `_on_sent(token)` will fire in a subsequent
-    behavior turn once the data has been fully handed to the OS.
+    failure. On success the token gets exactly one terminal callback in a
+    later behavior turn: `_on_sent(token)` once the data has been handed to
+    the OS (written to the kernel send buffer, not received by the peer), or
+    `_on_send_failed(token)` if the connection closes first.
     """
     _state.send(this, data)
 
@@ -876,25 +895,21 @@ class TCPConnection
       return SendErrorNotWriteable
     end
 
-    _next_token_id = _next_token_id + 1
-    let token = SendToken._create(_next_token_id)
-
+    // Enqueue this send's wire bytes (ciphertext for SSL, plaintext otherwise).
+    // For SSL, ssl.write encrypts the whole plaintext synchronously, so all of
+    // this send's ciphertext is enqueued here; on an ssl.write error the send
+    // failed, so tell the caller and do nothing else.
     match \exhaustive\ _ssl
     | let ssl: SSL ref =>
       match \exhaustive\ data
       | let d: ByteSeq =>
-        try ssl.write(d)? end
+        try ssl.write(d)? else return SendErrorNotWriteable end
       | let d: ByteSeqIter =>
         for v in d.values() do
-          try ssl.write(v)? end
+          try ssl.write(v)? else return SendErrorNotWriteable end
         end
       end
-      _ssl_flush_sends()
-
-      // Check if SSL error triggered close
-      if not is_open() then
-        return SendErrorNotConnected
-      end
+      _ssl_enqueue_sends()
     | None =>
       match \exhaustive\ data
       | let d: ByteSeq =>
@@ -904,12 +919,28 @@ class TCPConnection
           _enqueue(v)
         end
       end
-      _send_pending_writes()
     end
 
-    // Determine when to fire _on_sent
+    // This send's bytes finish at the current cumulative-enqueued offset.
+    // Flush; that fires any earlier sends this drain completed.
+    let offset = _cumulative_enqueued
+    _send_pending_writes()
+
+    // A flush that hits a write error hard-closes. Return the error -- the send
+    // never took hold, no callback.
+    if not is_open() then
+      return SendErrorNotConnected
+    end
+
+    // Mint the token only now, so a send that failed above never burns an id.
+    _next_token_id = _next_token_id + 1
+    let token = SendToken._create(_next_token_id)
+
+    // Fire now if this send fully drained during the flush; otherwise track
+    // it so `_on_sent` fires when the queue drains past its offset.
+    // `_has_pending_writes` (not the offset) decides, because a full drain
+    // resets the counters.
     if not _has_pending_writes() then
-      // All data sent to OS immediately; defer _on_sent
       match \exhaustive\ _enclosing
       | let e: TCPConnectionActor ref =>
         e._notify_sent(token)
@@ -917,8 +948,7 @@ class TCPConnection
         _Unreachable()
       end
     else
-      // Partial write; _on_sent fires when pending list drains
-      _pending_token = token
+      _pending_tokens.push((offset, token))
     end
 
     token
@@ -947,22 +977,24 @@ class TCPConnection
     Add a buffer to the pending write queue. Callers must call
     `_send_pending_writes()` to flush after enqueuing.
 
-    Uses `not is_closed()` rather than `is_open()` because `_ssl_flush_sends()`
-    calls `_enqueue()` during `_SSLHandshaking` (where `is_open() = false`)
-    to push handshake protocol data. The wider guard allows handshake data
-    through while still blocking enqueue after the connection closes.
+    Uses `not is_closed()` rather than `is_open()` because
+    `_ssl_enqueue_sends()` calls `_enqueue()` during `_SSLHandshaking` (where
+    `is_open() = false`) to push handshake protocol data. The wider guard
+    allows handshake data through while still blocking enqueue after the
+    connection closes.
     """
     if data.size() == 0 then return end
     if not is_closed() then
       _pending_data.push(data)
       _pending_writev_total = _pending_writev_total + data.size()
+      _cumulative_enqueued = _cumulative_enqueued + data.size()
     end
 
   fun ref _manage_pending_buffer(bytes_sent: USize): USize =>
     """
     Account for `bytes_sent` by walking `_pending_data` entries. Returns
     the number of fully-sent entries. Updates `_pending_first_buffer_offset`,
-    `_pending_writev_total`, and trims `_pending_data`.
+    `_pending_writev_total`, and `_cumulative_sent`, and trims `_pending_data`.
     """
     if bytes_sent == 0 then return 0 end
 
@@ -995,6 +1027,7 @@ class TCPConnection
     end
 
     _pending_writev_total = _pending_writev_total - bytes_sent
+    _cumulative_sent = _cumulative_sent + bytes_sent
     _pending_data.trim_in_place(num_fully_sent)
     _pending_first_buffer_offset = new_offset
 
@@ -1050,7 +1083,10 @@ class TCPConnection
         end
       else
         // writev error or unreachable Array.apply bounds — non-graceful
-        // shutdown
+        // shutdown. Fire _on_sent for sends whose bytes already reached the
+        // OS in an earlier batch of this flush first, so hard_close fails only
+        // the rest.
+        _fire_completed_sends()
         hard_close()
         return
       end
@@ -1061,19 +1097,39 @@ class TCPConnection
       _reset_idle_timer()
     end
 
+    _fire_completed_sends()
+
     if _pending_writev_total == 0 then
       _release_backpressure()
+    end
 
-      match _pending_token
-      | let t: SendToken =>
-        _pending_token = None
+  fun ref _fire_completed_sends() =>
+    """
+    Fire `_on_sent` for each pending send whose bytes have all reached the
+    OS -- its completion offset has been passed by `_cumulative_sent` -- in
+    send order. Once the queue is fully drained and empty, reset the byte
+    counters. They only grow while the queue never fully empties; on a 64-bit
+    target that won't overflow for any real transfer.
+    """
+    try
+      while _pending_tokens.size() > 0 do
+        (let offset, let token) = _pending_tokens(0)?
+        if offset > _cumulative_sent then break end
+        _pending_tokens.shift()?
         match \exhaustive\ _enclosing
         | let e: TCPConnectionActor ref =>
-          e._notify_sent(t)
+          e._notify_sent(token)
         | None =>
           _Unreachable()
         end
       end
+    else
+      // Guarded by size() > 0, so the ? accesses never error.
+      _Unreachable()
+    end
+    if (_pending_tokens.size() == 0) and (_pending_writev_total == 0) then
+      _cumulative_enqueued = 0
+      _cumulative_sent = 0
     end
 
   fun ref _deliver_received(s: EitherLifecycleEventReceiver ref,
@@ -1482,11 +1538,12 @@ class TCPConnection
       _Unreachable()
     end
 
-  fun ref _ssl_flush_sends() =>
+  fun ref _ssl_enqueue_sends() =>
     """
-    Flush any pending encrypted data from the SSL session to the wire.
-    Called after SSL operations that may produce output (handshake, write).
-    Enqueues all SSL chunks, then flushes once via writev.
+    Drain pending encrypted data from the SSL session into the write queue,
+    without flushing. Split out from `_ssl_flush_sends` so `_do_send` can
+    record a send's completion offset after its ciphertext is enqueued but
+    before the flush.
     """
     match _ssl
     | let ssl: SSL ref =>
@@ -1495,8 +1552,18 @@ class TCPConnection
           _enqueue(ssl.send()?)
         end
       end
-      _send_pending_writes()
     end
+
+  fun ref _ssl_flush_sends() =>
+    """
+    Enqueue any pending encrypted data from the SSL session, then flush to the
+    wire. Called after SSL handshake and protocol operations that produce
+    output (ClientHello, handshake responses). The application write path uses
+    `_ssl_enqueue_sends()` plus `_send_pending_writes()` directly so it can
+    record the send's completion offset between the two.
+    """
+    _ssl_enqueue_sends()
+    _send_pending_writes()
 
   fun ref _ssl_poll(s: EitherLifecycleEventReceiver ref) =>
     """

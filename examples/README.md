@@ -37,6 +37,10 @@ Query-timeout simulation using `set_timer()`. A client connects, sends a "query"
 
 Handling `send()` errors and throttle/unthrottle callbacks. A flood client sends 200 chunks of 64KB as fast as possible, demonstrating what happens when the OS send buffer fills: `send()` returns `SendErrorNotWriteable`, `_on_throttled` fires, and the client waits for `_on_unthrottled` to resume. Also shows `_on_sent` for tracking write completion.
 
+## [send-completion](send-completion/)
+
+Per-send completion tracking with `SendToken`. A client sends five labeled messages up front and keeps a map of the ones still outstanding, keyed by token id. `_on_sent(token)` identifies which specific send reached the OS — so the map shrinks to empty as each completes — and `_on_send_failed(token)` would identify which sends didn't make it if the connection dropped. Where `backpressure` counts completions, this tracks them by identity.
+
 ## [yield-read](yield-read/)
 
 Cooperative scheduler fairness with `yield_read()`. A flood client sends 100 four-byte messages and the server yields the read loop every 10 messages, letting other actors run before reading resumes automatically. Shows how to prevent a single connection from monopolizing the scheduler without the persistent pause of `mute()`/`unmute()`.

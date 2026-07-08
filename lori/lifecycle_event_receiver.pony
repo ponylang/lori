@@ -37,20 +37,28 @@ trait ServerLifecycleEventReceiver
 
   fun ref _on_sent(token: SendToken) =>
     """
-    Called when data from a successful `send()` has been fully handed to
-    the OS. The token matches the one returned by the `send()` call.
+    Called when the bytes from a successful `send()` have been handed to the
+    OS: written to the kernel send buffer, not necessarily received by the
+    peer. The token matches the one returned by that `send()` call, and this
+    callback fires exactly once for it.
 
     Always fires in a subsequent behavior turn, never synchronously during
-    `send()`. This guarantees the caller has received and processed the
-    `SendToken` return value before the callback arrives.
+    `send()`, so the caller has the `SendToken` return value before the
+    callback arrives. Callbacks arrive in send order. If a send's bytes reach
+    the OS just as the connection closes, its `_on_sent` can arrive after
+    `_on_closed`.
     """
     None
 
   fun ref _on_send_failed(token: SendToken) =>
     """
-    Called when data from a successful `send()` could not be delivered to
-    the OS. The token matches the one returned by the `send()` call. This
-    happens when a connection closes while a partial write is still pending.
+    Called when the bytes from a successful `send()` could not be handed to
+    the OS before the connection closed. The token matches the one returned
+    by that `send()` call, and this callback fires exactly once for it. Every
+    accepted send whose bytes had not yet been handed to the OS when the
+    connection closes fires this instead, so the split between sends that got
+    `_on_sent` and sends that got `_on_send_failed` marks exactly how far
+    delivery to the OS reached.
 
     Always fires in a subsequent behavior turn, never synchronously during
     `hard_close()`. Always arrives after `_on_closed`, which fires
@@ -234,20 +242,28 @@ trait ClientLifecycleEventReceiver
 
   fun ref _on_sent(token: SendToken) =>
     """
-    Called when data from a successful `send()` has been fully handed to
-    the OS. The token matches the one returned by the `send()` call.
+    Called when the bytes from a successful `send()` have been handed to the
+    OS: written to the kernel send buffer, not necessarily received by the
+    peer. The token matches the one returned by that `send()` call, and this
+    callback fires exactly once for it.
 
     Always fires in a subsequent behavior turn, never synchronously during
-    `send()`. This guarantees the caller has received and processed the
-    `SendToken` return value before the callback arrives.
+    `send()`, so the caller has the `SendToken` return value before the
+    callback arrives. Callbacks arrive in send order. If a send's bytes reach
+    the OS just as the connection closes, its `_on_sent` can arrive after
+    `_on_closed`.
     """
     None
 
   fun ref _on_send_failed(token: SendToken) =>
     """
-    Called when data from a successful `send()` could not be delivered to
-    the OS. The token matches the one returned by the `send()` call. This
-    happens when a connection closes while a partial write is still pending.
+    Called when the bytes from a successful `send()` could not be handed to
+    the OS before the connection closed. The token matches the one returned
+    by that `send()` call, and this callback fires exactly once for it. Every
+    accepted send whose bytes had not yet been handed to the OS when the
+    connection closes fires this instead, so the split between sends that got
+    `_on_sent` and sends that got `_on_send_failed` marks exactly how far
+    delivery to the OS reached.
 
     Always fires in a subsequent behavior turn, never synchronously during
     `hard_close()`. Always arrives after `_on_closed`, which fires
