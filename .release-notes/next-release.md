@@ -6,3 +6,9 @@ Now every `send()` that returns a token gets exactly one completion callback: `_
 
 "Handed to the OS" means written to the kernel send buffer, not received by the peer. On a drop, bytes sitting in the kernel buffer may never reach the peer, so `_on_sent` bounds what got through rather than confirming it. End-to-end delivery is still your application's job.
 
+## Fix a hang when closing a connection while handling received data
+
+Closing a connection from inside `_on_received` — for example, closing once you've read a full message — could leave the connection attempting one more read on the socket it had just closed. Under connection churn (many connections opening and closing), that stray read could block one of the runtime's scheduler threads and keep the program from exiting.
+
+Closing a connection while handling received data no longer triggers this hang.
+
