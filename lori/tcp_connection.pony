@@ -1160,8 +1160,12 @@ class TCPConnection
             return
           end
 
-          // Handle any data already in the read buffer
-          while not _muted and _there_is_buffered_read_data() do
+          // Handle any data already in the read buffer. `_state.can_receive()`
+          // stops mid-delivery if an `_on_received` hard_closed us — see the
+          // guard after this loop for the rationale.
+          while not _muted and _state.can_receive()
+            and _there_is_buffered_read_data()
+          do
             let bytes_to_consume = match \exhaustive\ _tcp_buffer_until()
             | let e: BufferSize => e()
             | Streaming => _bytes_in_read_buffer
@@ -1186,6 +1190,16 @@ class TCPConnection
             end
           end
 
+          // `_deliver_received()` above runs the application's `_on_received`,
+          // which can hard_close() this connection, transitioning it to
+          // `_Closed`. Break the loop on that transition rather than fall
+          // through to a socket read on the just-closed fd. Graceful close
+          // (`_Closing`) stays `can_receive()`, so it keeps reading here to
+          // detect the peer FIN. (Mute is handled by the top-of-loop check.)
+          if not _state.can_receive() then
+            return
+          end
+
           // Yield after reading a buffer's worth of data to allow GC and
           // other actors to run. _queue_read() schedules _read_again to
           // resume.
@@ -1196,7 +1210,7 @@ class TCPConnection
 
           _resize_read_buffer_if_needed()
 
-          match \exhaustive\ PonyTCP.receive(_event,
+          match \exhaustive\ _state.receive(_event,
             _read_buffer.cpointer(_bytes_in_read_buffer),
             _read_buffer.size() - _bytes_in_read_buffer)
           | (SocketResultOk, let bytes_read: USize) =>

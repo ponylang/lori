@@ -29,6 +29,9 @@ trait _ConnectionState
   fun is_open(): Bool
   fun is_closed(): Bool
   fun sends_allowed(): Bool
+  fun can_receive(): Bool
+  fun receive(event: AsioEventID, buffer: Pointer[U8] tag,
+    size: USize): (SocketResult, USize)
 
 class _ConnectionNone is _ConnectionState
   fun ref own_event(conn: TCPConnection ref, flags: U32) =>
@@ -117,6 +120,13 @@ class _ConnectionNone is _ConnectionState
   fun is_open(): Bool => false
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
+  fun can_receive(): Bool => false
+
+  fun receive(event: AsioEventID, buffer: Pointer[U8] tag,
+    size: USize): (SocketResult, USize)
+  =>
+    _Unreachable()
+    (SocketResultError, 0)
 
 class _ClientConnecting is _ConnectionState
   fun ref own_event(conn: TCPConnection ref, flags: U32) =>
@@ -209,6 +219,13 @@ class _ClientConnecting is _ConnectionState
   fun is_open(): Bool => false
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
+  fun can_receive(): Bool => false
+
+  fun receive(event: AsioEventID, buffer: Pointer[U8] tag,
+    size: USize): (SocketResult, USize)
+  =>
+    _Unreachable()
+    (SocketResultError, 0)
 
 class _Open is _ConnectionState
   fun ref own_event(conn: TCPConnection ref, flags: U32) =>
@@ -291,6 +308,12 @@ class _Open is _ConnectionState
   fun is_open(): Bool => true
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => true
+  fun can_receive(): Bool => true
+
+  fun receive(event: AsioEventID, buffer: Pointer[U8] tag,
+    size: USize): (SocketResult, USize)
+  =>
+    PonyTCP.receive(event, buffer, size)
 
 class _Closing is _ConnectionState
   fun ref own_event(conn: TCPConnection ref, flags: U32) =>
@@ -375,6 +398,12 @@ class _Closing is _ConnectionState
   fun is_open(): Bool => false
   fun is_closed(): Bool => true
   fun sends_allowed(): Bool => false
+  fun can_receive(): Bool => true
+
+  fun receive(event: AsioEventID, buffer: Pointer[U8] tag,
+    size: USize): (SocketResult, USize)
+  =>
+    PonyTCP.receive(event, buffer, size)
 
 class _UnconnectedClosing is _ConnectionState
   """
@@ -463,6 +492,13 @@ class _UnconnectedClosing is _ConnectionState
   fun is_open(): Bool => false
   fun is_closed(): Bool => true
   fun sends_allowed(): Bool => false
+  fun can_receive(): Bool => false
+
+  fun receive(event: AsioEventID, buffer: Pointer[U8] tag,
+    size: USize): (SocketResult, USize)
+  =>
+    _Unreachable()
+    (SocketResultError, 0)
 
 class _Closed is _ConnectionState
   fun ref own_event(conn: TCPConnection ref, flags: U32) =>
@@ -540,6 +576,13 @@ class _Closed is _ConnectionState
   fun is_open(): Bool => false
   fun is_closed(): Bool => true
   fun sends_allowed(): Bool => false
+  fun can_receive(): Bool => false
+
+  fun receive(event: AsioEventID, buffer: Pointer[U8] tag,
+    size: USize): (SocketResult, USize)
+  =>
+    _Unreachable()
+    (SocketResultError, 0)
 
 class _SSLHandshaking is _ConnectionState
   """
@@ -634,6 +677,12 @@ class _SSLHandshaking is _ConnectionState
   fun is_open(): Bool => false
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
+  fun can_receive(): Bool => true
+
+  fun receive(event: AsioEventID, buffer: Pointer[U8] tag,
+    size: USize): (SocketResult, USize)
+  =>
+    PonyTCP.receive(event, buffer, size)
 
 class _TLSUpgrading is _ConnectionState
   """
@@ -724,3 +773,9 @@ class _TLSUpgrading is _ConnectionState
   fun is_open(): Bool => true
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
+  fun can_receive(): Bool => true
+
+  fun receive(event: AsioEventID, buffer: Pointer[U8] tag,
+    size: USize): (SocketResult, USize)
+  =>
+    PonyTCP.receive(event, buffer, size)
