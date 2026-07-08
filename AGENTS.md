@@ -205,18 +205,20 @@ _Open → _TLSUpgrading (start_tls) → _Open (ssl_handshake_complete)
                                    ↘ _Closed (hard_close / TLS error)
 ```
 
-| State | `is_open()` | `is_closed()` | `sends_allowed()` | Description |
-|---|---|---|---|---|
-| `_ConnectionNone` | false | false | false | Before `_finish_initialization`. Most dispatch methods call `_Unreachable()`. Socket options return error values; `idle_timeout` stores the value; `set_timer` returns `SetTimerNotOpen`. `hard_close` is a no-op (dispose can race with initialization). |
-| `_ClientConnecting` | false | false | false | Happy Eyeballs in progress. `close()` transitions to `_UnconnectedClosing`. |
-| `_UnconnectedClosing` | false | true | false | Draining inflight Happy Eyeballs after `close()` during connecting. Fires `_on_connection_failure` when all drain. `hard_close()` short-circuits to `_Closed`. |
-| `_SSLHandshaking` | false | false | false | TCP connected, initial SSL handshake in progress. Application not notified yet. `close()` delegates to `hard_close()`. |
-| `_TLSUpgrading` | true | false | false | Established connection upgrading to TLS via `start_tls()`. Application already notified. `close()` delegates to `hard_close()`. |
-| `_Open` | true | false | true | Connection established, application notified, I/O active. |
-| `_Closing` | false | true | false | Graceful shutdown in progress — waiting for peer FIN. Still reads to detect FIN. |
-| `_Closed` | false | true | false | Fully closed. Handles straggler event cleanup only. |
+| State | `is_open()` | `is_closed()` | `sends_allowed()` | `socket_open()` | Description |
+|---|---|---|---|---|---|
+| `_ConnectionNone` | false | false | false | false | Before `_finish_initialization`. Most dispatch methods call `_Unreachable()`. Socket options return error values; `idle_timeout` stores the value; `set_timer` returns `SetTimerNotOpen`. `hard_close` is a no-op (dispose can race with initialization). |
+| `_ClientConnecting` | false | false | false | false | Happy Eyeballs in progress. `close()` transitions to `_UnconnectedClosing`. |
+| `_UnconnectedClosing` | false | true | false | false | Draining inflight Happy Eyeballs after `close()` during connecting. Fires `_on_connection_failure` when all drain. `hard_close()` short-circuits to `_Closed`. |
+| `_SSLHandshaking` | false | false | false | true | TCP connected, initial SSL handshake in progress. Application not notified yet. `close()` delegates to `hard_close()`. |
+| `_TLSUpgrading` | true | false | false | true | Established connection upgrading to TLS via `start_tls()`. Application already notified. `close()` delegates to `hard_close()`. |
+| `_Open` | true | false | true | true | Connection established, application notified, I/O active. |
+| `_Closing` | false | true | false | true | Graceful shutdown in progress — waiting for peer FIN. Still reads to detect FIN. |
+| `_Closed` | false | true | false | false | Fully closed. Handles straggler event cleanup only. |
 
-State classes dispatch lifecycle-gated operations (`send`, `close`, `hard_close`, `start_tls`, `read_again`, `ssl_handshake_complete`, `own_event`, `foreign_event`, `keepalive`, `getsockopt`, `getsockopt_u32`, `setsockopt`, `setsockopt_u32`, `idle_timeout`, `set_timer`) and delegate to TCPConnection methods for the actual work. All I/O, SSL, buffer, and flow control logic remains on TCPConnection.
+State classes dispatch lifecycle-gated operations (`send`, `close`, `hard_close`, `start_tls`, `read_again`, `read_socket`, `ssl_handshake_complete`, `own_event`, `foreign_event`, `keepalive`, `getsockopt`, `getsockopt_u32`, `setsockopt`, `setsockopt_u32`, `idle_timeout`, `set_timer`) and delegate to TCPConnection methods for the actual work. All I/O, SSL, buffer, and flow control logic remains on TCPConnection.
+
+Each state also answers `socket_open()`: true while the underlying fd is open (`_Open`, `_Closing`, `_SSLHandshaking`, `_TLSUpgrading`), false otherwise. It is distinct from `is_open()` (app-level, false during `_Closing` and the initial SSL handshake `_SSLHandshaking`, but true during `_TLSUpgrading`). `_read()` consults it after every `_deliver_received()`, because the application's `_on_received` can `hard_close()` mid-loop (transitioning to `_Closed`); on that transition `_read()` breaks its loop instead of falling through to another socket read on the just-closed fd. `_Closing` stays `socket_open()`, so it keeps reading to detect the peer FIN. The socket read itself is the dispatched `read_socket` operation: reading states perform it, non-reading states are `_Unreachable()` — so a read that slips through in a closed state fails loudly rather than reading a dead fd (which under connection churn can block a scheduler thread on a reused fd and hang the runtime).
 
 **Private field access**: Pony restricts private field access to the defining type. State classes use helper methods on TCPConnection (`_set_state`, `_decrement_inflight`, `_establish_connection`, `_straggler_cleanup`, etc.) rather than accessing fields directly.
 

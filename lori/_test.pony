@@ -18,6 +18,8 @@ actor \nodoc\ Main is TestList
     test(_TestUnmute)
     test(_TestSendToken)
     test(_TestSendAfterClose)
+    test(_TestHardCloseDuringReceive)
+    test(_TestHardCloseAfterFramedReceive)
     test(_TestStartTLSPingPong)
     test(_TestStartTLSPreconditions)
     test(_TestHardCloseWhileConnecting)
