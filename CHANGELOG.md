@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 
+- Deliver a completion callback for every send ([PR #305](https://github.com/ponylang/lori/pull/305))
 
 ### Added
 
