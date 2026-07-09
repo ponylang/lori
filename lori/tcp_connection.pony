@@ -531,10 +531,11 @@ class TCPConnection
     until reversed, `yield_read()` is a one-shot pause: the read loop resumes
     on its own.
 
-    For SSL connections, `yield_read()` operates at TCP-read granularity. All
-    SSL-decrypted messages from a single TCP read are delivered before the yield
+    For SSL connections, `yield_read()` operates at TCP-read granularity. Every
+    SSL-decrypted message from a single TCP read is delivered before the yield
     takes effect, because the inner dispatch loop runs exactly once per TCP read
-    when SSL is active.
+    when SSL is active. The exception is `hard_close()`: it stops delivery
+    immediately, so messages still undelivered from that TCP read are dropped.
     """
     _yield_read = true
 
@@ -652,9 +653,17 @@ class TCPConnection
     REMOVE on Windows), and disposing SSL. Order is load-bearing: timer cancel
     before event unsubscribe, SSL dispose after the fd is released.
 
-    Does NOT set `_ssl = None` — the connection is terminal and nothing
-    accesses it afterward. The caller must set `_state = _Closed` before
-    calling this.
+    Does NOT set `_ssl = None`. `_ssl_poll()` can be on the stack when the
+    application hard-closes from a callback. It binds its own `ref` alias to
+    the session, so clearing the field would not stop it; it stops on
+    `_state.can_receive()`. Clearing the field would also leave
+    `_deliver_received()` matching its `None` branch for an SSL connection,
+    which is the plaintext path and hands bytes to `_on_received`
+    undecrypted. `_read()` guards against reaching `_deliver_received()`
+    after a close, so that is a trap rather than a live bug.
+
+    The caller must set `_state = _Closed` before calling this — the
+    `_ssl_poll()` guard depends on it.
     """
     _shutdown = true
     _shutdown_peer = true
@@ -1583,6 +1592,9 @@ class TCPConnection
     """
     Check SSL state after receiving data. Handles handshake completion,
     error detection, decrypted data delivery, and protocol data flushing.
+
+    Delivery and flushing stop if an application callback hard-closes the
+    connection — see the `can_receive()` guards below.
     """
     match _ssl
     | let ssl: SSL ref =>
@@ -1606,15 +1618,22 @@ class TCPConnection
       | let e: BufferSize => e()
       | Streaming => 0
       end
-      while true do
+      // `ssl_handshake_complete` above and `_on_received` below both run
+      // application code that can hard_close(), which disposes `ssl`.
+      // `can_receive()` goes false on that transition, so it bounds the read
+      // loop and the flush. A graceful close() moves to `_Closing`, which
+      // still receives and does not dispose, so both keep running there.
+      while _state.can_receive() do
         match \exhaustive\ ssl.read(ssl_read_buffer_until)
         | let d: Array[U8] iso => s._on_received(consume d)
         | None => break
         end
       end
 
-      // Flush any SSL protocol data (handshake responses, etc.)
-      _ssl_flush_sends()
+      if _state.can_receive() then
+        // Flush any SSL protocol data (handshake responses, etc.)
+        _ssl_flush_sends()
+      end
     end
 
   fun _has_pending_writes(): Bool =>
