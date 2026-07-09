@@ -2,8 +2,6 @@ use net = "net"
 use "collections"
 use "ssl/net"
 
-use @printf[I32](fmt: Pointer[U8] tag, ...)
-
 class TCPConnection
   var _state: _ConnectionState ref = _ConnectionNone
   var _shutdown: Bool = false
