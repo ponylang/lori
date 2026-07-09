@@ -363,6 +363,39 @@ the timer is cancelled and `_on_timer_failure()` fires instead of
 `_on_timer()`. The token the application was waiting on is no longer
 valid; override the callback to retry or close as appropriate.
 
+## Flow Control
+
+When an application can't keep up with what a connection is delivering, it
+calls `mute()` to stop reading and `unmute()` to start again. Both halves
+matter: a connection that mutes and never unmutes never reads again.
+
+```pony
+fun ref _on_received(data: Array[U8] iso) =>
+  _work_queue.push(consume data)
+  if (not _muted) and (_work_queue.size() >= _high_water) then
+    _tcp_connection.mute()
+    _muted = true
+  end
+
+// Called as items are processed off _work_queue.
+be work_completed() =>
+  if _muted and (_work_queue.size() <= _low_water) then
+    _tcp_connection.unmute()
+    _muted = false
+  end
+```
+
+`mute()` takes effect immediately. Called from `_on_received`, nothing further
+is delivered. Whatever the connection has read but not yet delivered is held,
+and `unmute()` delivers it before anything read off the socket afterward. This
+holds for plaintext and SSL connections alike.
+
+Held data only survives to an `unmute()`. Closing a muted connection drops it:
+`close()` on a muted connection hard closes, and `dispose()` always does. There
+is no way to deliver held data without also resuming reads — an application that
+needs it has to `unmute()` and keep processing until it has caught up, taking
+whatever else arrives in the meantime.
+
 ## Read Yielding
 
 Under sustained inbound traffic, a single connection's read loop can
@@ -387,7 +420,8 @@ application calls it from `_on_received()` and can implement any yield policy
 
 For SSL connections, `yield_read()` operates at TCP-read granularity. All
 SSL-decrypted messages from a single TCP read are delivered before the yield
-takes effect.
+takes effect, unless the same callback also calls `hard_close()`, which drops
+the rest, or `mute()`, which holds them until `unmute()`.
 
 ## Read Buffer Size
 
