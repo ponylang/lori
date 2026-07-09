@@ -16,3 +16,9 @@ Closing a connection while handling received data no longer triggers this hang.
 
 A connection could permanently stop making progress under sustained write backpressure while its peer was still sending — data stopped flowing in both directions and the connection never recovered on its own, staying wedged until it was closed. This affected echo, relay, and proxy-style connections that pause reading with `mute()` while a write is backed up, and was most likely to appear on multi-threaded runtimes. Such a connection now recovers and continues once the backpressure clears.
 
+## Fix a crash when hard closing an SSL connection from a callback
+
+Calling `hard_close()` on an SSL connection from inside one of its own lifecycle callbacks — `_on_received`, `_on_connected`, `_on_started`, or `_on_tls_ready` — crashed the process. Dropping a connection the moment its handshake finished, or closing one as soon as you read a message you won't serve, was enough to trigger it.
+
+Hard closing an SSL connection from any of those callbacks now shuts it down cleanly. Any decrypted messages still undelivered from the same read are dropped, which is what closing the connection asked for. Graceful `close()` was never affected, and neither were plaintext connections.
+
