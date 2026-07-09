@@ -16,6 +16,8 @@ actor \nodoc\ Main is TestList
     test(_TestSSLPingPong)
     test(_TestBasicBufferUntil)
     test(_TestUnmute)
+    test(_TestSSLMute)
+    test(_TestSSLMuteCloseDropsHeld)
     test(_TestSendToken)
     test(_TestSendAfterClose)
     test(_TestHardCloseDuringReceive)

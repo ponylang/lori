@@ -1,4 +1,7 @@
+use "constrained_types"
+use "files"
 use "pony_test"
+use "ssl/net"
 
 class \nodoc\ iso _TestMute is UnitTest
   """
@@ -8,10 +11,10 @@ class \nodoc\ iso _TestMute is UnitTest
 
   Test works as follows:
 
-  Once an incoming connection is established, we set mute on it and then
-  verify that within a 2 second long test that the `_on_received` callback is
-  not triggered. A timeout is considering passing and `_on_received` being called
-  is grounds for a failure.
+  Once an incoming connection is established, we set mute on it and then verify
+  that within a 5 second long test the `_on_received` callback is not triggered.
+  A timeout is considered passing; `_on_received` being called is grounds for a
+  failure.
   """
   fun name(): String => "TestMute"
 
@@ -248,3 +251,369 @@ actor \nodoc\ _TestUnmuteServer
 
   fun ref _on_received(data: Array[U8] iso) =>
     _h.complete(true)
+
+class \nodoc\ iso _TestSSLMute is UnitTest
+  """
+  Test that `mute()` called from `_on_received` stops delivery of the decrypted
+  messages still sitting in the SSL session, and that `unmute()` delivers them.
+
+  A single `send()` of 20 bytes crosses the wire as one SSL record. With
+  `buffer_until(4)` the server's SSL read loop has five 4-byte messages to hand
+  over from that one TCP read. The server mutes on the first, the second, and
+  the fifth; a timer does each unmuting. All five must arrive, in order, across
+  the three pauses — muting holds messages, it doesn't drop or reorder them.
+
+  The second and fifth mutes are the interesting ones. The second lands inside
+  the delivery that the first `unmute()` resumed, so it pauses a poll that was
+  itself a resume. The fifth is on the last message, so it pauses with nothing
+  left to hold; the resumed poll has to find nothing and carry on reading. To
+  show that it did, the server sends "PING" after its third `unmute()` and the
+  test completes when the client's "PONG" arrives as a sixth message.
+
+  Five things fail the test: a message arriving while muted, a message arriving
+  out of order, the last message arriving without three unmutes, a "PONG" that
+  never arrives because the empty resume wedged the read path, and the timeout
+  that a fix which stopped delivery without resuming it would hit.
+
+  The test uses no `expect_action`: completing every expected action passes a
+  long test on its own, and every action this test could name happens before
+  the held messages arrive.
+  """
+  fun name(): String => "SSLMute"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9778"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    let listener = _TestSSLMuteListener(port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(15_000_000_000)
+
+actor \nodoc\ _TestSSLMuteListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSSLMuteClient | None) = None
+  var _server: (_TestSSLMuteServer | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSSLMuteServer =>
+    let s = _TestSSLMuteServer(_sslctx, fd, _h)
+    _server = s
+    s
+
+  fun ref _on_listening() =>
+    _client = _TestSSLMuteClient(_port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSSLMuteListener")
+    _h.complete(false)
+
+  be dispose() =>
+    try (_client as _TestSSLMuteClient).dispose() end
+    try (_server as _TestSSLMuteServer).dispose() end
+    _tcp_listener.close()
+
+actor \nodoc\ _TestSSLMuteClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_client(
+      TCPConnectAuth(h.env.root),
+      sslctx,
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    // One SSL record holding five 4-byte messages.
+    _tcp_connection.send("AAAABBBBCCCCDDDDEEEE")
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    // The server pings once it has unmuted for the last time. Answering it
+    // proves its read path still works after a resume that found nothing.
+    if String.from_iso_array(consume data) == "PING" then
+      _tcp_connection.send("PONG")
+    end
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+    _h.complete(false)
+
+actor \nodoc\ _TestSSLMuteServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  let _chunks: Array[String] val =
+    recover val ["AAAA"; "BBBB"; "CCCC"; "DDDD"; "EEEE"; "PONG"] end
+  // The messages the server mutes on: the first, the second (which pauses a
+  // poll that was itself a resume) and the fifth (which pauses with nothing
+  // left to hold).
+  let _mute_on: Array[USize] val = recover val [1; 2; 5] end
+  var _muted: Bool = false
+  var _received: USize = 0
+  var _unmutes: USize = 0
+
+  new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_server(
+      TCPServerAuth(_h.env.root),
+      sslctx,
+      fd,
+      this,
+      this)
+    match MakeBufferSize(4)
+    | let b: BufferSize => _tcp_connection.buffer_until(b)
+    | let _: ValidationFailure =>
+      _h.fail("MakeBufferSize(4) should succeed")
+      _h.complete(false)
+    end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    if _muted then
+      _h.fail("server received data while muted")
+      _h.complete(false)
+      return
+    end
+
+    _received = _received + 1
+
+    let got: String val = String.from_iso_array(consume data)
+    let want = try _chunks(_received - 1)? else "" end
+    if got != want then
+      _h.fail("message " + _received.string() + " was '" + got + "', wanted '"
+        + want + "'")
+      _h.complete(false)
+      return
+    end
+
+    if _mute_on.contains(_received) then
+      _muted = true
+      _tcp_connection.mute()
+      match MakeTimerDuration(500)
+      | let d: TimerDuration =>
+        match _tcp_connection.set_timer(d)
+        | let _: TimerToken => None
+        | let _: SetTimerError =>
+          _h.fail("set_timer returned error")
+          _h.complete(false)
+        end
+      | let _: ValidationFailure =>
+        _h.fail("MakeTimerDuration(500) should succeed")
+        _h.complete(false)
+      end
+    elseif _received == _chunks.size() then
+      if _unmutes == _mute_on.size() then
+        _h.complete(true)
+      else
+        _h.fail("all messages arrived after " + _unmutes.string()
+          + " unmutes, wanted " + _mute_on.size().string())
+        _h.complete(false)
+      end
+    end
+
+  fun ref _on_timer(token: TimerToken) =>
+    _unmutes = _unmutes + 1
+    _muted = false
+    _tcp_connection.unmute()
+    if _unmutes == _mute_on.size() then
+      // That last unmute resumed a poll with nothing held. Ask the client for
+      // one more message: it can only arrive if the read path survived.
+      _tcp_connection.send("PING")
+    end
+
+class \nodoc\ iso _TestSSLMuteCloseDropsHeld is UnitTest
+  """
+  Test that closing a muted SSL connection drops the messages the `mute()` was
+  holding, and closes rather than hanging.
+
+  `close()` on a muted connection hard closes, because a muted connection isn't
+  reading and so can never see the peer's FIN. The hard close disposes the SSL
+  session, and the decrypted messages still inside it go with it.
+
+  The client sends one SSL record holding three 4-byte messages. The server
+  mutes on the first, so the second and third are held. A timer then closes the
+  connection. `_on_closed` must fire, and neither held message may be delivered.
+
+  A `close()` that went the graceful route instead would leave a muted
+  connection waiting on a FIN it will never read, and the test would time out.
+  """
+  fun name(): String => "SSLMuteCloseDropsHeld"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9779"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("server received")
+    h.expect_action("server closed")
+
+    let listener = _TestSSLMuteCloseListener(port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(15_000_000_000)
+
+actor \nodoc\ _TestSSLMuteCloseListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSSLMuteCloseClient | None) = None
+  var _server: (_TestSSLMuteCloseServer | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSSLMuteCloseServer =>
+    let s = _TestSSLMuteCloseServer(_sslctx, fd, _h)
+    _server = s
+    s
+
+  fun ref _on_listening() =>
+    _client = _TestSSLMuteCloseClient(_port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSSLMuteCloseListener")
+    _h.complete(false)
+
+  be dispose() =>
+    try (_client as _TestSSLMuteCloseClient).dispose() end
+    try (_server as _TestSSLMuteCloseServer).dispose() end
+    _tcp_listener.close()
+
+actor \nodoc\ _TestSSLMuteCloseClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_client(
+      TCPConnectAuth(h.env.root),
+      sslctx,
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    // One SSL record holding three 4-byte messages.
+    _tcp_connection.send("AAAABBBBCCCC")
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+    _h.complete(false)
+
+actor \nodoc\ _TestSSLMuteCloseServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _received: USize = 0
+
+  new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_server(
+      TCPServerAuth(_h.env.root),
+      sslctx,
+      fd,
+      this,
+      this)
+    match MakeBufferSize(4)
+    | let b: BufferSize => _tcp_connection.buffer_until(b)
+    | let _: ValidationFailure =>
+      _h.fail("MakeBufferSize(4) should succeed")
+      _h.complete(false)
+    end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    _received = _received + 1
+
+    if _received > 1 then
+      _h.fail("message " + _received.string()
+        + " was delivered; mute should have held it and close dropped it")
+      return
+    end
+
+    _h.complete_action("server received")
+    _tcp_connection.mute()
+    match MakeTimerDuration(500)
+    | let d: TimerDuration =>
+      match _tcp_connection.set_timer(d)
+      | let _: TimerToken => None
+      | let _: SetTimerError =>
+        _h.fail("set_timer returned error")
+        _h.complete(false)
+      end
+    | let _: ValidationFailure =>
+      _h.fail("MakeTimerDuration(500) should succeed")
+      _h.complete(false)
+    end
+
+  fun ref _on_timer(token: TimerToken) =>
+    _tcp_connection.close()
+
+  fun ref _on_closed() =>
+    _h.complete_action("server closed")

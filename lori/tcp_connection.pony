@@ -48,6 +48,7 @@ class TCPConnection
   var _ssl: (SSL ref | None) = None
   var _ssl_ready: Bool = false
   var _ssl_failed: Bool = false
+  var _ssl_delivery_paused: Bool = false
   // Set when PonyTCP.connect returned > 0, meaning at least one TCP
   // connection attempt was made. Used by the failure callback to distinguish
   // DNS failure (no attempts) from TCP failure (all attempts failed).
@@ -508,12 +509,23 @@ class TCPConnection
     """
     Temporarily suspend reading off this TCPConnection until such time as
     `unmute` is called.
+
+    When called from `_on_received`, no further data is delivered. Whatever the
+    connection has read but not yet delivered is held, and `unmute` delivers it
+    before anything read off the socket afterward. This holds for plaintext and
+    SSL connections alike.
+
+    Held data only survives to an `unmute`. Closing a muted connection drops it,
+    because `close` on a muted connection hard closes and `dispose` always does.
     """
     _muted = true
 
   fun ref unmute() =>
     """
     Start reading off this TCPConnection again after having been muted.
+
+    Reading resumes on a later turn, not during this call. Data held since the
+    `mute` is delivered before anything read off the socket afterward.
     """
     _muted = false
     _set_readable()
@@ -533,9 +545,11 @@ class TCPConnection
 
     For SSL connections, `yield_read()` operates at TCP-read granularity. Every
     SSL-decrypted message from a single TCP read is delivered before the yield
-    takes effect, because the inner dispatch loop runs exactly once per TCP read
-    when SSL is active. The exception is `hard_close()`: it stops delivery
-    immediately, so messages still undelivered from that TCP read are dropped.
+    takes effect: one pass of the dispatch loop hands the whole read to the SSL
+    session, which then delivers every message it decrypts. Two callbacks stop
+    that delivery early: `hard_close()`, which drops the messages still
+    undelivered from that TCP read, and `mute()`, which holds them until
+    `unmute()`.
     """
     _yield_read = true
 
@@ -600,7 +614,9 @@ class TCPConnection
 
     If the connection is established and not muted, we won't finish closing
     until we get a zero length read. If the connection is muted, perform a
-    hard close and shut down immediately.
+    hard close and shut down immediately. A hard close drops whatever the
+    connection had read but not yet delivered, including anything a `mute` was
+    holding.
     """
     if _muted then
       hard_close()
@@ -1169,26 +1185,38 @@ class TCPConnection
             return
           end
 
-          // Handle any data already in the read buffer. `_state.can_receive()`
-          // stops mid-delivery if an `_on_received` hard_closed us — see the
-          // guard after this loop for the rationale.
+          // Deliver data we already have: first the decrypted SSL messages
+          // that a `mute()` from `_on_received` stopped `_ssl_poll()` handing
+          // over on an earlier read, then whatever is in the read buffer.
+          // `_state.can_receive()` stops mid-delivery if an `_on_received`
+          // hard_closed us — see the guard after this loop for the rationale.
+          //
+          // The paused branch is the only way back into `_ssl_poll()`: those
+          // messages sit inside the SSL session, and `_read_buffer` is empty by
+          // then, so `_there_is_buffered_read_data()` on its own would never
+          // re-enter it.
           while not _muted and _state.can_receive()
-            and _there_is_buffered_read_data()
+            and (_ssl_delivery_paused or _there_is_buffered_read_data())
           do
-            let bytes_to_consume = match \exhaustive\ _tcp_buffer_until()
-            | let e: BufferSize => e()
-            | Streaming => _bytes_in_read_buffer
+            if _ssl_delivery_paused then
+              _ssl_delivery_paused = false
+              _ssl_poll(s)
+            else
+              let bytes_to_consume = match \exhaustive\ _tcp_buffer_until()
+              | let e: BufferSize => e()
+              | Streaming => _bytes_in_read_buffer
+              end
+
+              let x = _read_buffer = recover Array[U8] end
+              (let data', _read_buffer) = (consume x).chop(bytes_to_consume)
+              _bytes_in_read_buffer = _bytes_in_read_buffer - bytes_to_consume
+
+              _deliver_received(s, consume data')
             end
 
-            let x = _read_buffer = recover Array[U8] end
-            (let data', _read_buffer) = (consume x).chop(bytes_to_consume)
-            _bytes_in_read_buffer = _bytes_in_read_buffer - bytes_to_consume
-
-            _deliver_received(s, consume data')
-
-            // COUPLING: This check must remain immediately after
-            // _deliver_received() — moving it would change when the yield
-            // takes effect relative to application callbacks.
+            // COUPLING: This check must remain immediately after the delivery
+            // above — moving it would change when the yield takes effect
+            // relative to application callbacks.
             if _yield_read then
               _yield_read = false
               match \exhaustive\ _enclosing
@@ -1590,11 +1618,14 @@ class TCPConnection
 
   fun ref _ssl_poll(s: EitherLifecycleEventReceiver ref) =>
     """
-    Check SSL state after receiving data. Handles handshake completion,
-    error detection, decrypted data delivery, and protocol data flushing.
+    Handle handshake completion, error detection, decrypted data delivery, and
+    protocol data flushing for the SSL session. Called by `_deliver_received()`
+    after `ssl.receive()` has fed it new ciphertext, and by `_read()` to resume
+    a delivery that `mute()` cut short.
 
-    Delivery and flushing stop if an application callback hard-closes the
-    connection — see the `can_receive()` guards below.
+    Delivery stops if an application callback hard-closes the connection or
+    mutes it. Flushing stops on a hard close — see the `can_receive()` guards
+    below.
     """
     match _ssl
     | let ssl: SSL ref =>
@@ -1623,7 +1654,12 @@ class TCPConnection
       // `can_receive()` goes false on that transition, so it bounds the read
       // loop and the flush. A graceful close() moves to `_Closing`, which
       // still receives and does not dispose, so both keep running there.
-      while _state.can_receive() do
+      //
+      // The same application code can mute(), which bounds the read loop too:
+      // an SSL connection stops handing over messages the moment the
+      // application says stop, the way a plaintext one does. Muting is a
+      // read-side control, so it does not bound the flush below.
+      while _state.can_receive() and not _muted do
         match \exhaustive\ ssl.read(ssl_read_buffer_until)
         | let d: Array[U8] iso => s._on_received(consume d)
         | None => break
@@ -1633,6 +1669,20 @@ class TCPConnection
       if _state.can_receive() then
         // Flush any SSL protocol data (handshake responses, etc.)
         _ssl_flush_sends()
+      end
+
+      // If the loop above stopped because the application muted — rather than
+      // because the session ran dry — decrypted messages may still be sitting
+      // in the SSL session. Tell `_read()` to come back for them once the
+      // application unmutes. Checked after the flush because the flush can
+      // `hard_close()` on a write error, and a closed connection has nothing
+      // to resume and never runs `_read()` again. The flag can be set with
+      // nothing left to deliver, when the application muted on the last
+      // message; `_read()` then clears it and the resumed poll finds nothing.
+      // The SSL wrapper offers no non-consuming way to tell the difference:
+      // `read()` is its only read-side accessor and it consumes.
+      if _muted and _state.can_receive() then
+        _ssl_delivery_paused = true
       end
     end
 
