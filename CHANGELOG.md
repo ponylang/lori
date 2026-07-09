@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file. This projec
 - Deliver a completion callback for every send ([PR #305](https://github.com/ponylang/lori/pull/305))
 - Fix a hang when closing a connection while handling received data ([PR #307](https://github.com/ponylang/lori/pull/307))
 - Fix connection hang under sustained write backpressure ([PR #306](https://github.com/ponylang/lori/pull/306))
+- Fix a crash when hard closing an SSL connection from a callback ([PR #311](https://github.com/ponylang/lori/pull/311))
 
 ### Added
 
