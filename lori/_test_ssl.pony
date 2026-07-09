@@ -777,3 +777,492 @@ actor \nodoc\ _TestSSLIsWriteablePlainClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+class \nodoc\ iso _TestSSLHardCloseDuringReceive is UnitTest
+  """
+  Test that hard_close() from inside _on_received on an SSL connection stops
+  delivery. hard_close() disposes the SSL session while `_ssl_poll()`'s
+  delivery loop is still on the stack; the loop must not touch the session
+  again, and no further _on_received may fire.
+
+  The client sends two frames in one send() so both TLS records are written
+  and flushed together. Without the `can_receive()` guard in `_ssl_poll()`,
+  the loop reads the disposed session. Against an ssl that is unsafe after
+  dispose (ponylang/ssl#66) that is a segfault rather than a failed
+  assertion.
+  """
+  fun name(): String => "SSLHardCloseDuringReceive"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9773"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("server received")
+    h.expect_action("server closed")
+
+    let listener = _TestSSLHardCloseReceiveListener(port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSSLHardCloseReceiveListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSSLHardCloseReceiveClient | None) = None
+  var _server: (_TestSSLHardCloseReceiveServer | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSSLHardCloseReceiveServer =>
+    let server = _TestSSLHardCloseReceiveServer(_sslctx, fd, _h)
+    _server = server
+    server
+
+  fun ref _on_closed() =>
+    try (_server as _TestSSLHardCloseReceiveServer).dispose() end
+    try (_client as _TestSSLHardCloseReceiveClient).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestSSLHardCloseReceiveClient(_port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSSLHardCloseReceiveListener")
+
+actor \nodoc\ _TestSSLHardCloseReceiveClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_client(
+      TCPConnectAuth(_h.env.root),
+      sslctx,
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    // Two buffers, so two TLS records, encrypted and flushed together.
+    _tcp_connection.send(recover val [as ByteSeq: "AAAA"; "BBBB"] end)
+
+actor \nodoc\ _TestSSLHardCloseReceiveServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _receives: USize = 0
+
+  new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_server(
+      TCPServerAuth(_h.env.root),
+      sslctx,
+      fd,
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    // hard_close() below disposes the SSL session and fires _on_closed. The
+    // client's second record is still in that session, so a delivery loop
+    // that kept running would arrive here a second time, after the close.
+    _receives = _receives + 1
+
+    if _receives > 1 then
+      _h.fail("_on_received fired " + _receives.string() + " times, want 1")
+    else
+      _h.complete_action("server received")
+      _tcp_connection.hard_close()
+    end
+
+  fun ref _on_closed() =>
+    _h.complete_action("server closed")
+
+class \nodoc\ iso _TestSSLHardCloseOnConnected is UnitTest
+  """
+  Test that hard_close() from inside _on_connected on an SSL client is safe.
+  _on_connected fires from `_ssl_poll()` via
+  `_SSLHandshaking.ssl_handshake_complete()`, so the delivery loop below it
+  runs after the callback returns and must not touch the disposed session.
+  """
+  fun name(): String => "SSLHardCloseOnConnected"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9774"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("client closed")
+
+    let listener = _TestSSLHardCloseOnConnectedListener(
+      port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSSLHardCloseOnConnectedListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSSLHardCloseOnConnectedClient | None) = None
+  var _server: (_TestSSLHardCloseOnConnectedServer | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSSLHardCloseOnConnectedServer =>
+    let server = _TestSSLHardCloseOnConnectedServer(_sslctx, fd, _h)
+    _server = server
+    server
+
+  fun ref _on_closed() =>
+    try (_server as _TestSSLHardCloseOnConnectedServer).dispose() end
+    try (_client as _TestSSLHardCloseOnConnectedClient).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestSSLHardCloseOnConnectedClient(_port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSSLHardCloseOnConnectedListener")
+
+actor \nodoc\ _TestSSLHardCloseOnConnectedClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_client(
+      TCPConnectAuth(h.env.root),
+      sslctx,
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _tcp_connection.hard_close()
+
+  fun ref _on_closed() =>
+    _h.complete_action("client closed")
+
+actor \nodoc\ _TestSSLHardCloseOnConnectedServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  """
+  The client drops the connection as soon as its handshake completes, so this
+  server may start, fail to start, or close. None of that is under test.
+  """
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_server(
+      TCPServerAuth(_h.env.root),
+      sslctx,
+      fd,
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+class \nodoc\ iso _TestSSLHardCloseOnStarted is UnitTest
+  """
+  Test that hard_close() from inside _on_started on an SSL server is safe.
+  _on_started is the server arm of
+  `_SSLHandshaking.ssl_handshake_complete()`, dispatched from `_ssl_poll()`,
+  so the delivery loop below it runs after the callback returns.
+  """
+  fun name(): String => "SSLHardCloseOnStarted"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9775"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("server closed")
+
+    let listener = _TestSSLHardCloseOnStartedListener(port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSSLHardCloseOnStartedListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSSLHardCloseOnStartedClient | None) = None
+  var _server: (_TestSSLHardCloseOnStartedServer | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSSLHardCloseOnStartedServer =>
+    let server = _TestSSLHardCloseOnStartedServer(_sslctx, fd, _h)
+    _server = server
+    server
+
+  fun ref _on_closed() =>
+    try (_server as _TestSSLHardCloseOnStartedServer).dispose() end
+    try (_client as _TestSSLHardCloseOnStartedClient).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestSSLHardCloseOnStartedClient(_port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSSLHardCloseOnStartedListener")
+
+actor \nodoc\ _TestSSLHardCloseOnStartedClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  """
+  The server drops the connection as soon as its handshake completes, so this
+  client may connect, fail to connect, or close. None of that is under test.
+  """
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_client(
+      TCPConnectAuth(_h.env.root),
+      sslctx,
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+actor \nodoc\ _TestSSLHardCloseOnStartedServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_server(
+      TCPServerAuth(_h.env.root),
+      sslctx,
+      fd,
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    _tcp_connection.hard_close()
+
+  fun ref _on_closed() =>
+    _h.complete_action("server closed")
+
+class \nodoc\ iso _TestSSLCloseDuringReceive is UnitTest
+  """
+  Test that a graceful close() from inside _on_received on an SSL connection
+  keeps delivering. close() moves to `_Closing`, which still receives and
+  does not dispose the SSL session, so the rest of the decrypted records from
+  the same read are delivered.
+
+  This is the other side of `_TestSSLHardCloseDuringReceive`, and it is what
+  makes `can_receive()` the right predicate to bound `_ssl_poll()`'s delivery
+  loop: `is_open()` and `is_closed()` both stop delivery here, and both are
+  wrong.
+  """
+  fun name(): String => "SSLCloseDuringReceive"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9777"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("both records delivered")
+    h.expect_action("server closed")
+
+    let listener = _TestSSLCloseReceiveListener(port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSSLCloseReceiveListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSSLCloseReceiveClient | None) = None
+  var _server: (_TestSSLCloseReceiveServer | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSSLCloseReceiveServer =>
+    let server = _TestSSLCloseReceiveServer(_sslctx, fd, _h)
+    _server = server
+    server
+
+  fun ref _on_closed() =>
+    try (_server as _TestSSLCloseReceiveServer).dispose() end
+    try (_client as _TestSSLCloseReceiveClient).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestSSLCloseReceiveClient(_port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSSLCloseReceiveListener")
+
+actor \nodoc\ _TestSSLCloseReceiveClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_client(
+      TCPConnectAuth(_h.env.root),
+      sslctx,
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    // Two buffers, so two TLS records, encrypted and flushed together.
+    _tcp_connection.send(recover val [as ByteSeq: "AAAA"; "BBBB"] end)
+
+actor \nodoc\ _TestSSLCloseReceiveServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _receives: USize = 0
+
+  new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_server(
+      TCPServerAuth(_h.env.root),
+      sslctx,
+      fd,
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    _receives = _receives + 1
+
+    match _receives
+    | 1 =>
+      // Graceful close leaves the SSL session alive, so the client's second
+      // record still reaches us.
+      _tcp_connection.close()
+    | 2 =>
+      _h.complete_action("both records delivered")
+    else
+      _h.fail("_on_received fired " + _receives.string() + " times, want 2")
+    end
+
+  fun ref _on_closed() =>
+    _h.complete_action("server closed")

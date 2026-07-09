@@ -1105,3 +1105,158 @@ actor \nodoc\ _TestSetTimerAfterTLSUpgradeListener is TCPListenerActor
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestSetTimerAfterTLSUpgradeListener")
+
+class \nodoc\ iso _TestStartTLSHardCloseOnTLSReady is UnitTest
+  """
+  Test that hard_close() from inside _on_tls_ready is safe. _on_tls_ready
+  fires from `_ssl_poll()` via `_TLSUpgrading.ssl_handshake_complete()`,
+  which moves the connection to `_Open` before the callback runs. The
+  delivery loop below the callback must not touch the disposed session.
+  """
+  fun name(): String => "StartTLSHardCloseOnTLSReady"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9776"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("client tls ready")
+    h.expect_action("client closed")
+
+    let listener = _TestStartTLSHardCloseListener(port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestStartTLSHardCloseListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestStartTLSHardCloseClient | None) = None
+  var _server: (_TestStartTLSHardCloseServer | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestStartTLSHardCloseServer =>
+    let server = _TestStartTLSHardCloseServer(_sslctx, fd, _h)
+    _server = server
+    server
+
+  fun ref _on_closed() =>
+    try (_server as _TestStartTLSHardCloseServer).dispose() end
+    try (_client as _TestStartTLSHardCloseClient).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestStartTLSHardCloseClient(_port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestStartTLSHardCloseListener")
+
+actor \nodoc\ _TestStartTLSHardCloseClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _sslctx: SSLContext val
+  let _h: TestHelper
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _sslctx = sslctx
+    _h = h
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(h.env.root),
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+    match MakeBufferSize(2)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
+    end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _tcp_connection.send("STARTTLS")
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    let msg = String.from_array(consume data)
+    if msg == "OK" then
+      match _tcp_connection.start_tls(_sslctx, "localhost")
+      | let _: StartTLSError =>
+        _h.fail("Client start_tls failed")
+        _h.complete(false)
+      end
+    else
+      _h.fail("Client got unexpected: " + msg)
+    end
+
+  fun ref _on_tls_ready() =>
+    _h.complete_action("client tls ready")
+    _tcp_connection.hard_close()
+
+  fun ref _on_tls_failure(reason: TLSFailureReason) =>
+    _h.fail("Client TLS handshake failed")
+
+  fun ref _on_closed() =>
+    _h.complete_action("client closed")
+
+actor \nodoc\ _TestStartTLSHardCloseServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  """
+  The client hard-closes as soon as its TLS upgrade completes, so this server
+  may finish its own upgrade, fail it, or just close. None of that is under
+  test.
+  """
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _sslctx: SSLContext val
+  let _h: TestHelper
+
+  new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
+    _sslctx = sslctx
+    _h = h
+    _tcp_connection = TCPConnection.server(
+      TCPServerAuth(_h.env.root),
+      fd,
+      this,
+      this)
+    match MakeBufferSize(8)
+    | let e: BufferSize => _tcp_connection.buffer_until(e)
+    end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso) =>
+    let msg = String.from_array(consume data)
+    if msg == "STARTTLS" then
+      _tcp_connection.send("OK")
+      match _tcp_connection.start_tls(_sslctx)
+      | let _: StartTLSError =>
+        _h.fail("Server start_tls failed")
+        _h.complete(false)
+      end
+    else
+      _h.fail("Server got unexpected: " + msg)
+    end
