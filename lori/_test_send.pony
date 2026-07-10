@@ -302,10 +302,11 @@ actor \nodoc\ _TestSendvServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _h.assert_eq[String]("Hello, world!", String.from_array(consume data))
     _h.complete_action("data verified")
     _tcp_connection.close()
+    KeepReading
 
 class \nodoc\ iso _TestSendvEmpty is UnitTest
   """
@@ -480,10 +481,11 @@ actor \nodoc\ _TestSendvMixedEmptyServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _h.assert_eq[String]("Helloworld", String.from_array(consume data))
     _h.complete_action("data verified")
     _tcp_connection.close()
+    KeepReading
 
 class \nodoc\ iso _TestSendPerTokenCompletion is UnitTest
   """
@@ -578,8 +580,9 @@ actor \nodoc\ _TestSendPerTokenClient
   be resume_reading() =>
     _tcp_connection.unmute()
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     None
+    KeepReading
 
 actor \nodoc\ _TestSendPerTokenServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
@@ -622,8 +625,8 @@ actor \nodoc\ _TestSendPerTokenServer
   fun ref _large(): Array[U8] val =>
     recover val Array[U8].init('x', 256_000) end
 
-  fun ref _on_received(data: Array[U8] iso) =>
-    if _started then return end
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    if _started then return KeepReading end
     _started = true
     // Small send buffer so the pipe is tiny and backpressure comes fast.
     _tcp_connection.set_so_sndbuf(16384)
@@ -633,6 +636,7 @@ actor \nodoc\ _TestSendPerTokenServer
     _record_send(_tcp_connection.send("t3"))
     // One large send that partial-writes and stays pending (token 4).
     _record_send(_tcp_connection.send(_large()))
+    KeepReading
 
   fun ref _on_throttled() =>
     if not _unmuted_client then
@@ -769,7 +773,7 @@ actor \nodoc\ _TestSendSSLLargeSingleSendClient
   fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     _h.fail("client connect failed")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let d: Array[U8] val = consume data
     for b in d.values() do
       if b != 'x' then _corrupt = true end
@@ -783,6 +787,7 @@ actor \nodoc\ _TestSendSSLLargeSingleSendClient
       _h.fail("received more bytes than were sent")
       _h.complete(false)
     end
+    KeepReading
 
 actor \nodoc\ _TestSendSSLLargeSingleSendServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
@@ -804,11 +809,12 @@ actor \nodoc\ _TestSendSSLLargeSingleSendServer
   fun ref _on_started() =>
     _tcp_connection.set_so_rcvbuf(4096)
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     match _tcp_connection.send(consume data)
     | let _: SendToken => None
     | let _: SendError => _h.fail("server echo failed")
     end
+    KeepReading
 
 class \nodoc\ iso _TestSendMidFlightDropBoundary is UnitTest
   """
@@ -902,8 +908,9 @@ actor \nodoc\ _TestSendMidFlightDropClient
   be resume_reading() =>
     _tcp_connection.unmute()
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     None
+    KeepReading
 
 actor \nodoc\ _TestSendMidFlightDropServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
@@ -948,14 +955,15 @@ actor \nodoc\ _TestSendMidFlightDropServer
   fun ref _large(): Array[U8] val =>
     recover val Array[U8].init('x', 256_000) end
 
-  fun ref _on_received(data: Array[U8] iso) =>
-    if _started then return end
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    if _started then return KeepReading end
     _started = true
     _tcp_connection.set_so_sndbuf(16384)
     _record_send(_tcp_connection.send("t1"))
     _record_send(_tcp_connection.send("t2"))
     _record_send(_tcp_connection.send("t3"))
     _record_send(_tcp_connection.send(_large()))
+    KeepReading
 
   fun ref _on_throttled() =>
     if not _unmuted_client then
@@ -1139,8 +1147,9 @@ actor \nodoc\ _TestSendSSLPerTokenClient
   be resume_reading() =>
     _tcp_connection.unmute()
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     None
+    KeepReading
 
 actor \nodoc\ _TestSendSSLPerTokenServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
@@ -1179,14 +1188,15 @@ actor \nodoc\ _TestSendSSLPerTokenServer
   fun ref _large(): Array[U8] val =>
     recover val Array[U8].init('x', 256_000) end
 
-  fun ref _on_received(data: Array[U8] iso) =>
-    if _started then return end
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    if _started then return KeepReading end
     _started = true
     _tcp_connection.set_so_sndbuf(16384)
     _record_send(_tcp_connection.send("t1"))
     _record_send(_tcp_connection.send("t2"))
     _record_send(_tcp_connection.send("t3"))
     _record_send(_tcp_connection.send(_large()))
+    KeepReading
 
   fun ref _on_throttled() =>
     if not _unmuted_client then
@@ -1326,8 +1336,9 @@ actor \nodoc\ _TestSendSSLMidFlightDropClient
   be resume_reading() =>
     _tcp_connection.unmute()
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     None
+    KeepReading
 
 actor \nodoc\ _TestSendSSLMidFlightDropServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
@@ -1367,14 +1378,15 @@ actor \nodoc\ _TestSendSSLMidFlightDropServer
   fun ref _large(): Array[U8] val =>
     recover val Array[U8].init('x', 256_000) end
 
-  fun ref _on_received(data: Array[U8] iso) =>
-    if _started then return end
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    if _started then return KeepReading end
     _started = true
     _tcp_connection.set_so_sndbuf(16384)
     _record_send(_tcp_connection.send("t1"))
     _record_send(_tcp_connection.send("t2"))
     _record_send(_tcp_connection.send("t3"))
     _record_send(_tcp_connection.send(_large()))
+    KeepReading
 
   fun ref _on_throttled() =>
     if not _unmuted_client then
@@ -1530,8 +1542,9 @@ actor \nodoc\ _TestSendGracefulCloseClient
   be resume_reading() =>
     _tcp_connection.unmute()
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     None
+    KeepReading
 
 actor \nodoc\ _TestSendGracefulCloseServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
@@ -1576,14 +1589,15 @@ actor \nodoc\ _TestSendGracefulCloseServer
   fun ref _large(): Array[U8] val =>
     recover val Array[U8].init('x', 256_000) end
 
-  fun ref _on_received(data: Array[U8] iso) =>
-    if _started then return end
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    if _started then return KeepReading end
     _started = true
     _tcp_connection.set_so_sndbuf(16384)
     _record_send(_tcp_connection.send("t1"))
     _record_send(_tcp_connection.send("t2"))
     _record_send(_tcp_connection.send("t3"))
     _record_send(_tcp_connection.send(_large()))
+    KeepReading
 
   fun ref _on_throttled() =>
     if not _unmuted_client then

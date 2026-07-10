@@ -202,11 +202,12 @@ actor \nodoc\ _TestIdleTimeoutResetServer
       _tcp_connection.idle_timeout(t)
     end
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _received_count = _received_count + 1
     if _received_count == 4 then
       _h.complete_action("data received")
     end
+    KeepReading
 
   fun ref _on_idle_timeout() =>
     _h.assert_true(_received_count == 4,

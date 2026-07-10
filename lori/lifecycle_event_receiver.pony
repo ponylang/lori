@@ -17,11 +17,14 @@ trait ServerLifecycleEventReceiver
     """
     None
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     """
     Called each time data is received on this connection.
+
+    Return `KeepReading` to let the read loop take the next message, or
+    `YieldReading` to stop after this one and give other actors a turn.
     """
-    None
+    KeepReading
 
   fun ref _on_throttled() =>
     """
@@ -222,11 +225,14 @@ trait ClientLifecycleEventReceiver
     """
     None
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     """
     Called each time data is received on this connection.
+
+    Return `KeepReading` to let the read loop take the next message, or
+    `YieldReading` to stop after this one and give other actors a turn.
     """
-    None
+    KeepReading
 
   fun ref _on_throttled() =>
     """

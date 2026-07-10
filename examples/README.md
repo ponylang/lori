@@ -43,7 +43,7 @@ Per-send completion tracking with `SendToken`. A client sends five labeled messa
 
 ## [yield-read](yield-read/)
 
-Cooperative scheduler fairness with `yield_read()`. A flood client sends 100 four-byte messages and the server yields the read loop every 10 messages, letting other actors run before reading resumes automatically. Shows how to prevent a single connection from monopolizing the scheduler without the persistent pause of `mute()`/`unmute()`.
+Cooperative scheduler fairness by returning `YieldReading` from `_on_received`. A flood client sends 100 four-byte messages and the server yields the read loop every 10 messages, letting other actors run before reading resumes automatically. Shows how to prevent a single connection from monopolizing the scheduler without the persistent pause of `mute()`/`unmute()`.
 
 ## [socket-options](socket-options/)
 

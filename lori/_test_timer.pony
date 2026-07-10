@@ -357,11 +357,12 @@ actor \nodoc\ _TestTimerNotResetByIOServer
       _h.complete(false)
     end
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if not _received then
       _received = true
       _h.complete_action("data received")
     end
+    KeepReading
 
   fun ref _on_timer(token: TimerToken) =>
     _h.assert_true(_received, "should have received data before timer fired")

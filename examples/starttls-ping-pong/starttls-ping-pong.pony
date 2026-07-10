@@ -98,7 +98,7 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let msg = String.from_array(consume data)
     if msg == "STARTTLS" then
       _out.print("Server: received STARTTLS, sending OK and upgrading")
@@ -111,6 +111,7 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
       _out.print("Server: " + msg)
       _tcp_connection.send("Pong")
     end
+    KeepReading
 
   fun ref _on_tls_ready() =>
     _out.print("Server: TLS handshake complete")
@@ -141,7 +142,7 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
     _out.print("Client: connected (plaintext), requesting STARTTLS")
     _tcp_connection.send("STARTTLS")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let msg = String.from_array(consume data)
     if msg == "OK" then
       _out.print("Client: received OK, upgrading to TLS")
@@ -153,6 +154,7 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
       _out.print("Client: " + msg)
       _tcp_connection.send("Ping")
     end
+    KeepReading
 
   fun ref _on_tls_ready() =>
     _out.print("Client: TLS handshake complete, sending first Ping")

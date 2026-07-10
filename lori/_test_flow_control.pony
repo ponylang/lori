@@ -97,9 +97,10 @@ actor \nodoc\ _TestMuteClient
   fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     _h.fail("client connect failed")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
      _tcp_connection.send("it's sad that you won't ever read this")
      _h.complete_action("client sent data")
+    KeepReading
 
 actor \nodoc\ _TestMuteServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
@@ -124,9 +125,10 @@ actor \nodoc\ _TestMuteServer
     _tcp_connection.send("send me some data that i won't ever read")
     _h.complete_action("server asks for data")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _h.fail("server should not receive data")
     _h.complete(false)
+    KeepReading
 
 class \nodoc\ iso _TestUnmute is UnitTest
   """
@@ -220,9 +222,10 @@ actor \nodoc\ _TestUnmuteClient
   fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     _h.fail("client connect failed")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
      _tcp_connection.send("i'm happy you will receive this")
      _h.complete_action("client sent data")
+    KeepReading
 
 actor \nodoc\ _TestUnmuteServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
@@ -249,8 +252,9 @@ actor \nodoc\ _TestUnmuteServer
     _tcp_connection.unmute()
     _h.complete_action("server unmuted")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _h.complete(true)
+    KeepReading
 
 class \nodoc\ iso _TestSSLMute is UnitTest
   """
@@ -258,22 +262,22 @@ class \nodoc\ iso _TestSSLMute is UnitTest
   messages still sitting in the SSL session, and that `unmute()` delivers them.
 
   A single `send()` of 20 bytes crosses the wire as one SSL record. With
-  `buffer_until(4)` the server's SSL read loop has five 4-byte messages to hand
-  over from that one TCP read. The server mutes on the first, the second, and
-  the fifth; a timer does each unmuting. All five must arrive, in order, across
-  the three pauses — muting holds messages, it doesn't drop or reorder them.
+  `buffer_until(4)` the SSL session has five 4-byte messages to hand over from
+  that one TCP read. The server mutes on the first, the second, and the fifth; a
+  timer does each unmuting. All five must arrive, in order, across the three
+  pauses — muting holds messages, it doesn't drop or reorder them.
 
-  The second and fifth mutes are the interesting ones. The second lands inside
-  the delivery that the first `unmute()` resumed, so it pauses a poll that was
-  itself a resume. The fifth is on the last message, so it pauses with nothing
-  left to hold; the resumed poll has to find nothing and carry on reading. To
-  show that it did, the server sends "PING" after its third `unmute()` and the
-  test completes when the client's "PONG" arrives as a sixth message.
+  The second and fifth mutes are the interesting ones. The second lands on a
+  message the first `unmute()` went back to the session for. The fifth is on the
+  last message, so it mutes with nothing left to hold, and the next read has to
+  find an empty session and carry on. To show that it did, the server sends
+  "PING" after its third `unmute()` and the test completes when the client's
+  "PONG" arrives as a sixth message.
 
   Five things fail the test: a message arriving while muted, a message arriving
   out of order, the last message arriving without three unmutes, a "PONG" that
-  never arrives because the empty resume wedged the read path, and the timeout
-  that a fix which stopped delivery without resuming it would hit.
+  never arrives because the empty session wedged the read path, and the timeout
+  that a mute which never resumed reading would hit.
 
   The test uses no `expect_action`: completing every expected action passes a
   long test on its own, and every action this test could name happens before
@@ -362,12 +366,13 @@ actor \nodoc\ _TestSSLMuteClient
     // One SSL record holding five 4-byte messages.
     _tcp_connection.send("AAAABBBBCCCCDDDDEEEE")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     // The server pings once it has unmuted for the last time. Answering it
     // proves its read path still works after a resume that found nothing.
     if String.from_iso_array(consume data) == "PING" then
       _tcp_connection.send("PONG")
     end
+    KeepReading
 
   fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     _h.fail("client connect failed")
@@ -395,7 +400,7 @@ actor \nodoc\ _TestSSLMuteServer
       fd,
       this,
       this)
-    match MakeBufferSize(4)
+    match \exhaustive\ MakeBufferSize(4)
     | let b: BufferSize => _tcp_connection.buffer_until(b)
     | let _: ValidationFailure =>
       _h.fail("MakeBufferSize(4) should succeed")
@@ -405,11 +410,11 @@ actor \nodoc\ _TestSSLMuteServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _muted then
       _h.fail("server received data while muted")
       _h.complete(false)
-      return
+      return KeepReading
     end
 
     _received = _received + 1
@@ -420,7 +425,7 @@ actor \nodoc\ _TestSSLMuteServer
       _h.fail("message " + _received.string() + " was '" + got + "', wanted '"
         + want + "'")
       _h.complete(false)
-      return
+      return KeepReading
     end
 
     if _mute_on.contains(_received) then
@@ -447,6 +452,7 @@ actor \nodoc\ _TestSSLMuteServer
         _h.complete(false)
       end
     end
+    KeepReading
 
   fun ref _on_timer(token: TimerToken) =>
     _unmutes = _unmutes + 1
@@ -578,7 +584,7 @@ actor \nodoc\ _TestSSLMuteCloseServer
       fd,
       this,
       this)
-    match MakeBufferSize(4)
+    match \exhaustive\ MakeBufferSize(4)
     | let b: BufferSize => _tcp_connection.buffer_until(b)
     | let _: ValidationFailure =>
       _h.fail("MakeBufferSize(4) should succeed")
@@ -588,13 +594,13 @@ actor \nodoc\ _TestSSLMuteCloseServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _received = _received + 1
 
     if _received > 1 then
       _h.fail("message " + _received.string()
         + " was delivered; mute should have held it and close dropped it")
-      return
+      return KeepReading
     end
 
     _h.complete_action("server received")
@@ -611,6 +617,7 @@ actor \nodoc\ _TestSSLMuteCloseServer
       _h.fail("MakeTimerDuration(500) should succeed")
       _h.complete(false)
     end
+    KeepReading
 
   fun ref _on_timer(token: TimerToken) =>
     _tcp_connection.close()

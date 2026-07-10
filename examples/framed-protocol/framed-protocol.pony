@@ -67,7 +67,7 @@ actor FramedServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _reading_header then
       try
         let len = (data(0)?.usize() << 24) or
@@ -101,6 +101,7 @@ actor FramedServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
       | let e: BufferSize => _tcp_connection.buffer_until(e)
       end
     end
+    KeepReading
 
   fun ref _on_closed() =>
     _out.print("Server: connection closed")
@@ -158,7 +159,7 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
     end
     _tcp_connection.send(recover val [as ByteSeq: header; msg] end)
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _reading_header then
       try
         let len = (data(0)?.usize() << 24) or
@@ -195,6 +196,7 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
         _tcp_connection.close()
       end
     end
+    KeepReading
 
   fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     _out.print("Client: connection failed")

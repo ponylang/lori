@@ -27,8 +27,8 @@ Each swarm dimension is tied to a distinct code path in lori's
   client closes only after its whole echo is back, so the hard path drops no data
   here -- it exercises the distinct teardown/unsubscribe code.
 * `--read-buffer-size` -- the per-connection read buffer size (a `ReadBufferSize`).
-* `--yield-after-reading` -- after this many received bytes, the endpoint calls
-  `yield_read()` to exit the read loop cooperatively (it resumes next turn). This
+* `--yield-after-reading` -- after this many received bytes, the endpoint returns
+  `YieldReading` to exit the read loop cooperatively (it resumes next turn). This
   is lori's application-driven yield; there is no byte-threshold read yield in the
   connection itself.
 * `--connections` / `--concurrency` -- total connections to churn, and the
@@ -509,7 +509,7 @@ actor EchoServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
       end
     end
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let n = data.size()
 
     // Echo. Check is_writeable() BEFORE send(): send(consume data) consumes the
@@ -520,14 +520,16 @@ actor EchoServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
       _pending = consume data
       _tcp_connection.mute()
       // Muted -- reads have stopped, so skip the yield bookkeeping below.
-      return
+      return KeepReading
     end
 
     _since_yield = _since_yield + n
     if _since_yield >= _config.yield_after_reading then
       _since_yield = 0
-      _tcp_connection.yield_read()
+      return YieldReading
     end
+
+    KeepReading
 
   fun ref _on_unthrottled() =>
     // Backpressure cleared. If we stashed a chunk, echo it (we are writeable now)
@@ -630,7 +632,7 @@ actor SwarmClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
   fun ref _on_unthrottled() =>
     _pump()
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let n = data.size()
     try
       var i: USize = 0
@@ -660,10 +662,12 @@ actor SwarmClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
         _since_yield = _since_yield + n
         if _since_yield >= _config.yield_after_reading then
           _since_yield = 0
-          _tcp_connection.yield_read()
+          return YieldReading
         end
       end
     end
+
+    KeepReading
 
   fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     if not _reported then

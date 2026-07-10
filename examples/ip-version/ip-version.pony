@@ -63,9 +63,10 @@ actor IP4Echoer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _on_closed() =>
     _out.print("Server: connection closed.")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _out.print("Server: echoing data back.")
     _tcp_connection.send(consume data)
+    KeepReading
 
 actor IP4EchoClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
@@ -86,6 +87,7 @@ actor IP4EchoClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
   fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
     _out.print("Client: connection failed.")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _out.print("Client: received '" + String.from_array(consume data) + "'")
     _tcp_connection.close()
+    KeepReading
