@@ -1460,20 +1460,35 @@ actor \nodoc\ _TestSendSSLMidFlightDropServer
 
 class \nodoc\ iso _TestSendGracefulCloseWithPending is UnitTest
   """
-  A graceful close() with sends still pending resolves every token cleanly.
+  A graceful close() with sends still queued under backpressure flushes those
+  queued writes to the peer before shutting down, rather than dropping them.
 
-  Same backpressure setup as SendMidFlightDropBoundary, but the server calls
-  close() (graceful shutdown) instead of hard_close() after the second large
-  send, leaving tokens 4 and 5 pending. Whichever way close() resolves the
-  pending writes -- draining them to `_on_sent` or failing them via
-  `_on_send_failed` -- the invariant must hold: every returned token fires
-  exactly one terminal callback, and `_on_closed` fires.
+  Same backpressure setup as SendMidFlightDropBoundary: three tiny sends drain
+  to `_on_sent` (tokens 1-3), a 256 KiB send stays queued (token 4), then a
+  second 256 KiB send from `_on_unthrottled` (token 5) leaves data queued when
+  the server calls close(). Because close() is graceful, every queued byte is
+  written before FIN: all five tokens fire `_on_sent` (none fire
+  `_on_send_failed`), the client receives every byte the server sent, and
+  `_on_closed` fires.
+
+  Without the flush, close() shuts the write side immediately, token 5's bytes
+  fail via `_on_send_failed`, and the client never receives them -- the bug in
+  issue #304.
+
+  The three completion signals fire at different times -- the fifth `_on_sent`
+  lands as the queue drains, before the server's `_on_closed` (which waits on
+  the peer's FIN) -- so each is its own expected action rather than one joint
+  check.
 
   POSIX only, for the same reason as `SendPerTokenCompletion`.
   """
   fun name(): String => "SendGracefulCloseWithPending"
 
   fun ref apply(h: TestHelper) =>
+    h.expect_action("server delivered all pending")
+    h.expect_action("server closed")
+    h.expect_action("client received all bytes")
+
     let listener = _TestSendGracefulCloseListener(h)
     h.dispose_when_done(listener)
     h.long_test(30_000_000_000)
@@ -1517,6 +1532,10 @@ actor \nodoc\ _TestSendGracefulCloseClient
   is (TCPConnectionActor & ClientLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _h: TestHelper
+  // t1+t2+t3 (2+2+2) plus two 256 KiB payloads = every byte the server sends.
+  let _expected: USize = 6 + 256_000 + 256_000
+  var _total_received: USize = 0
+  var _signalled: Bool = false
 
   new create(h: TestHelper) =>
     _h = h
@@ -1543,7 +1562,11 @@ actor \nodoc\ _TestSendGracefulCloseClient
     _tcp_connection.unmute()
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
-    None
+    _total_received = _total_received + data.size()
+    if (not _signalled) and (_total_received >= _expected) then
+      _signalled = true
+      _h.complete_action("client received all bytes")
+    end
     KeepReading
 
 actor \nodoc\ _TestSendGracefulCloseServer
@@ -1555,10 +1578,8 @@ actor \nodoc\ _TestSendGracefulCloseServer
   var _started: Bool = false
   var _unmuted_client: Bool = false
   var _resumed: Bool = false
-  var _closed: Bool = false
   embed _returned: Array[USize] = _returned.create()
   embed _sent_ids: Array[USize] = _sent_ids.create()
-  embed _failed_ids: Array[USize] = _failed_ids.create()
 
   new create(fd: U32, h: TestHelper,
     listener: _TestSendGracefulCloseListener)
@@ -1608,43 +1629,235 @@ actor \nodoc\ _TestSendGracefulCloseServer
   fun ref _on_unthrottled() =>
     if not _resumed then
       _resumed = true
-      // Tokens 4 and 5 are pending; graceful close instead of hard_close.
+      // Token 5's bytes are queued when we close. A graceful close must flush
+      // them, not drop them.
       _record_send(_tcp_connection.send(_large()))
       _tcp_connection.close()
     end
 
   fun ref _on_closed() =>
-    _closed = true
+    _h.complete_action("server closed")
 
   fun ref _on_sent(token: SendToken) =>
     _sent_ids.push(token.id)
-    _maybe_finish()
+    if _sent_ids.size() == _total_sends then
+      // Every returned token fired _on_sent exactly once; none failed.
+      for id in _returned.values() do
+        var count: USize = 0
+        for s in _sent_ids.values() do
+          if s == id then count = count + 1 end
+        end
+        _h.assert_eq[USize](1, count,
+          "each token must fire _on_sent exactly once")
+      end
+      _h.complete_action("server delivered all pending")
+    end
 
   fun ref _on_send_failed(token: SendToken) =>
-    _failed_ids.push(token.id)
-    _maybe_finish()
+    _h.fail("graceful close must flush queued writes, not fail them")
 
-  fun ref _maybe_finish() =>
-    if (_sent_ids.size() + _failed_ids.size()) != _total_sends then
-      return
+class \nodoc\ iso _TestSendSSLGracefulCloseWithPending is UnitTest
+  """
+  The SSL analogue of `SendGracefulCloseWithPending`. A graceful close() on an
+  SSL connection with sends still queued under backpressure flushes those
+  queued writes (ciphertext) to the peer before shutting down.
+
+  Same backpressure setup as `SendSSLMidFlightDropBoundary`: three tiny sends
+  drain to `_on_sent` (tokens 1-3), a 256 KiB send stays queued (token 4), then
+  a second 256 KiB send from `_on_unthrottled` (token 5) leaves ciphertext
+  queued when the server calls close(). Because close() is graceful, every
+  queued byte is written before FIN: all five tokens fire `_on_sent` (none fire
+  `_on_send_failed`), the client decrypts every byte the server sent, and
+  `_on_closed` fires. The SSL path is not a relabel of the plaintext one: the
+  queued bytes are ciphertext, and the `_Closing` drain runs `_ssl_flush_sends`,
+  which can enqueue more ciphertext and re-defer the FIN.
+
+  POSIX only, for the same reason as `SendSSLPerTokenCompletion`.
+  """
+  fun name(): String => "SendSSLGracefulCloseWithPending"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "7916"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("server delivered all pending")
+    h.expect_action("server closed")
+    h.expect_action("client received all bytes")
+
+    let listener = _TestSendSSLGracefulCloseListener(port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(30_000_000_000)
+
+actor \nodoc\ _TestSendSSLGracefulCloseListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestSendSSLGracefulCloseServer | None) = None
+  var _client: (_TestSendSSLGracefulCloseClient | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSendSSLGracefulCloseServer =>
+    let s = _TestSendSSLGracefulCloseServer(_sslctx, fd, _h, this)
+    _server = s
+    s
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendSSLGracefulCloseClient).dispose() end
+    try (_server as _TestSendSSLGracefulCloseServer).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestSendSSLGracefulCloseClient(_port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSendSSLGracefulCloseListener")
+
+  be unmute_client() =>
+    try (_client as _TestSendSSLGracefulCloseClient).resume_reading() end
+
+actor \nodoc\ _TestSendSSLGracefulCloseClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  // t1+t2+t3 (2+2+2) plus two 256 KiB payloads = every byte the server sends.
+  let _expected: USize = 6 + 256_000 + 256_000
+  var _total_received: USize = 0
+  var _signalled: Bool = false
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_client(
+      TCPConnectAuth(_h.env.root),
+      sslctx,
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _tcp_connection.set_so_rcvbuf(4096)
+    _tcp_connection.mute()
+    _tcp_connection.send("ready")
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+
+  be resume_reading() =>
+    _tcp_connection.unmute()
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    _total_received = _total_received + data.size()
+    if (not _signalled) and (_total_received >= _expected) then
+      _signalled = true
+      _h.complete_action("client received all bytes")
+    end
+    KeepReading
+
+actor \nodoc\ _TestSendSSLGracefulCloseServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  let _listener: _TestSendSSLGracefulCloseListener
+  let _total_sends: USize = 5
+  var _started: Bool = false
+  var _unmuted_client: Bool = false
+  var _resumed: Bool = false
+  embed _returned: Array[USize] = _returned.create()
+  embed _sent_ids: Array[USize] = _sent_ids.create()
+
+  new create(sslctx: SSLContext val, fd: U32, h: TestHelper,
+    listener: _TestSendSSLGracefulCloseListener)
+  =>
+    _h = h
+    _listener = listener
+    _tcp_connection = TCPConnection.ssl_server(
+      TCPServerAuth(_h.env.root),
+      sslctx,
+      fd,
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _record_send(r: (SendToken | SendError)) =>
+    match r
+    | let t: SendToken => _returned.push(t.id)
+    | let _: SendError => _h.fail("send() returned an error while flooding")
     end
 
-    _h.log("graceful close: sent=" + _sent_ids.size().string()
-      + " failed=" + _failed_ids.size().string()
-      + " closed=" + _closed.string())
+  fun ref _large(): Array[U8] val =>
+    recover val Array[U8].init('x', 256_000) end
 
-    // Every returned token gets exactly one terminal callback.
-    for id in _returned.values() do
-      var count: USize = 0
-      for s in _sent_ids.values() do
-        if s == id then count = count + 1 end
-      end
-      for f in _failed_ids.values() do
-        if f == id then count = count + 1 end
-      end
-      _h.assert_eq[USize](1, count,
-        "each token must fire exactly one terminal callback")
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    if _started then return KeepReading end
+    _started = true
+    _tcp_connection.set_so_sndbuf(16384)
+    _record_send(_tcp_connection.send("t1"))
+    _record_send(_tcp_connection.send("t2"))
+    _record_send(_tcp_connection.send("t3"))
+    _record_send(_tcp_connection.send(_large()))
+    KeepReading
+
+  fun ref _on_throttled() =>
+    if not _unmuted_client then
+      _unmuted_client = true
+      _listener.unmute_client()
     end
 
-    _h.assert_true(_closed, "_on_closed must fire on graceful close")
-    _h.complete(true)
+  fun ref _on_unthrottled() =>
+    if not _resumed then
+      _resumed = true
+      // Token 5's ciphertext is queued when we close. A graceful close must
+      // flush it, not drop it.
+      _record_send(_tcp_connection.send(_large()))
+      _tcp_connection.close()
+    end
+
+  fun ref _on_closed() =>
+    _h.complete_action("server closed")
+
+  fun ref _on_sent(token: SendToken) =>
+    _sent_ids.push(token.id)
+    if _sent_ids.size() == _total_sends then
+      for id in _returned.values() do
+        var count: USize = 0
+        for s in _sent_ids.values() do
+          if s == id then count = count + 1 end
+        end
+        _h.assert_eq[USize](1, count,
+          "each token must fire _on_sent exactly once")
+      end
+      _h.complete_action("server delivered all pending")
+    end
+
+  fun ref _on_send_failed(token: SendToken) =>
+    _h.fail("graceful close must flush queued writes, not fail them")

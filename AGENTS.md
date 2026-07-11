@@ -217,7 +217,7 @@ _Open → _TLSUpgrading (start_tls) → _Open (ssl_handshake_complete)
 | `_SSLHandshaking` | false | false | false | true | TCP connected, initial SSL handshake in progress. Application not notified yet. `close()` delegates to `hard_close()`. |
 | `_TLSUpgrading` | true | false | false | true | Established connection upgrading to TLS via `start_tls()`. Application already notified. `close()` delegates to `hard_close()`. |
 | `_Open` | true | false | true | true | Connection established, application notified, I/O active. |
-| `_Closing` | false | true | false | true | Graceful shutdown in progress — waiting for peer FIN. Still reads to detect FIN. |
+| `_Closing` | false | true | false | true | Graceful shutdown in progress. Flushes writes still queued under backpressure, then sends FIN once the queue drains, and waits for the peer FIN. Still reads to detect FIN. |
 | `_Closed` | false | true | false | false | Fully closed. Handles straggler event cleanup only. |
 
 State classes dispatch lifecycle-gated operations (`send`, `close`, `hard_close`, `start_tls`, `read_again`, `receive`, `ssl_handshake_complete`, `own_event`, `foreign_event`, `keepalive`, `getsockopt`, `getsockopt_u32`, `setsockopt`, `setsockopt_u32`, `idle_timeout`, `set_timer`) and delegate to TCPConnection methods for the actual work. All I/O, SSL, buffer, and flow control logic remains on TCPConnection.
@@ -331,7 +331,7 @@ Design: Discussion #252.
 
 `send(data: (ByteSeq | ByteSeqIter))` is fallible — it returns `(SendToken | SendError)` instead of silently dropping data:
 
-- `SendToken` — opaque token identifying the send operation. Each accepted `send()` gets exactly one terminal callback: `_on_sent(token)` when its bytes are handed to the OS (kernel send buffer, not peer receipt), or `_on_send_failed(token)` if the connection closes first. Callbacks fire in send order.
+- `SendToken` — opaque token identifying the send operation. Each accepted `send()` gets exactly one terminal callback: `_on_sent(token)` when its bytes are handed to the OS (kernel send buffer, not peer receipt), or `_on_send_failed(token)` if the connection is lost or hard-closed before the bytes are written. A graceful `close()` flushes queued writes first, so sends still pending at a graceful close fire `_on_sent`. Callbacks fire in send order.
 - `SendErrorNotConnected` — connection not open (permanent).
 - `SendErrorNotWriteable` — socket under backpressure (transient, wait for `_on_unthrottled`).
 During SSL handshake (`_SSLHandshaking` or `_TLSUpgrading`), returns `SendErrorNotConnected` directly from the state class without reaching `_do_send()`.

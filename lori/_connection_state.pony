@@ -357,6 +357,9 @@ class _Open is _ConnectionState
 class _Closing is _ConnectionState
   fun ref own_event(conn: TCPConnection ref, flags: U32) =>
     conn._dispatch_io_event(flags)
+    // A writeable event may have drained the last queued write; if so, send the
+    // FIN that close() deferred.
+    conn._initiate_shutdown()
 
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
     flags: U32)
