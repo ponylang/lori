@@ -1573,7 +1573,10 @@ class TCPConnection
     """
     match _ssl
     | let tls: _TLS =>
-      match tls.session.state()
+      match \exhaustive\ tls.session.state()
+      | SSLHandshake =>
+        // Still handshaking; nothing to dispatch yet.
+        None
       | SSLReady =>
         _state.ssl_handshake_complete(this, s)
       | SSLAuthFail =>
@@ -1582,6 +1585,10 @@ class TCPConnection
       | SSLError =>
         hard_close()
         return
+      | SSLDisposed =>
+        // A live `_TLS` session is never disposed; disposing moves `_ssl` to
+        // `_TLSDisposed`, which is not matched above.
+        _Unreachable()
       end
 
       // `ssl_handshake_complete` above fires `_on_connected`, `_on_started` or

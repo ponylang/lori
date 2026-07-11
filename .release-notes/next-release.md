@@ -58,3 +58,11 @@ fun ref _on_received(data: Array[U8] iso): ReadAction =>
 ```
 
 Every `_on_received` has to return one of the two. `KeepReading` is what the trait returns by default, so a receiver that does not override `_on_received` needs no change.
+
+## Add OpenSSL 4.0.x support
+
+Lori can now be built against OpenSSL 4.0.x. Select it at compile time with `-Dopenssl_4.0.x`, or pass `ssl=4.0.x` to `make` when building Lori itself.
+
+## Update ssl dependency to 3.0.0
+
+Lori now requires ssl 3.0.0. Building an `SSLContext` and passing it to `ssl_client`, `ssl_server`, or `start_tls` works as before. If your own code calls other parts of the ssl package directly, see the ssl 3.0.0 release notes for its API changes.
