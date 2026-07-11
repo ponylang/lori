@@ -537,18 +537,15 @@ class TCPConnection
 
   fun ref close() =>
     """
-    Attempt to perform a graceful shutdown. Don't accept new writes.
+    Gracefully close the connection. Data already handed to an accepted
+    `send()` is delivered before the connection closes.
 
-    During the connecting phase (Happy Eyeballs in progress), transitions to
-    `_UnconnectedClosing` to drain inflight connection attempts. Each
-    straggler event is cleaned up as it arrives. Once all inflight connections
-    have drained, `_on_connection_failure` fires.
+    On a muted connection this is a hard close instead: it shuts down at once
+    and drops undelivered data — both held reads and queued writes (the writes
+    fail with `_on_send_failed`).
 
-    If the connection is established and not muted, we won't finish closing
-    until we get a zero length read. If the connection is muted, perform a
-    hard close and shut down immediately. A hard close drops whatever the
-    connection had read but not yet delivered, including anything a `mute` was
-    holding.
+    Closing before the connection is established abandons the attempt and
+    delivers `_on_connection_failure`.
     """
     if _muted then
       hard_close()
@@ -850,7 +847,9 @@ class TCPConnection
     failure. On success the token gets exactly one terminal callback in a
     later behavior turn: `_on_sent(token)` once the data has been handed to
     the OS (written to the kernel send buffer, not received by the peer), or
-    `_on_send_failed(token)` if the connection closes first.
+    `_on_send_failed(token)` if the connection is lost or hard-closed before
+    the bytes are written. A graceful `close()` sends what's still queued, so
+    those sends fire `_on_sent`, not `_on_send_failed`.
     """
     _state.send(this, data)
 
@@ -925,11 +924,16 @@ class TCPConnection
 
   fun ref _initiate_shutdown() =>
     """
-    Send FIN to the peer if not already shutdown and no inflight connections
-    remain. Called when entering _Closing or when inflight connections drain
-    during _Closing.
+    Send FIN to the peer, but only once there is nothing left to send ahead of
+    it: no inflight connection attempts and no queued writes. Idempotent — sends
+    FIN at most once, and no-ops until both have drained — so a graceful close
+    sends the queued writes before the write side is shut. `hard_close()` is the
+    non-graceful path and still drops queued writes.
     """
-    if not _shutdown and (_inflight_connections == 0) then
+    if not _shutdown
+      and (_inflight_connections == 0)
+      and not _has_pending_writes()
+    then
       _shutdown = true
       PonyTCP.shutdown(_fd)
     end
@@ -1624,88 +1628,23 @@ class TCPConnection
       _set_readable()
       _read()
     else
-      // Runs on every write-only event (writeable, no readable flag).
-      // Where one subscription covers the whole fd (Linux EPOLLONESHOT,
-      // Windows ProcessSocketNotifications), any event disarms it, dropping
-      // pending read interest. (macOS kqueue arms read and write as
-      // independent one-shot filters, so a write-only event leaves reads armed
-      // and this re-arm is a harmless no-op there — issue #294 was a Linux
-      // report.) The write branch above already ran _set_writeable(), which
-      // releases backpressure. So on a full drain _apply_backpressure() is
-      // never re-entered, and neither read re-arm path runs (its resubscribe
-      // and _read's EAGAIN resubscribe are both skipped), leaving the
-      // connection permanently read-deaf. Re-arming reads here covers that.
-      // On a partial drain _apply_backpressure() does re-enter,
-      // and because on the whole-fd backends PonyAsio.resubscribe re-arms
-      // whichever directions are not-ready (the read/write names signal
-      // intent, not effect), its write resubscribe also re-arms reads, so the
-      // resubscribe here is redundant but harmless.
-      //
-      // Skip the re-arm unless the socket is still healthy and fully drained,
-      // which `_writeable` captures: `_set_writeable()` above set it true, and
-      // nothing cleared it means no hard_close and no backpressure this turn.
-      // `_send_pending_writes()` above can hard_close() on a write error (peer
-      // RST with data queued), and `_hard_close_cleanup` then unsubscribes the
-      // event and calls `_set_unwriteable()`. Resubscribing after that is wrong:
-      // on POSIX the event is already disposable (the resubscribe would assert
-      // in debug); on Windows the close is DEFERRED — `unsubscribe` only marks
-      // the event `removing`, so `get_disposable` still returns false and the
-      // resubscribe would re-enable a socket whose REMOVE is already in flight,
-      // stranding the deferred-close handshake. `_writeable` is false in both
-      // cases, so it is the load-bearing guard; `get_disposable` is kept as
-      // POSIX defense in depth. `_writeable` is also false after a partial-drain
-      // backpressure, where `_apply_backpressure`'s resubscribe already re-arms
-      // reads, so skipping here is redundant, not harmful.
-      //
-      // `_writeable` (not is_closed()/is_open()) is deliberate: this branch is
-      // shared by _Open, _Closing, _SSLHandshaking, and _TLSUpgrading. During
-      // _Closing the read side is still open and reads must stay armed to detect
-      // the peer FIN, yet is_closed() is true there; during _SSLHandshaking
-      // is_open() is false but reads must stay armed to finish the handshake.
-      // Only _Open is exercised by a test (WriteOnlyEventReadRecovery, POSIX
-      // only); the full-drain can't be triggered deterministically in the other
-      // states, so neither the compiler nor the suite catches a regression here.
-      // Do not weaken this guard. See issues #294 and #296.
+      // A whole-fd one-shot event (Linux epoll, Windows readiness) disarms the
+      // fd, so a write-only event drops read interest. Re-arm reads, guarded by
+      // `_writeable` to skip a closed or backpressured fd. Do not weaken; the
+      // reasoning and the deadlock it prevents are in #294, #296.
       if _writeable and not PonyAsio.get_disposable(_event) then
         PonyAsio.resubscribe_read(_event)
       end
     end
 
-    // Mirror image of the read re-arm above, for the write side. On backends
-    // where one subscription covers the whole fd (Linux EPOLLONESHOT, Windows
-    // ProcessSocketNotifications), any event consumes it, so a readable event
-    // drops the write interest a prior `_apply_backpressure()` armed. The read
-    // path re-arms write as a side effect whenever it reaches its EAGAIN
-    // resubscribe (that resubscribe re-arms every not-ready direction), so most
-    // reads self-heal. The one path that does not is a read that ends in
-    // `mute()` before EAGAIN — exactly what a backpressured echo peer does when
-    // it stashes a chunk it cannot echo. Nothing then re-arms the pending
-    // write: if still throttled, the writeable edge never arrives, backpressure
-    // never releases, `_on_unthrottled` never fires, and the connection wedges.
-    // A lost-wakeup deadlock, seen under sustained backpressure with two or
-    // more scheduler threads (the readable edge has to land between the
-    // `resubscribe_write` and the writeable edge). macOS kqueue arms read and
-    // write as independent one-shot filters, so a readable event leaves write
-    // armed and this re-arm is a harmless no-op there. See issues #294 and #296
-    // for the read-side counterpart.
-    //
-    // Guarded by `is_open()`: `_throttled` alone is not enough because
-    // `_hard_close_cleanup` does not clear it. After a hard_close the event is
-    // gone in both regimes — disposable immediately on POSIX (resubscribe would
-    // assert in debug), and on Windows the REMOVE is only deferred so
-    // `get_disposable` still returns false, where resubscribing would strand
-    // the deferred-close handshake. `is_open()` is true only in
-    // `_Open`/`_TLSUpgrading`, never after a hard_close (which moves to
-    // `_Closed`), so it excludes that case on every platform. Excluding the
-    // other dispatching states is safe: `_SSLHandshaking` delivers no data to
-    // the application, so its read path never mutes and reaches EAGAIN (whose
-    // resubscribe re-arms a throttled write). `_Closing` can mute — an app may
-    // call `mute()` from `_on_received` during graceful shutdown — but a muted
-    // `_Closing` connection is already waiting on the peer's FIN it won't read,
-    // so re-arming write cannot move it forward and its absence is not the
-    // wedge this fixes. `get_disposable` is kept as defense in depth, matching
-    // the read guard.
-    if _throttled and is_open() and not PonyAsio.get_disposable(_event) then
+    // Mirror for the write side: a readable event drops the write interest, and
+    // a read that mutes or yields before EAGAIN never re-arms it, so a
+    // backpressured write wedges. Re-arm it, guarded by `_throttled`.
+    // `is_live()` (was `is_open()`) covers `_Closing`, which now drains queued
+    // writes before it closes. Do not weaken; see #294, #296.
+    if _throttled and _state.is_live()
+      and not PonyAsio.get_disposable(_event)
+    then
       PonyAsio.resubscribe_write(_event)
     end
 

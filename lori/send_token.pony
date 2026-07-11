@@ -2,8 +2,9 @@ class val SendToken is Equatable[SendToken]
   """
   Identifies a single `send()`. Returned by `send()` on success, then
   delivered exactly once: to `_on_sent()` when that send's bytes have been
-  handed to the OS, or to `_on_send_failed()` if the connection closes before
-  then.
+  handed to the OS, or to `_on_send_failed()` if the connection is lost or
+  hard-closed first. A graceful `close()` sends what's still queued, so those
+  sends get `_on_sent`.
 
   "Handed to the OS" means written to the kernel send buffer, not received by
   the peer. End-to-end delivery is an application concern -- use your own

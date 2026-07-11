@@ -56,12 +56,12 @@ trait ServerLifecycleEventReceiver
   fun ref _on_send_failed(token: SendToken) =>
     """
     Called when the bytes from a successful `send()` could not be handed to
-    the OS before the connection closed. The token matches the one returned
-    by that `send()` call, and this callback fires exactly once for it. Every
-    accepted send whose bytes had not yet been handed to the OS when the
-    connection closes fires this instead, so the split between sends that got
-    `_on_sent` and sends that got `_on_send_failed` marks exactly how far
-    delivery to the OS reached.
+    the OS because the connection was lost or hard-closed first. The token
+    matches the one returned by that `send()` call, and this callback fires
+    exactly once for it. A graceful `close()` sends what's still queued, so only
+    a hard close or a lost connection fires this. On a hard close, the sends
+    that reached the OS fire `_on_sent` and the rest fire this, so the split
+    shows how far your data got.
 
     Always fires in a subsequent behavior turn, never synchronously during
     `hard_close()`. Always arrives after `_on_closed`, which fires
@@ -264,12 +264,12 @@ trait ClientLifecycleEventReceiver
   fun ref _on_send_failed(token: SendToken) =>
     """
     Called when the bytes from a successful `send()` could not be handed to
-    the OS before the connection closed. The token matches the one returned
-    by that `send()` call, and this callback fires exactly once for it. Every
-    accepted send whose bytes had not yet been handed to the OS when the
-    connection closes fires this instead, so the split between sends that got
-    `_on_sent` and sends that got `_on_send_failed` marks exactly how far
-    delivery to the OS reached.
+    the OS because the connection was lost or hard-closed first. The token
+    matches the one returned by that `send()` call, and this callback fires
+    exactly once for it. A graceful `close()` sends what's still queued, so only
+    a hard close or a lost connection fires this. On a hard close, the sends
+    that reached the OS fire `_on_sent` and the rest fire this, so the split
+    shows how far your data got.
 
     Always fires in a subsequent behavior turn, never synchronously during
     `hard_close()`. Always arrives after `_on_closed`, which fires
