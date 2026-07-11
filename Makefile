@@ -38,7 +38,9 @@ ifeq ($(static),true)
 endif
 
 ifeq (,$(filter $(MAKECMDGOALS),clean docs realclean TAGS))
-  ifeq ($(ssl), 3.0.x)
+  ifeq ($(ssl), 4.0.x)
+          SSL = -Dopenssl_4.0.x
+  else ifeq ($(ssl), 3.0.x)
           SSL = -Dopenssl_3.0.x
   else ifeq ($(ssl), 1.1.x)
           SSL = -Dopenssl_1.1.x
