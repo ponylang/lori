@@ -11,11 +11,14 @@ All notable changes to this project will be documented in this file. This projec
 - Fix connection hang under sustained write backpressure ([PR #306](https://github.com/ponylang/lori/pull/306))
 - Fix a crash when hard closing an SSL connection from a callback ([PR #311](https://github.com/ponylang/lori/pull/311))
 - Fix mute() not stopping data delivery on SSL connections ([PR #314](https://github.com/ponylang/lori/pull/314))
+- Fix a yield from _on_received not taking effect on SSL connections until every waiting message was delivered ([PR #315](https://github.com/ponylang/lori/pull/315))
 
 ### Added
 
 
 ### Changed
+
+- _on_received now returns what the read loop should do next ([PR #315](https://github.com/ponylang/lori/pull/315))
 
 
 ## [0.16.1] - 2026-06-30

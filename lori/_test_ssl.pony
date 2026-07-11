@@ -67,7 +67,7 @@ actor \nodoc\ _TestSSLPinger
       _pings_to_send = _pings_to_send - 1
     end
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _pings_to_send > 0 then
       _tcp_connection.send("Ping")
       _pings_to_send = _pings_to_send - 1
@@ -76,6 +76,7 @@ actor \nodoc\ _TestSSLPinger
     else
       _h.fail("Too many pongs received")
     end
+    KeepReading
 
 actor \nodoc\ _TestSSLPonger
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
@@ -104,7 +105,7 @@ actor \nodoc\ _TestSSLPonger
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _pings_to_receive > 0 then
       _tcp_connection.send("Pong")
       _pings_to_receive = _pings_to_receive - 1
@@ -113,6 +114,7 @@ actor \nodoc\ _TestSSLPonger
     else
       _h.fail("Too many pings received")
     end
+    KeepReading
 
 actor \nodoc\ _TestSSLPongerListener is TCPListenerActor
   let _port: String
@@ -292,10 +294,11 @@ actor \nodoc\ _TestSSLSendvServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _h.assert_eq[String]("SSL Hello World", String.from_array(consume data))
     _h.complete_action("data verified")
     _tcp_connection.close()
+    KeepReading
 
 class \nodoc\ iso _TestSSLHandshakeFailureClient is UnitTest
   """
@@ -781,15 +784,13 @@ actor \nodoc\ _TestSSLIsWriteablePlainClient
 class \nodoc\ iso _TestSSLHardCloseDuringReceive is UnitTest
   """
   Test that hard_close() from inside _on_received on an SSL connection stops
-  delivery. hard_close() disposes the SSL session while `_ssl_poll()`'s
-  delivery loop is still on the stack; the loop must not touch the session
-  again, and no further _on_received may fire.
+  delivery. hard_close() disposes the SSL session, and no further _on_received
+  may fire.
 
   The client sends two frames in one send() so both TLS records are written
-  and flushed together. Without the `can_receive()` guard in `_ssl_poll()`,
-  the loop reads the disposed session. Against an ssl that is unsafe after
-  dispose (ponylang/ssl#66) that is a segfault rather than a failed
-  assertion.
+  and flushed together. `_read()`'s loop must not go back to the session for
+  the second one. Against an ssl that is unsafe after dispose (ponylang/ssl#66)
+  reading a disposed session is a segfault rather than a failed assertion.
   """
   fun name(): String => "SSLHardCloseDuringReceive"
 
@@ -893,10 +894,10 @@ actor \nodoc\ _TestSSLHardCloseReceiveServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     // hard_close() below disposes the SSL session and fires _on_closed. The
-    // client's second record is still in that session, so a delivery loop
-    // that kept running would arrive here a second time, after the close.
+    // client's second record is still in that session, so a read loop that
+    // kept running would arrive here a second time, after the close.
     _receives = _receives + 1
 
     if _receives > 1 then
@@ -905,6 +906,7 @@ actor \nodoc\ _TestSSLHardCloseReceiveServer
       _h.complete_action("server received")
       _tcp_connection.hard_close()
     end
+    KeepReading
 
   fun ref _on_closed() =>
     _h.complete_action("server closed")
@@ -913,8 +915,8 @@ class \nodoc\ iso _TestSSLHardCloseOnConnected is UnitTest
   """
   Test that hard_close() from inside _on_connected on an SSL client is safe.
   _on_connected fires from `_ssl_poll()` via
-  `_SSLHandshaking.ssl_handshake_complete()`, so the delivery loop below it
-  runs after the callback returns and must not touch the disposed session.
+  `_SSLHandshaking.ssl_handshake_complete()`, so the flush below it runs after
+  the callback returns and must not touch the disposed session.
   """
   fun name(): String => "SSLHardCloseOnConnected"
 
@@ -1028,7 +1030,7 @@ class \nodoc\ iso _TestSSLHardCloseOnStarted is UnitTest
   Test that hard_close() from inside _on_started on an SSL server is safe.
   _on_started is the server arm of
   `_SSLHandshaking.ssl_handshake_complete()`, dispatched from `_ssl_poll()`,
-  so the delivery loop below it runs after the callback returns.
+  so the flush below it runs after the callback returns.
   """
   fun name(): String => "SSLHardCloseOnStarted"
 
@@ -1144,9 +1146,8 @@ class \nodoc\ iso _TestSSLCloseDuringReceive is UnitTest
   the same read are delivered.
 
   This is the other side of `_TestSSLHardCloseDuringReceive`, and it is what
-  makes `can_receive()` the right predicate to bound `_ssl_poll()`'s delivery
-  loop: `is_open()` and `is_closed()` both stop delivery here, and both are
-  wrong.
+  makes `is_live()` the right predicate to bound `_read()`'s loop:
+  `is_open()` and `is_closed()` both stop delivery here, and both are wrong.
   """
   fun name(): String => "SSLCloseDuringReceive"
 
@@ -1250,7 +1251,7 @@ actor \nodoc\ _TestSSLCloseReceiveServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _receives = _receives + 1
 
     match _receives
@@ -1263,6 +1264,171 @@ actor \nodoc\ _TestSSLCloseReceiveServer
     else
       _h.fail("_on_received fired " + _receives.string() + " times, want 2")
     end
+    KeepReading
 
   fun ref _on_closed() =>
     _h.complete_action("server closed")
+
+class \nodoc\ iso _TestSSLLargePayload is UnitTest
+  """
+  Test an SSL payload far larger than the read buffer, framed smaller than a
+  TLS record.
+
+  The client sends 100,000 bytes in one send. That crosses the wire as several
+  TLS records, none of which lines up with the server's 1000-byte frames, and
+  none of which fits in one 16,384-byte read.
+
+  So the server's read loop has to do all the things a small payload never makes
+  it do: take a message, run dry, fill from the socket, feed the SSL session,
+  find a frame is still short, fill again, and hand off the scheduler when it
+  has read a buffer's worth. Every frame must arrive, whole and in order.
+  """
+  fun name(): String => "SSLLargePayload"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9780"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    let listener = _TestSSLLargePayloadListener(port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(30_000_000_000)
+
+actor \nodoc\ _TestSSLLargePayloadListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSSLLargePayloadClient | None) = None
+  var _server: (_TestSSLLargePayloadServer | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSSLLargePayloadServer =>
+    let s = _TestSSLLargePayloadServer(_sslctx, fd, _h)
+    _server = s
+    s
+
+  fun ref _on_listening() =>
+    _client = _TestSSLLargePayloadClient(_port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSSLLargePayloadListener")
+    _h.complete(false)
+
+  be dispose() =>
+    try (_client as _TestSSLLargePayloadClient).dispose() end
+    try (_server as _TestSSLLargePayloadServer).dispose() end
+    _tcp_listener.close()
+
+actor \nodoc\ _TestSSLLargePayloadClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_client(
+      TCPConnectAuth(h.env.root),
+      sslctx,
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    // 100 frames of 1000 bytes. Frame n is filled with the byte n % 256, so a
+    // frame delivered out of order or stitched together wrong is visible.
+    let payload = recover val
+      let a = Array[U8](100000)
+      var frame: USize = 0
+      while frame < 100 do
+        var i: USize = 0
+        while i < 1000 do
+          a.push(frame.u8())
+          i = i + 1
+        end
+        frame = frame + 1
+      end
+      a
+    end
+    _tcp_connection.send(payload)
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+    _h.complete(false)
+
+actor \nodoc\ _TestSSLLargePayloadServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _frames: USize = 0
+
+  new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_server(
+      TCPServerAuth(_h.env.root),
+      sslctx,
+      fd,
+      this,
+      this)
+    match \exhaustive\ MakeBufferSize(1000)
+    | let b: BufferSize => _tcp_connection.buffer_until(b)
+    | let _: ValidationFailure =>
+      _h.fail("MakeBufferSize(1000) should succeed")
+      _h.complete(false)
+    end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    if data.size() != 1000 then
+      _h.fail("frame " + _frames.string() + " was " + data.size().string()
+        + " bytes, wanted 1000")
+      _h.complete(false)
+      return KeepReading
+    end
+
+    let want = _frames.u8()
+    for b in (consume data).values() do
+      if b != want then
+        _h.fail("frame " + _frames.string() + " holds byte " + b.string()
+          + ", wanted " + want.string())
+        _h.complete(false)
+        return KeepReading
+      end
+    end
+
+    _frames = _frames + 1
+
+    if _frames == 100 then
+      _h.complete(true)
+    end
+    KeepReading

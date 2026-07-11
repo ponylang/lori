@@ -64,8 +64,9 @@ actor Echoer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _tcp_connection.send(consume data)
+    KeepReading
 
   fun ref _on_closed() =>
     _out.print("Connection closed.")
@@ -110,9 +111,9 @@ actor MyClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
     // DNS, TCP, SSL, timeout, or timer error failure
     None
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     // Handle response from server
-    None
+    KeepReading
 ```
 
 Clients use `ClientLifecycleEventReceiver` instead of
@@ -189,8 +190,9 @@ actor SSLEchoer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _tcp_connection.send(consume data)
+    KeepReading
 
   fun ref _on_start_failure(reason: StartFailureReason) =>
     // SSL handshake failed
@@ -233,7 +235,7 @@ actor MyStartTLSClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
     // Send protocol-specific upgrade request over plaintext
     _tcp_connection.send("STARTTLS")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let msg = String.from_array(consume data)
     if msg == "OK" then
       // Server agreed to upgrade — initiate TLS handshake
@@ -241,6 +243,7 @@ actor MyStartTLSClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
       | let err: StartTLSError => None // handle error
       end
     end
+    KeepReading
 
   fun ref _on_tls_ready() =>
     // TLS handshake complete — now sending encrypted data
@@ -370,12 +373,13 @@ calls `mute()` to stop reading and `unmute()` to start again. Both halves
 matter: a connection that mutes and never unmutes never reads again.
 
 ```pony
-fun ref _on_received(data: Array[U8] iso) =>
+fun ref _on_received(data: Array[U8] iso): ReadAction =>
   _work_queue.push(consume data)
   if (not _muted) and (_work_queue.size() >= _high_water) then
     _tcp_connection.mute()
     _muted = true
   end
+  KeepReading
 
 // Called as items are processed off _work_queue.
 be work_completed() =>
@@ -398,30 +402,33 @@ whatever else arrives in the meantime.
 
 ## Read Yielding
 
-Under sustained inbound traffic, a single connection's read loop can
-monopolize the Pony scheduler. `yield_read()` lets the application exit the
-read loop cooperatively, giving other actors a chance to run. Reading resumes
-automatically in the next scheduler turn — no explicit `unmute()` is needed.
+Under sustained inbound traffic, a single connection's read loop can monopolize
+the Pony scheduler. `_on_received` returns a
+[`ReadAction`](/lori/lori-ReadAction/) saying what the read loop should do next.
+Return [`YieldReading`](/lori/lori-YieldReading/) to stop after this message and
+give other actors a turn; reading resumes on its own in the next scheduler turn.
 
 ```pony
-fun ref _on_received(data: Array[U8] iso) =>
+fun ref _on_received(data: Array[U8] iso): ReadAction =>
   _received_count = _received_count + 1
 
   // Yield every 10 messages to let other actors run
   if (_received_count % 10) == 0 then
-    _tcp_connection.yield_read()
+    return YieldReading
   end
+
+  KeepReading
 ```
 
-Unlike `mute()`/`unmute()`, which persistently stop reading until reversed,
-`yield_read()` is a one-shot pause: the read loop resumes on its own. The
-application calls it from `_on_received()` and can implement any yield policy
-(message count, byte threshold, time-based, etc.).
+[`KeepReading`](/lori/lori-KeepReading/) is the default, so a receiver that
+never overrides `_on_received` keeps reading. Any yield policy works — message
+count, byte threshold, time-based — because the decision is made per message.
 
-For SSL connections, `yield_read()` operates at TCP-read granularity. All
-SSL-decrypted messages from a single TCP read are delivered before the yield
-takes effect, unless the same callback also calls `hard_close()`, which drops
-the rest, or `mute()`, which holds them until `unmute()`.
+Unlike `mute()`/`unmute()`, which persistently stop reading until reversed,
+`YieldReading` is a one-shot pause. The yield takes effect after the message
+that returned it. That is true of SSL connections too: a message decrypted
+from the same TCP read as the one you yielded on waits for the next scheduler
+turn like any other.
 
 ## Read Buffer Size
 

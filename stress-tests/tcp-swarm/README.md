@@ -36,7 +36,7 @@ oracle on top. Each flag is tied to a distinct code path in `tcp_connection.pony
   the two equal, this varies read chunking and the yield threshold but does not
   exercise lori's dynamic buffer resize/shrink paths (those need a mid-run resize).
 - `--yield-after-reading` — after this many received bytes an endpoint calls
-  `yield_read()` to leave the read loop cooperatively; reading resumes on its own
+  `YieldReading` to leave the read loop cooperatively; reading resumes on its own
   the next scheduler turn. Small values yield often, giving other actors a chance
   to run mid-transfer.
 - `--connections` / `--concurrency` — total connections to churn, and the in-flight

@@ -63,9 +63,10 @@ actor IdleTimeoutEchoer
       _tcp_connection.idle_timeout(t)
     end
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _out.print("Data received. Echoing it back.")
     _tcp_connection.send(consume data)
+    KeepReading
 
   fun ref _on_idle_timeout() =>
     _out.print("Connection idle for 10 seconds. Closing.")

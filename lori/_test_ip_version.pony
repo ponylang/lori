@@ -48,7 +48,7 @@ actor \nodoc\ _TestIP4Pinger is (TCPConnectionActor & ClientLifecycleEventReceiv
       _pings_to_send = _pings_to_send - 1
     end
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _pings_to_send > 0 then
       _tcp_connection.send("Ping")
       _pings_to_send = _pings_to_send - 1
@@ -57,6 +57,7 @@ actor \nodoc\ _TestIP4Pinger is (TCPConnectionActor & ClientLifecycleEventReceiv
     else
       _h.fail("Too many pongs received")
     end
+    KeepReading
 
 actor \nodoc\ _TestIP4Ponger is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
@@ -82,7 +83,7 @@ actor \nodoc\ _TestIP4Ponger is (TCPConnectionActor & ServerLifecycleEventReceiv
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _pings_to_receive > 0 then
       _tcp_connection.send("Pong")
       _pings_to_receive = _pings_to_receive - 1
@@ -91,6 +92,7 @@ actor \nodoc\ _TestIP4Ponger is (TCPConnectionActor & ServerLifecycleEventReceiv
     else
       _h.fail("Too many pings received")
     end
+    KeepReading
 
 actor \nodoc\ _TestIP4PongerListener is TCPListenerActor
   let _port: String
@@ -176,7 +178,7 @@ actor \nodoc\ _TestIP6Pinger is (TCPConnectionActor & ClientLifecycleEventReceiv
       _pings_to_send = _pings_to_send - 1
     end
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _pings_to_send > 0 then
       _tcp_connection.send("Ping")
       _pings_to_send = _pings_to_send - 1
@@ -185,6 +187,7 @@ actor \nodoc\ _TestIP6Pinger is (TCPConnectionActor & ClientLifecycleEventReceiv
     else
       _h.fail("Too many pongs received")
     end
+    KeepReading
 
 actor \nodoc\ _TestIP6Ponger is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
@@ -210,7 +213,7 @@ actor \nodoc\ _TestIP6Ponger is (TCPConnectionActor & ServerLifecycleEventReceiv
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _pings_to_receive > 0 then
       _tcp_connection.send("Pong")
       _pings_to_receive = _pings_to_receive - 1
@@ -219,6 +222,7 @@ actor \nodoc\ _TestIP6Ponger is (TCPConnectionActor & ServerLifecycleEventReceiv
     else
       _h.fail("Too many pings received")
     end
+    KeepReading
 
 actor \nodoc\ _TestIP6PongerListener is TCPListenerActor
   let _port: String

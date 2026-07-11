@@ -1,37 +1,71 @@
 use "ssl/net"
 
 trait _ConnectionState
+  """
+  One state in the connection lifecycle. `TCPConnection._state` holds the
+  current one, and lifecycle-gated operations dispatch through it: each state
+  answers what happens in it, and delegates the actual work to `TCPConnection`.
+  """
   fun ref own_event(conn: TCPConnection ref, flags: U32)
+    """Handle an ASIO event for this connection's own socket event."""
   fun ref foreign_event(conn: TCPConnection ref, event: AsioEventID,
     flags: U32)
+    """
+    Handle an ASIO event that is not this connection's socket event (a Happy
+    Eyeballs straggler).
+    """
   fun ref send(conn: TCPConnection ref,
     data: (ByteSeq | ByteSeqIter)): (SendToken | SendError)
+    """Send data, or return why it can't be sent in this state."""
   fun ref close(conn: TCPConnection ref)
-  fun ref hard_close(conn: TCPConnection ref)
+    """Graceful close from this state."""
+  fun ref hard_close(conn: TCPConnection ref, cause: _HardCloseCause)
+    """
+    Non-graceful close from this state, routing `cause` to a failure callback.
+    """
   fun ref start_tls(conn: TCPConnection ref, ssl_ctx: SSLContext val,
     host: String): (None | StartTLSError)
+    """Upgrade to TLS, or return why it can't happen in this state."""
   fun ref read_again(conn: TCPConnection ref)
+    """Resume reading after a yield, if this state still reads."""
   fun ref ssl_handshake_complete(conn: TCPConnection ref,
     s: EitherLifecycleEventReceiver ref)
+    """The SSL session reached `SSLReady`. Only the handshake states act."""
   fun keepalive(conn: TCPConnection box, secs: U32)
+    """Set TCP keepalive, if the socket is open in this state."""
   fun getsockopt(conn: TCPConnection box, level: I32, option_name: I32,
     option_max_size: USize): (U32, Array[U8] iso^)
+    """Raw `getsockopt`, or an error value if not open in this state."""
   fun getsockopt_u32(conn: TCPConnection box, level: I32,
     option_name: I32): (U32, U32)
+    """`getsockopt` for a U32, or an error value if not open in this state."""
   fun setsockopt(conn: TCPConnection box, level: I32, option_name: I32,
     option: Array[U8]): U32
+    """Raw `setsockopt`, or an error value if not open in this state."""
   fun setsockopt_u32(conn: TCPConnection box, level: I32, option_name: I32,
     option: U32): U32
+    """`setsockopt` for a U32, or an error value if not open in this state."""
   fun ref idle_timeout(conn: TCPConnection ref,
     duration: (IdleTimeout | None))
+    """Set or clear the idle timeout; states differ in whether they arm it."""
   fun ref set_timer(conn: TCPConnection ref,
     duration: TimerDuration): (TimerToken | SetTimerError)
+    """Start a user timer, or return why it can't be started in this state."""
   fun is_open(): Bool
+    """The connection is open for application I/O (`_Open`/`_TLSUpgrading`)."""
   fun is_closed(): Bool
+    """The connection is closed or closing."""
   fun sends_allowed(): Bool
-  fun can_receive(): Bool
+    """Sends are accepted in this state."""
+  fun is_live(): Bool
+    """
+    Has a socket fd it can still do I/O on -- from the handshake through a
+    graceful close still draining, but not before the fd exists or after a hard
+    close tears it down. See the state table in AGENTS.md.
+    """
   fun receive(event: AsioEventID, buffer: Pointer[U8] tag,
     size: USize): (SocketResult, USize)
+    """Read from the socket. Only states that can receive perform it."""
 
 class _ConnectionNone is _ConnectionState
   fun ref own_event(conn: TCPConnection ref, flags: U32) =>
@@ -64,7 +98,9 @@ class _ConnectionNone is _ConnectionState
   fun ref close(conn: TCPConnection ref) =>
     _Unreachable()
 
-  fun ref hard_close(conn: TCPConnection ref) =>
+  fun ref hard_close(conn: TCPConnection ref,
+    cause: _HardCloseCause)
+  =>
     // _finish_initialization is a self→self message queued during the
     // constructor. dispose() comes from an external actor. Different senders
     // have no ordering guarantee, so dispose() can arrive first — unlikely
@@ -120,7 +156,7 @@ class _ConnectionNone is _ConnectionState
   fun is_open(): Bool => false
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
-  fun can_receive(): Bool => false
+  fun is_live(): Bool => false
 
   fun receive(event: AsioEventID, buffer: Pointer[U8] tag,
     size: USize): (SocketResult, USize)
@@ -167,9 +203,10 @@ class _ClientConnecting is _ConnectionState
   fun ref close(conn: TCPConnection ref) =>
     conn._set_state(_UnconnectedClosing)
 
-  fun ref hard_close(conn: TCPConnection ref) =>
-    conn._set_state(_Closed)
-    conn._hard_close_connecting()
+  fun ref hard_close(conn: TCPConnection ref,
+    cause: _HardCloseCause)
+  =>
+    conn._hard_close_connecting(cause)
 
   fun ref start_tls(conn: TCPConnection ref, ssl_ctx: SSLContext val,
     host: String): (None | StartTLSError)
@@ -219,7 +256,7 @@ class _ClientConnecting is _ConnectionState
   fun is_open(): Bool => false
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
-  fun can_receive(): Bool => false
+  fun is_live(): Bool => false
 
   fun receive(event: AsioEventID, buffer: Pointer[U8] tag,
     size: USize): (SocketResult, USize)
@@ -255,8 +292,9 @@ class _Open is _ConnectionState
     conn._set_state(_Closing)
     conn._initiate_shutdown()
 
-  fun ref hard_close(conn: TCPConnection ref) =>
-    conn._set_state(_Closed)
+  fun ref hard_close(conn: TCPConnection ref,
+    cause: _HardCloseCause)
+  =>
     conn._hard_close_connected()
 
   fun ref start_tls(conn: TCPConnection ref, ssl_ctx: SSLContext val,
@@ -270,7 +308,8 @@ class _Open is _ConnectionState
   fun ref ssl_handshake_complete(conn: TCPConnection ref,
     s: EitherLifecycleEventReceiver ref)
   =>
-    _Unreachable()
+    // Already open: the handshake completed on the way in.
+    None
 
   fun keepalive(conn: TCPConnection box, secs: U32) =>
     conn._do_keepalive(secs)
@@ -308,7 +347,7 @@ class _Open is _ConnectionState
   fun is_open(): Bool => true
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => true
-  fun can_receive(): Bool => true
+  fun is_live(): Bool => true
 
   fun receive(event: AsioEventID, buffer: Pointer[U8] tag,
     size: USize): (SocketResult, USize)
@@ -346,8 +385,9 @@ class _Closing is _ConnectionState
   fun ref close(conn: TCPConnection ref) =>
     None
 
-  fun ref hard_close(conn: TCPConnection ref) =>
-    conn._set_state(_Closed)
+  fun ref hard_close(conn: TCPConnection ref,
+    cause: _HardCloseCause)
+  =>
     conn._hard_close_connected()
 
   fun ref start_tls(conn: TCPConnection ref, ssl_ctx: SSLContext val,
@@ -361,7 +401,8 @@ class _Closing is _ConnectionState
   fun ref ssl_handshake_complete(conn: TCPConnection ref,
     s: EitherLifecycleEventReceiver ref)
   =>
-    _Unreachable()
+    // Already open: the handshake completed on the way in.
+    None
 
   fun keepalive(conn: TCPConnection box, secs: U32) => None
 
@@ -398,7 +439,7 @@ class _Closing is _ConnectionState
   fun is_open(): Bool => false
   fun is_closed(): Bool => true
   fun sends_allowed(): Bool => false
-  fun can_receive(): Bool => true
+  fun is_live(): Bool => true
 
   fun receive(event: AsioEventID, buffer: Pointer[U8] tag,
     size: USize): (SocketResult, USize)
@@ -428,8 +469,7 @@ class _UnconnectedClosing is _ConnectionState
     conn._straggler_cleanup(event)
 
     if remaining == 0 then
-      conn._set_state(_Closed)
-      conn._hard_close_connecting()
+        conn._hard_close_connecting(_UnspecifiedCause)
     end
 
   fun ref send(conn: TCPConnection ref,
@@ -440,9 +480,10 @@ class _UnconnectedClosing is _ConnectionState
   fun ref close(conn: TCPConnection ref) =>
     None
 
-  fun ref hard_close(conn: TCPConnection ref) =>
-    conn._set_state(_Closed)
-    conn._hard_close_connecting()
+  fun ref hard_close(conn: TCPConnection ref,
+    cause: _HardCloseCause)
+  =>
+    conn._hard_close_connecting(cause)
 
   fun ref start_tls(conn: TCPConnection ref, ssl_ctx: SSLContext val,
     host: String): (None | StartTLSError)
@@ -492,7 +533,7 @@ class _UnconnectedClosing is _ConnectionState
   fun is_open(): Bool => false
   fun is_closed(): Bool => true
   fun sends_allowed(): Bool => false
-  fun can_receive(): Bool => false
+  fun is_live(): Bool => false
 
   fun receive(event: AsioEventID, buffer: Pointer[U8] tag,
     size: USize): (SocketResult, USize)
@@ -525,7 +566,9 @@ class _Closed is _ConnectionState
   fun ref close(conn: TCPConnection ref) =>
     None
 
-  fun ref hard_close(conn: TCPConnection ref) =>
+  fun ref hard_close(conn: TCPConnection ref,
+    cause: _HardCloseCause)
+  =>
     None
 
   fun ref start_tls(conn: TCPConnection ref, ssl_ctx: SSLContext val,
@@ -576,7 +619,7 @@ class _Closed is _ConnectionState
   fun is_open(): Bool => false
   fun is_closed(): Bool => true
   fun sends_allowed(): Bool => false
-  fun can_receive(): Bool => false
+  fun is_live(): Bool => false
 
   fun receive(event: AsioEventID, buffer: Pointer[U8] tag,
     size: USize): (SocketResult, USize)
@@ -617,9 +660,10 @@ class _SSLHandshaking is _ConnectionState
     // Can't drain gracefully during handshake — nothing to FIN.
     conn.hard_close()
 
-  fun ref hard_close(conn: TCPConnection ref) =>
-    conn._set_state(_Closed)
-    conn._hard_close_ssl_handshaking()
+  fun ref hard_close(conn: TCPConnection ref,
+    cause: _HardCloseCause)
+  =>
+    conn._hard_close_ssl_handshaking(cause)
 
   fun ref start_tls(conn: TCPConnection ref, ssl_ctx: SSLContext val,
     host: String): (None | StartTLSError)
@@ -677,7 +721,7 @@ class _SSLHandshaking is _ConnectionState
   fun is_open(): Bool => false
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
-  fun can_receive(): Bool => true
+  fun is_live(): Bool => true
 
   fun receive(event: AsioEventID, buffer: Pointer[U8] tag,
     size: USize): (SocketResult, USize)
@@ -717,9 +761,10 @@ class _TLSUpgrading is _ConnectionState
     // Can't send FIN during TLS handshake.
     conn.hard_close()
 
-  fun ref hard_close(conn: TCPConnection ref) =>
-    conn._set_state(_Closed)
-    conn._hard_close_tls_upgrading()
+  fun ref hard_close(conn: TCPConnection ref,
+    cause: _HardCloseCause)
+  =>
+    conn._hard_close_tls_upgrading(cause)
 
   fun ref start_tls(conn: TCPConnection ref, ssl_ctx: SSLContext val,
     host: String): (None | StartTLSError)
@@ -773,7 +818,7 @@ class _TLSUpgrading is _ConnectionState
   fun is_open(): Bool => true
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
-  fun can_receive(): Bool => true
+  fun is_live(): Bool => true
 
   fun receive(event: AsioEventID, buffer: Pointer[U8] tag,
     size: USize): (SocketResult, USize)

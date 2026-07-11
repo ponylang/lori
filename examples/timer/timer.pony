@@ -60,9 +60,10 @@ actor SlowServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _out.print("[server] Received query. Pretending to think forever...")
     // Never responds — simulating a slow query
+    KeepReading
 
   fun ref _on_closed() =>
     _out.print("[server] Connection closed.")
@@ -97,7 +98,7 @@ actor QueryTimeoutClient
       end
     end
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     // Response arrived — cancel the query timeout
     match _query_timer
     | let t: TimerToken =>
@@ -105,6 +106,7 @@ actor QueryTimeoutClient
       _query_timer = None
     end
     _out.print("[client] Got response (this won't happen in this example).")
+    KeepReading
 
   fun ref _on_timer(token: TimerToken) =>
     match _query_timer

@@ -1,14 +1,14 @@
 """
-Demonstrates `yield_read()` for cooperative scheduler fairness.
+Demonstrates returning `YieldReading` for cooperative scheduler fairness.
 
 A flood client sends 100 four-byte messages as fast as possible. The server
-calls `yield_read()` every 10 messages, which exits the read loop and lets
+returns `YieldReading` every 10 messages, which exits the read loop and lets
 other actors run before reading resumes automatically in the next scheduler
 turn. The server prints progress at each yield point.
 
 This pattern is useful when a single connection receives sustained high-volume
 traffic and you want to prevent it from monopolizing the Pony scheduler. Unlike
-`mute()`/`unmute()`, `yield_read()` is a one-shot pause — reading resumes on
+`mute()`/`unmute()`, `YieldReading` is a one-shot pause — reading resumes on
 its own without explicit action.
 """
 use "constrained_types"
@@ -65,19 +65,21 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _received_count = _received_count + 1
-
-    if (_received_count % 10) == 0 then
-      _out.print("Server: received " + _received_count.string()
-        + " messages, yielding...")
-      _tcp_connection.yield_read()
-    end
 
     if _received_count == 100 then
       _out.print("Server: all 100 messages received.")
       _tcp_connection.close()
     end
+
+    if (_received_count % 10) == 0 then
+      _out.print("Server: received " + _received_count.string()
+        + " messages, yielding...")
+      return YieldReading
+    end
+
+    KeepReading
 
   fun ref _on_closed() =>
     _out.print("Server: closed")

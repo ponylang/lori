@@ -77,8 +77,9 @@ actor Echoer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _tcp_connection.send(consume data)
+    KeepReading
 
   fun ref _on_closed() =>
     _out.print("Connection closed.")

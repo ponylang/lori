@@ -10,7 +10,6 @@ class TCPConnection
   var _readable: Bool = false
   var _writeable: Bool = false
   var _muted: Bool = false
-  var _yield_read: Bool = false
   // Happy Eyeballs
   var _inflight_connections: U32 = 0
 
@@ -19,12 +18,7 @@ class TCPConnection
   var _spawned_by: (TCPListenerActor | None) = None
   let _lifecycle_event_receiver: (ClientLifecycleEventReceiver ref | ServerLifecycleEventReceiver ref | None)
   let _enclosing: (TCPConnectionActor ref | None)
-  // COUPLING: _pending_first_buffer_offset points into the buffer owned by
-  // _pending_data(0). Trimming _pending_data without resetting the offset
-  // causes a dangling pointer. _manage_pending_buffer maintains both.
-  embed _pending_data: Array[ByteSeq] = _pending_data.create()
-  var _pending_writev_total: USize = 0
-  var _pending_first_buffer_offset: USize = 0
+  embed _pending: _PendingWrites = _PendingWrites
   var _read_buffer: Array[U8] iso = recover Array[U8] end
   var _bytes_in_read_buffer: USize = 0
   var _read_buffer_size: USize = 16384
@@ -33,7 +27,7 @@ class TCPConnection
 
   // Send token tracking. _pending_tokens is a FIFO of (completion offset,
   // token): each accepted send records the cumulative byte offset -- into the
-  // wire-byte stream _pending_data drains (ciphertext for SSL, plaintext
+  // wire-byte stream `_pending` drains (ciphertext for SSL, plaintext
   // otherwise) -- at which its bytes finish. _on_sent fires for a token once
   // _cumulative_sent reaches its offset. Both counters reset to 0 whenever the
   // queue empties, so the offsets stay small.
@@ -43,18 +37,11 @@ class TCPConnection
   var _cumulative_sent: USize = 0
 
   // Built-in SSL support
-  var _ssl: (SSL ref | None) = None
-  var _ssl_ready: Bool = false
-  var _ssl_failed: Bool = false
-  var _ssl_delivery_paused: Bool = false
+  var _ssl: _TLSState = _NoTLS
   // Set when PonyTCP.connect returned > 0, meaning at least one TCP
   // connection attempt was made. Used by the failure callback to distinguish
   // DNS failure (no attempts) from TCP failure (all attempts failed).
   var _had_inflight: Bool = false
-  // Set when _ssl_poll() sees SSLAuthFail before calling hard_close().
-  // _hard_close_tls_upgrading() reads this to pass TLSAuthFailed vs
-  // TLSGeneralError.
-  var _ssl_auth_failed: Bool = false
 
   // Per-connection idle timeout via ASIO timer
   var _timer_event: AsioEventID = AsioEvent.none()
@@ -63,16 +50,6 @@ class TCPConnection
   // Per-connection connect timeout via ASIO timer (one-shot)
   var _connect_timer_event: AsioEventID = AsioEvent.none()
   var _connect_timeout_nsec: U64 = 0
-  // COUPLING: Set by _fire_connect_timeout() before calling hard_close().
-  // Read by _hard_close_connecting() and _hard_close_ssl_handshaking() to
-  // route the failure reason to ConnectionFailedTimeout. Same pattern as
-  // _ssl_auth_failed.
-  var _connect_timed_out: Bool = false
-  // COUPLING: Set by _fire_connect_timer_error() before calling hard_close().
-  // Read by _hard_close_connecting() and _hard_close_ssl_handshaking() to
-  // route the failure reason to ConnectionFailedTimerError. Same pattern as
-  // _connect_timed_out.
-  var _connect_timer_errored: Bool = false
 
   // Per-connection user timer via ASIO timer (one-shot, no I/O reset)
   var _user_timer_event: AsioEventID = AsioEvent.none()
@@ -163,11 +140,7 @@ class TCPConnection
     | let ct: ConnectionTimeout => _connect_timeout_nsec = ct() * 1_000_000
     end
 
-    try
-      _ssl = ssl_ctx.client(host)?
-    else
-      _ssl_failed = true
-    end
+    _ssl = _MakeTLS.client(ssl_ctx, host)
 
     _resize_read_buffer_if_needed()
 
@@ -192,11 +165,7 @@ class TCPConnection
     _read_buffer_size = read_buffer_size()
     _read_buffer_min = read_buffer_size()
 
-    try
-      _ssl = ssl_ctx.server()?
-    else
-      _ssl_failed = true
-    end
+    _ssl = _MakeTLS.server(ssl_ctx)
 
     _resize_read_buffer_if_needed()
 
@@ -529,28 +498,6 @@ class TCPConnection
     _set_readable()
     _queue_read()
 
-  fun ref yield_read() =>
-    """
-    Request the read loop to exit after the current `_on_received` callback
-    returns, giving other actors a chance to run. Reading resumes automatically
-    in the next scheduler turn — no explicit `unmute()` is needed.
-
-    Call this from within `_on_received()` to implement application-level yield
-    policies (e.g. yield after N messages, after N bytes, or after a time
-    threshold). Unlike `mute()`/`unmute()`, which persistently stop reading
-    until reversed, `yield_read()` is a one-shot pause: the read loop resumes
-    on its own.
-
-    For SSL connections, `yield_read()` operates at TCP-read granularity. Every
-    SSL-decrypted message from a single TCP read is delivered before the yield
-    takes effect: one pass of the dispatch loop hands the whole read to the SSL
-    session, which then delivers every message it decrypts. Two callbacks stop
-    that delivery early: `hard_close()`, which drops the messages still
-    undelivered from that TCP read, and `mute()`, which holds them until
-    `unmute()`.
-    """
-    _yield_read = true
-
   fun _user_buffer_until(): USize =>
     """
     The user's requested buffer-until value, regardless of whether SSL is
@@ -561,19 +508,6 @@ class TCPConnection
     match \exhaustive\ _buffer_until
     | let e: BufferSize => e()
     | Streaming => 0
-    end
-
-  fun _tcp_buffer_until(): (BufferSize | Streaming) =>
-    """
-    The buffer-until value for the TCP read layer. When SSL is active, returns
-    `Streaming` because SSL record framing doesn't align with application
-    framing — the TCP layer reads all available data and lets `_ssl_poll()`
-    handle chunking via `_buffer_until`. When SSL is not active, returns the
-    user's `_buffer_until` value directly.
-    """
-    match _ssl
-    | let _: SSL box => Streaming
-    | None => _buffer_until
     end
 
   fun ref buffer_until(qty: (BufferSize | Streaming)): BufferUntilResult =>
@@ -626,31 +560,40 @@ class TCPConnection
     """
     When an error happens, do a non-graceful close.
     """
-    _state.hard_close(this)
+    _hard_close(_UnspecifiedCause)
 
-  fun ref _hard_close_connecting() =>
+  fun ref _hard_close(cause: _HardCloseCause) =>
+    """
+    Hard close, saying why. The caller that knows the cause passes it; the
+    state decides which failure callback it becomes. `_UnspecifiedCause` where
+    there is nothing to add and the state's default reason applies.
+    """
+    _state.hard_close(this, cause)
+
+  fun ref _hard_close_connecting(cause: _HardCloseCause) =>
     """
     Hard close during the connecting phase. Disposes SSL, fires the
     appropriate failure callback, and cancels the idle, connect, and user
-    timers. The caller must set `_state = _Closed` before calling this.
+    timers.
     """
+    _state = _Closed
     _shutdown = true
     _shutdown_peer = true
-    match _ssl
-    | let ssl: SSL ref =>
-      ssl.dispose()
-      _ssl = None
-    end
+    _dispose_tls()
     match _lifecycle_event_receiver
     | let c: ClientLifecycleEventReceiver ref =>
-      let reason = if _connect_timer_errored then
-        ConnectionFailedTimerError
-      elseif _connect_timed_out then
-        ConnectionFailedTimeout
-      elseif _had_inflight then
-        ConnectionFailedTCP
+      // `_had_inflight` is state, not a cause: it records whether any TCP
+      // attempt ever started, which is what separates a DNS failure from a
+      // TCP one. No caller knows it.
+      let reason = match cause
+      | _ConnectTimerFailed => ConnectionFailedTimerError
+      | _ConnectTimedOut => ConnectionFailedTimeout
       else
-        ConnectionFailedDNS
+        if _had_inflight then
+          ConnectionFailedTCP
+        else
+          ConnectionFailedDNS
+        end
       end
       c._on_connection_failure(reason)
     end
@@ -667,17 +610,9 @@ class TCPConnection
     REMOVE on Windows), and disposing SSL. Order is load-bearing: timer cancel
     before event unsubscribe, SSL dispose after the fd is released.
 
-    Does NOT set `_ssl = None`. `_ssl_poll()` can be on the stack when the
-    application hard-closes from a callback. It binds its own `ref` alias to
-    the session, so clearing the field would not stop it; it stops on
-    `_state.can_receive()`. Clearing the field would also leave
-    `_deliver_received()` matching its `None` branch for an SSL connection,
-    which is the plaintext path and hands bytes to `_on_received`
-    undecrypted. `_read()` guards against reaching `_deliver_received()`
-    after a close, so that is a trap rather than a live bug.
-
-    The caller must set `_state = _Closed` before calling this — the
-    `_ssl_poll()` guard depends on it.
+    Runs with `_state` already `_Closed`: the `_hard_close_*` methods set it
+    before calling this, so the `_on_send_failed` this fires (and any re-entrant
+    call the application makes from it) sees a closed connection.
     """
     _shutdown = true
     _shutdown_peer = true
@@ -698,9 +633,7 @@ class TCPConnection
       end
     end
 
-    _pending_data.clear()
-    _pending_writev_total = 0
-    _pending_first_buffer_offset = 0
+    _pending.clear()
     _cumulative_enqueued = 0
     _cumulative_sent = 0
 
@@ -710,13 +643,23 @@ class TCPConnection
     PonyAsio.unsubscribe(_event)
     _set_unreadable()
     _set_unwriteable()
+    _throttled = false
 
     _close_event_fd(_fd)
     _fd = -1
 
+    _dispose_tls()
+
+  fun ref _dispose_tls() =>
+    """
+    Dispose the SSL session and record that it is gone. The only place that
+    disposes one: `_TLS` means the session is alive, and nothing else may take
+    that away.
+    """
     match _ssl
-    | let ssl: SSL ref =>
-      ssl.dispose()
+    | let tls: _TLS =>
+      tls.session.dispose()
+      _ssl = _TLSDisposed
     end
 
   fun ref _spawner_notification() =>
@@ -742,9 +685,9 @@ class TCPConnection
     Hard close for an established connection where the application has been
     notified (i.e., _on_connected/_on_started has already fired). Only
     reachable from `_Open` and `_Closing` — handshake states have their own
-    hard-close methods. Fires `_on_closed` and notifies the spawner. The
-    caller must set `_state = _Closed` before calling this.
+    hard-close methods. Fires `_on_closed` and notifies the spawner.
     """
+    _state = _Closed
     _hard_close_cleanup()
 
     match \exhaustive\ _lifecycle_event_receiver
@@ -756,26 +699,25 @@ class TCPConnection
 
     _spawner_notification()
 
-  fun ref _hard_close_ssl_handshaking() =>
+  fun ref _hard_close_ssl_handshaking(cause: _HardCloseCause) =>
     """
     Hard close during the initial SSL handshake (state: `_SSLHandshaking`).
     The application has not been notified — fires `_on_connection_failure`
-    (client) or `_on_start_failure` (server). The caller must set
-    `_state = _Closed` before calling this.
+    (client) or `_on_start_failure` (server).
     """
+    _state = _Closed
     _hard_close_cleanup()
 
     match \exhaustive\ _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
       match \exhaustive\ s
       | let c: ClientLifecycleEventReceiver ref =>
-        if _connect_timer_errored then
-          c._on_connection_failure(ConnectionFailedTimerError)
-        elseif _connect_timed_out then
-          c._on_connection_failure(ConnectionFailedTimeout)
-        else
-          c._on_connection_failure(ConnectionFailedSSL)
+        let reason = match cause
+        | _ConnectTimerFailed => ConnectionFailedTimerError
+        | _ConnectTimedOut => ConnectionFailedTimeout
+        else ConnectionFailedSSL
         end
+        c._on_connection_failure(reason)
       | let srv: ServerLifecycleEventReceiver ref =>
         srv._on_start_failure(StartFailedSSL)
       end
@@ -785,19 +727,18 @@ class TCPConnection
 
     _spawner_notification()
 
-  fun ref _hard_close_tls_upgrading() =>
+  fun ref _hard_close_tls_upgrading(cause: _HardCloseCause) =>
     """
     Hard close during a TLS upgrade handshake (state: `_TLSUpgrading`).
     The application was already notified of the plaintext connection, so
-    `_on_tls_failure` fires followed by `_on_closed`. The caller must set
-    `_state = _Closed` before calling this.
+    `_on_tls_failure` fires followed by `_on_closed`.
     """
+    _state = _Closed
     _hard_close_cleanup()
 
-    let reason = if _ssl_auth_failed then
-      TLSAuthFailed
-    else
-      TLSGeneralError
+    let reason = match cause
+    | _TLSAuthFailure => TLSAuthFailed
+    else TLSGeneralError
     end
 
     match \exhaustive\ _lifecycle_event_receiver
@@ -867,7 +808,9 @@ class TCPConnection
     (None | StartTLSError)
   =>
     match _ssl
-    | let _: SSL ref => return StartTLSAlreadyTLS
+    | _NoTLS => None
+    else
+      return StartTLSAlreadyTLS
     end
 
     // writev is synchronous on every platform now — it returns OK with a
@@ -891,7 +834,7 @@ class TCPConnection
       return StartTLSSessionFailed
     end
 
-    _ssl = consume ssl
+    _ssl = _TLS(consume ssl)
     _state = _TLSUpgrading
     _ssl_flush_sends()
     None
@@ -923,17 +866,21 @@ class TCPConnection
     // this send's ciphertext is enqueued here; on an ssl.write error the send
     // failed, so tell the caller and do nothing else.
     match \exhaustive\ _ssl
-    | let ssl: SSL ref =>
+    | let tls: _TLS =>
       match \exhaustive\ data
       | let d: ByteSeq =>
-        try ssl.write(d)? else return SendErrorNotWriteable end
+        try tls.session.write(d)? else return SendErrorNotWriteable end
       | let d: ByteSeqIter =>
         for v in d.values() do
-          try ssl.write(v)? else return SendErrorNotWriteable end
+          try tls.session.write(v)? else return SendErrorNotWriteable end
         end
       end
       _ssl_enqueue_sends()
-    | None =>
+    | _TLSDisposed | _TLSFailed =>
+      // `sends_allowed()` is false without a live session.
+      _Unreachable()
+      return SendErrorNotConnected
+    | _NoTLS =>
       match \exhaustive\ data
       | let d: ByteSeq =>
         _enqueue(d)
@@ -997,8 +944,9 @@ class TCPConnection
 
   fun ref _enqueue(data: ByteSeq) =>
     """
-    Add a buffer to the pending write queue. Callers must call
-    `_send_pending_writes()` to flush after enqueuing.
+    Add a buffer to the pending write queue, without flushing. Enqueue and
+    flush are separate steps because `_do_send` records a send's completion
+    offset between them; `_send_pending_writes()` is the flush.
 
     Uses `not is_closed()` rather than `is_open()` because
     `_ssl_enqueue_sends()` calls `_enqueue()` during `_SSLHandshaking` (where
@@ -1008,53 +956,18 @@ class TCPConnection
     """
     if data.size() == 0 then return end
     if not is_closed() then
-      _pending_data.push(data)
-      _pending_writev_total = _pending_writev_total + data.size()
+      _pending.push(data)
       _cumulative_enqueued = _cumulative_enqueued + data.size()
     end
 
-  fun ref _manage_pending_buffer(bytes_sent: USize): USize =>
+  fun ref _manage_pending_buffer(bytes_sent: USize) =>
     """
-    Account for `bytes_sent` by walking `_pending_data` entries. Returns
-    the number of fully-sent entries. Updates `_pending_first_buffer_offset`,
-    `_pending_writev_total`, and `_cumulative_sent`, and trims `_pending_data`.
+    Account for `bytes_sent` sent from the head of the pending queue. `_pending`
+    trims its buffers and advances its offset; `_cumulative_sent` tracks the
+    same bytes for token completion.
     """
-    if bytes_sent == 0 then return 0 end
-
-    var remaining = bytes_sent
-    var num_fully_sent: USize = 0
-    var new_offset: USize = 0
-
-    while remaining > 0 do
-      try
-        let entry = _pending_data(num_fully_sent)?
-        let start = if num_fully_sent == 0 then
-          _pending_first_buffer_offset
-        else
-          USize(0)
-        end
-        let effective_size = entry.size() - start
-
-        if effective_size <= remaining then
-          // Fully sent
-          num_fully_sent = num_fully_sent + 1
-          remaining = remaining - effective_size
-        else
-          // Partially sent — this entry becomes the new entry 0 after trim
-          new_offset = start + remaining
-          remaining = 0
-        end
-      else
-        _Unreachable()
-      end
-    end
-
-    _pending_writev_total = _pending_writev_total - bytes_sent
     _cumulative_sent = _cumulative_sent + bytes_sent
-    _pending_data.trim_in_place(num_fully_sent)
-    _pending_first_buffer_offset = new_offset
-
-    num_fully_sent
+    _pending.sent(bytes_sent)
 
   fun ref _send_pending_writes() =>
     """
@@ -1066,30 +979,16 @@ class TCPConnection
     let writev_batch_size: USize = PonyTCP.writev_max().usize()
     var wrote_bytes: Bool = false
 
-    while _writeable and (_pending_writev_total > 0) do
+    while _writeable and (_pending.total() > 0) do
       try
         // Determine batch size and byte count
         let num_to_send: USize =
-          _pending_data.size().min(writev_batch_size)
-
-        let bytes_to_send: USize =
-          if num_to_send == _pending_data.size() then
-            _pending_writev_total
-          else
-            var total: USize = 0
-            var i: USize = 0
-            while i < num_to_send do
-              let s = _pending_data(i)?.size()
-              total = total +
-                if i == 0 then s - _pending_first_buffer_offset else s end
-              i = i + 1
-            end
-            total
-          end
+          _pending.size().min(writev_batch_size)
+        let bytes_to_send: USize = _pending.prefix_total(num_to_send)
 
         // writev syscall — three-state result with bytes-sent count
-        match \exhaustive\ PonyTCP.writev(_event, _pending_data,
-          0, num_to_send, _pending_first_buffer_offset)?
+        match \exhaustive\ PonyTCP.writev(_event, _pending.buffers(),
+          0, num_to_send, _pending.first_offset())?
         | (SocketResultOk, let len: USize) =>
           if len > 0 then
             wrote_bytes = true
@@ -1122,7 +1021,7 @@ class TCPConnection
 
     _fire_completed_sends()
 
-    if _pending_writev_total == 0 then
+    if _pending.total() == 0 then
       _release_backpressure()
     end
 
@@ -1150,25 +1049,105 @@ class TCPConnection
       // Guarded by size() > 0, so the ? accesses never error.
       _Unreachable()
     end
-    if (_pending_tokens.size() == 0) and (_pending_writev_total == 0) then
+    if (_pending_tokens.size() == 0) and (_pending.total() == 0) then
       _cumulative_enqueued = 0
       _cumulative_sent = 0
     end
 
-  fun ref _deliver_received(s: EitherLifecycleEventReceiver ref,
-    data: Array[U8] iso)
-  =>
+  fun _tcp_buffer_until(): (BufferSize | Streaming) =>
     """
-    Route incoming data through SSL decryption (if present) or directly
-    to the lifecycle event receiver.
+    The buffer-until value for the TCP read layer. When SSL is active, returns
+    `Streaming` because SSL record framing doesn't align with application
+    framing — the TCP layer reads all available data and lets the SSL session
+    frame via `_buffer_until`. When SSL is not active, returns the user's
+    `_buffer_until` value directly.
+    """
+    // Only a plaintext connection frames in the read buffer. Every TLS variant
+    // stages ciphertext there, or nothing at all.
+    match _ssl
+    | _NoTLS => _buffer_until
+    else
+      Streaming
+    end
+
+  fun ref _next_message(): (Array[U8] iso^ | None) =>
+    """
+    The next message for the application, or `None` when there isn't one. For an
+    SSL connection `None` also covers a session that has just errored; `_read()`
+    handles both the same way, by asking `_fill()` for more, and `_ssl_poll()`
+    turns the error into a `hard_close()` when the next ciphertext arrives.
+
+    Returns a value; it never calls the application. That is what keeps `mute`
+    and `is_live` in `_read()`'s loop and out of here — code that hands over
+    control needs those guards, code that hands back a value does not.
+
+    For an SSL connection the messages come from the SSL session, which frames
+    them itself. Otherwise they are chopped off the read buffer.
     """
     match \exhaustive\ _ssl
-    | let ssl: SSL ref =>
-      ssl.receive(consume data)
-      _ssl_poll(s)
-    | None =>
-      s._on_received(consume data)
+    | let tls: _TLS =>
+      tls.session.read(_user_buffer_until())
+    | _TLSDisposed | _TLSFailed =>
+      // `_read()`'s loop stops on `is_live()` before it gets here, and a
+      // connection whose session never existed never opened.
+      _Unreachable()
+      None
+    | _NoTLS =>
+      if not _there_is_buffered_read_data() then
+        return None
+      end
+
+      let bytes_to_consume = match \exhaustive\ _buffer_until
+      | let e: BufferSize => e()
+      | Streaming => _bytes_in_read_buffer
+      end
+
+      let x = _read_buffer = recover Array[U8] end
+      (let data', _read_buffer) = (consume x).chop(bytes_to_consume)
+      _bytes_in_read_buffer = _bytes_in_read_buffer - bytes_to_consume
+      consume data'
     end
+
+  fun ref _fill(s: EitherLifecycleEventReceiver ref): (USize | None) ? =>
+    """
+    Get more bytes off the socket. Returns the number read, or `None` when the
+    socket has nothing more to give (read interest is re-armed first). Raises
+    when the read fails — a peer close, or an unrecoverable socket error.
+    `_read()` hard closes on either.
+
+    The only place that knows whether this connection is using SSL. For SSL the
+    bytes go to the session rather than to the application, and `_ssl_poll()`
+    handles handshake state, errors, and flushing.
+
+    Returns as soon as the session has been fed. `_ssl_poll()` runs application
+    callbacks that can `hard_close()` and dispose the session, so the next look
+    at it has to happen after `_read()`'s loop re-checks its guards.
+    """
+    _resize_read_buffer_if_needed()
+
+    let bytes_read = match \exhaustive\ _state.receive(_event,
+      _read_buffer.cpointer(_bytes_in_read_buffer),
+      _read_buffer.size() - _bytes_in_read_buffer)
+    | (SocketResultOk, let n: USize) => n
+    | (SocketResultRetry, _) =>
+      _set_unreadable()
+      PonyAsio.resubscribe_read(_event)
+      return None
+    | (SocketResultError, _) => error
+    end
+
+    _bytes_in_read_buffer = _bytes_in_read_buffer + bytes_read
+
+    match _ssl
+    | let tls: _TLS =>
+      let x = _read_buffer = recover Array[U8] end
+      (let cipher, _read_buffer) = (consume x).chop(_bytes_in_read_buffer)
+      _bytes_in_read_buffer = 0
+      tls.session.receive(consume cipher)
+      _ssl_poll(s)
+    end
+
+    bytes_read
 
   fun ref _read() =>
     _reset_idle_timer()
@@ -1178,85 +1157,58 @@ class TCPConnection
         var total_bytes_read: USize = 0
 
         while _readable do
-          // exit if muted
-          if _muted then
+          // Every control the application has over reading lives here, once.
+          // `_on_received` can mute us or hard_close us, and either takes
+          // effect before the next message is taken or the socket is touched.
+          //
+          // `is_live()` is about the socket: `_fill()` must not read an fd
+          // a `hard_close()` has released. The SSL session guards itself — a
+          // `hard_close()` moves `_ssl` to `_TLSDisposed`, which no match
+          // binds. A graceful `close()` stays live, so reading
+          // continues there to pick up the peer's FIN.
+          if not _state.is_live() then
             return
           end
 
-          // Deliver data we already have: first the decrypted SSL messages
-          // that a `mute()` from `_on_received` stopped `_ssl_poll()` handing
-          // over on an earlier read, then whatever is in the read buffer.
-          // `_state.can_receive()` stops mid-delivery if an `_on_received`
-          // hard_closed us — see the guard after this loop for the rationale.
-          //
-          // The paused branch is the only way back into `_ssl_poll()`: those
-          // messages sit inside the SSL session, and `_read_buffer` is empty by
-          // then, so `_there_is_buffered_read_data()` on its own would never
-          // re-enter it.
-          while not _muted and _state.can_receive()
-            and (_ssl_delivery_paused or _there_is_buffered_read_data())
-          do
-            if _ssl_delivery_paused then
-              _ssl_delivery_paused = false
-              _ssl_poll(s)
-            else
-              let bytes_to_consume = match \exhaustive\ _tcp_buffer_until()
-              | let e: BufferSize => e()
-              | Streaming => _bytes_in_read_buffer
-              end
+          if _muted then
+            // Mute stops reading. It does not hold the write side, so protocol
+            // output `ssl.read()` queued still goes out; a mute lasts as long
+            // as the application likes.
+            _ssl_flush_sends()
+            return
+          end
 
-              let x = _read_buffer = recover Array[U8] end
-              (let data', _read_buffer) = (consume x).chop(bytes_to_consume)
-              _bytes_in_read_buffer = _bytes_in_read_buffer - bytes_to_consume
-
-              _deliver_received(s, consume data')
-            end
-
-            // COUPLING: This check must remain immediately after the delivery
-            // above — moving it would change when the yield takes effect
-            // relative to application callbacks.
-            if _yield_read then
-              _yield_read = false
-              match \exhaustive\ _enclosing
-              | let e: TCPConnectionActor ref => e._read_again()
-              | None => _Unreachable()
-              end
+          match \exhaustive\ _next_message()
+          | let m: Array[U8] iso =>
+            match \exhaustive\ s._on_received(consume m)
+            | KeepReading => None
+            | YieldReading =>
+              _queue_read()
               return
             end
-          end
+          | None =>
+            // Reading the SSL session in `_next_message()` can make it queue
+            // protocol output — a TLS 1.3 KeyUpdate response, say. The session
+            // has drained now, so flush that before blocking on the socket; a
+            // peer waiting on the output would otherwise wedge. No-op on a
+            // plaintext connection.
+            _ssl_flush_sends()
+            if not _state.is_live() then
+              // The flush can hard_close on a write error.
+              return
+            end
 
-          // `_deliver_received()` above runs the application's `_on_received`,
-          // which can hard_close() this connection, transitioning it to
-          // `_Closed`. Break the loop on that transition rather than fall
-          // through to a socket read on the just-closed fd. Graceful close
-          // (`_Closing`) stays `can_receive()`, so it keeps reading here to
-          // detect the peer FIN. (Mute is handled by the top-of-loop check.)
-          if not _state.can_receive() then
-            return
-          end
+            // Yield after reading a buffer's worth of data to allow GC and
+            // other actors to run.
+            if total_bytes_read >= _read_buffer_size then
+              _queue_read()
+              return
+            end
 
-          // Yield after reading a buffer's worth of data to allow GC and
-          // other actors to run. _queue_read() schedules _read_again to
-          // resume.
-          if total_bytes_read >= _read_buffer_size then
-            _queue_read()
-            return
-          end
-
-          _resize_read_buffer_if_needed()
-
-          match \exhaustive\ _state.receive(_event,
-            _read_buffer.cpointer(_bytes_in_read_buffer),
-            _read_buffer.size() - _bytes_in_read_buffer)
-          | (SocketResultOk, let bytes_read: USize) =>
-            _bytes_in_read_buffer = _bytes_in_read_buffer + bytes_read
-            total_bytes_read = total_bytes_read + bytes_read
-          | (SocketResultRetry, _) =>
-            // would block. try again later
-            _set_unreadable()
-            PonyAsio.resubscribe_read(_event)
-            return
-          | (SocketResultError, _) => error
+            match \exhaustive\ _fill(s)?
+            | let n: USize => total_bytes_read = total_bytes_read + n
+            | None => return
+            end
           end
         end
       else
@@ -1298,8 +1250,9 @@ class TCPConnection
   fun ref _queue_read() =>
     """
     Schedule reading to resume in a later turn via the `_read_again` behavior.
-    Used to yield after a buffer's worth of data and to (re)start reading after
-    establishing a connection or unmuting.
+    Used when `_on_received` returns `YieldReading`, to yield after a buffer's
+    worth of data, and to (re)start reading after establishing a connection or
+    unmuting.
     """
     match \exhaustive\ _enclosing
     | let e: TCPConnectionActor ref =>
@@ -1383,9 +1336,6 @@ class TCPConnection
   fun ref _do_set_timer(duration: TimerDuration):
     (TimerToken | SetTimerError)
   =>
-    // COUPLING: `_fire_user_timer_failure` relies on `_cancel_user_timer`
-    // clearing `_user_timer_token` so that `_on_timer_failure` callbacks can
-    // call `set_timer(duration)` without hitting this guard.
     if _user_timer_token isnt None then return SetTimerAlreadyActive end
 
     let nsec = duration() * 1_000_000
@@ -1408,11 +1358,6 @@ class TCPConnection
     Idempotent — if a timer already exists, this is a no-op. Prevents ASIO
     timer event leaks from double-arm scenarios.
     """
-    // COUPLING: `_fire_idle_timer_failure` relies on `_cancel_idle_timer`
-    // clearing both `_idle_timeout_nsec` and `_timer_event` so that
-    // `_on_idle_timer_failure` callbacks can call `idle_timeout(duration)`
-    // (which runs through `_do_idle_timeout` → `_arm_idle_timer`) without
-    // hitting these guards.
     if _idle_timeout_nsec == 0 then return end
     if not _timer_event.is_null() then return end
     match \exhaustive\ _enclosing
@@ -1439,10 +1384,6 @@ class TCPConnection
     matches `_timer_event` and is destroyed by `_event_notify`'s else
     branch disposable check.
     """
-    // COUPLING: `_fire_idle_timer_failure` depends on this clearing both
-    // `_timer_event` and `_idle_timeout_nsec` so that `_on_idle_timer_failure`
-    // callbacks can re-arm via `idle_timeout(duration)` without tripping
-    // `_arm_idle_timer`'s idempotency guards.
     if not _timer_event.is_null() then
       PonyAsio.unsubscribe(_timer_event)
       _timer_event = AsioEvent.none()
@@ -1511,24 +1452,20 @@ class TCPConnection
 
   fun ref _fire_connect_timeout() =>
     """
-    The connect timeout has fired. Sets `_connect_timed_out` so that
-    `hard_close()` routes the failure to `ConnectionFailedTimeout`, then
-    cancels the timer and hard-closes the connection.
+    The connect timeout has fired. Cancels the timer and hard-closes,
+    saying why, so the connection fails with `ConnectionFailedTimeout`.
     """
-    _connect_timed_out = true
     _cancel_connect_timer()
-    hard_close()
+    _hard_close(_ConnectTimedOut)
 
   fun ref _fire_connect_timer_error() =>
     """
-    The connect timer's ASIO subscription failed. Sets
-    `_connect_timer_errored` so that `hard_close()` routes the failure to
-    `ConnectionFailedTimerError`, then cancels the timer and hard-closes
-    the connection.
+    The connect timer's ASIO subscription failed. Cancels the timer and
+    hard-closes, saying why, so the connection fails with
+    `ConnectionFailedTimerError`.
     """
-    _connect_timer_errored = true
     _cancel_connect_timer()
-    hard_close()
+    _hard_close(_ConnectTimerFailed)
 
   fun ref _fire_user_timer() =>
     """
@@ -1561,10 +1498,6 @@ class TCPConnection
     longer match `_user_timer_event` and are destroyed by
     `_event_notify`'s else branch disposable check.
     """
-    // COUPLING: `_fire_user_timer_failure` depends on this clearing
-    // `_user_timer_token` so that `_on_timer_failure` callbacks can call
-    // `set_timer(duration)` without hitting the `SetTimerAlreadyActive`
-    // guard in `_do_set_timer`.
     if not _user_timer_event.is_null() then
       PonyAsio.unsubscribe(_user_timer_event)
       _user_timer_event = AsioEvent.none()
@@ -1595,10 +1528,10 @@ class TCPConnection
     before the flush.
     """
     match _ssl
-    | let ssl: SSL ref =>
+    | let tls: _TLS =>
       try
-        while ssl.can_send() do
-          _enqueue(ssl.send()?)
+        while tls.session.can_send() do
+          _enqueue(tls.session.send()?)
         end
       end
     end
@@ -1607,85 +1540,59 @@ class TCPConnection
     """
     Enqueue any pending encrypted data from the SSL session, then flush to the
     wire. Called after SSL handshake and protocol operations that produce
-    output (ClientHello, handshake responses). The application write path uses
+    output (ClientHello, handshake responses), and by `_read()` once
+    `ssl.read()` may have queued some — a TLS 1.3 KeyUpdate response, say.
+
+    Does nothing without a live session. `_ssl_poll()` runs callbacks that can
+    `hard_close()` and dispose it, and there is then nothing to flush and no
+    socket to flush it to.
+
+    Can `hard_close()` on a write error. The application write path uses
     `_ssl_enqueue_sends()` plus `_send_pending_writes()` directly so it can
     record the send's completion offset between the two.
     """
-    _ssl_enqueue_sends()
-    _send_pending_writes()
+    match _ssl
+    | let _: _TLS =>
+      _ssl_enqueue_sends()
+      _send_pending_writes()
+    end
 
   fun ref _ssl_poll(s: EitherLifecycleEventReceiver ref) =>
     """
-    Handle handshake completion, error detection, decrypted data delivery, and
-    protocol data flushing for the SSL session. Called by `_deliver_received()`
-    after `ssl.receive()` has fed it new ciphertext, and by `_read()` to resume
-    a delivery that `mute()` cut short.
+    Handle handshake completion, error detection, and protocol data flushing
+    for the SSL session. Called by `_fill()` after `ssl.receive()` has fed it
+    new ciphertext.
 
-    Delivery stops if an application callback hard-closes the connection or
-    mutes it. Flushing stops on a hard close — see the `can_receive()` guards
-    below.
+    Does not deliver application data — `_read()` takes messages out of the
+    session one at a time via `_next_message()`.
+
+    `ssl_handshake_complete` runs application callbacks, any of which can
+    `hard_close()` and dispose the session. The flush below re-matches `_ssl`
+    rather than reusing the binding above, so it finds no session and does
+    nothing.
     """
     match _ssl
-    | let ssl: SSL ref =>
-      match ssl.state()
+    | let tls: _TLS =>
+      match tls.session.state()
       | SSLReady =>
-        if not _ssl_ready then
-          _ssl_ready = true
-          _state.ssl_handshake_complete(this, s)
-        end
+        _state.ssl_handshake_complete(this, s)
       | SSLAuthFail =>
-        _ssl_auth_failed = true
-        hard_close()
+        _hard_close(_TLSAuthFailure)
         return
       | SSLError =>
         hard_close()
         return
       end
 
-      // Read all available decrypted data
-      let ssl_read_buffer_until: USize = match \exhaustive\ _buffer_until
-      | let e: BufferSize => e()
-      | Streaming => 0
-      end
-      // `ssl_handshake_complete` above and `_on_received` below both run
-      // application code that can hard_close(), which disposes `ssl`.
-      // `can_receive()` goes false on that transition, so it bounds the read
-      // loop and the flush. A graceful close() moves to `_Closing`, which
-      // still receives and does not dispose, so both keep running there.
-      //
-      // The same application code can mute(), which bounds the read loop too:
-      // an SSL connection stops handing over messages the moment the
-      // application says stop, the way a plaintext one does. Muting is a
-      // read-side control, so it does not bound the flush below.
-      while _state.can_receive() and not _muted do
-        match \exhaustive\ ssl.read(ssl_read_buffer_until)
-        | let d: Array[U8] iso => s._on_received(consume d)
-        | None => break
-        end
-      end
-
-      if _state.can_receive() then
-        // Flush any SSL protocol data (handshake responses, etc.)
-        _ssl_flush_sends()
-      end
-
-      // If the loop above stopped because the application muted — rather than
-      // because the session ran dry — decrypted messages may still be sitting
-      // in the SSL session. Tell `_read()` to come back for them once the
-      // application unmutes. Checked after the flush because the flush can
-      // `hard_close()` on a write error, and a closed connection has nothing
-      // to resume and never runs `_read()` again. The flag can be set with
-      // nothing left to deliver, when the application muted on the last
-      // message; `_read()` then clears it and the resumed poll finds nothing.
-      // The SSL wrapper offers no non-consuming way to tell the difference:
-      // `read()` is its only read-side accessor and it consumes.
-      if _muted and _state.can_receive() then
-        _ssl_delivery_paused = true
-      end
+      // `ssl_handshake_complete` above fires `_on_connected`, `_on_started` or
+      // `_on_tls_ready`, any of which can hard_close(). That disposes the
+      // session and moves `_ssl` to `_TLSDisposed`, so the flush below finds
+      // no session and does nothing. `tls` is a stale alias by then.
+      _ssl_flush_sends()
     end
 
   fun _has_pending_writes(): Bool =>
-    _pending_writev_total > 0
+    _pending.total() > 0
 
   fun ref read_again() =>
     _state.read_again(this)
@@ -1817,13 +1724,15 @@ class TCPConnection
     _set_readable()
 
     match \exhaustive\ _ssl
-    | let _: SSL ref =>
+    | let _: _TLS =>
       _state = _SSLHandshaking
       // Flush ClientHello to initiate SSL handshake.
       // _on_connected() and _arm_idle_timer() deferred until
       // ssl_handshake_complete.
       _ssl_flush_sends()
-    | None =>
+    | _TLSDisposed | _TLSFailed =>
+      _Unreachable()
+    | _NoTLS =>
       _state = _Open
       _arm_idle_timer()
       _cancel_connect_timer()
@@ -1831,6 +1740,14 @@ class TCPConnection
       | let c: ClientLifecycleEventReceiver ref =>
         c._on_connected()
       end
+    end
+
+    // The flush above can hard_close on a write error, and `_on_connected` can
+    // hard_close from the application. If either did, the fd is gone and there
+    // is nothing to read or drain. A graceful `close()` stays live and falls
+    // through, so its drain and FIN read still happen.
+    if not _state.is_live() then
+      return
     end
 
     _read()
@@ -1995,7 +1912,7 @@ class TCPConnection
   fun ref _complete_client_initialization(
     s: ClientLifecycleEventReceiver ref)
   =>
-    if _ssl_failed then
+    if _ssl is _TLSFailed then
       _state = _Closed
       s._on_connection_failure(ConnectionFailedSSL)
       return
@@ -2019,7 +1936,7 @@ class TCPConnection
   fun ref _complete_server_initialization(
     s: ServerLifecycleEventReceiver ref)
   =>
-    if _ssl_failed then
+    if _ssl is _TLSFailed then
       // Raw fd: no ASIO event has been created for it yet (that happens below,
       // after this early return), so close it directly on every platform. Do
       // NOT route this through `_close_event_fd` — that defers to the readiness
@@ -2038,16 +1955,25 @@ class TCPConnection
       _set_writeable()
 
       match \exhaustive\ _ssl
-      | let _: SSL ref =>
+      | let _: _TLS =>
         _state = _SSLHandshaking
         // Flush any initial SSL data (usually no-op for servers).
         // _on_started() and _arm_idle_timer() deferred until
         // ssl_handshake_complete.
         _ssl_flush_sends()
-      | None =>
+      | _TLSDisposed | _TLSFailed =>
+        _Unreachable()
+      | _NoTLS =>
         _state = _Open
         _arm_idle_timer()
         s._on_started()
+      end
+
+      // The flush above can hard_close on a write error, and `_on_started` can
+      // hard_close from the application. If either did, the fd is gone. A
+      // graceful `close()` stays live and falls through.
+      if not _state.is_live() then
+        return
       end
 
       // Queue up reads as we are now connected

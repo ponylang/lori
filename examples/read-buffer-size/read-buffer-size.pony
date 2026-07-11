@@ -69,7 +69,7 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _control_phase then
       let cmd = String.from_array(consume data)
       _out.print("Server: received command \"" + cmd + "\"")
@@ -91,6 +91,7 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
         + " bytes of bulk data")
       _tcp_connection.close()
     end
+    KeepReading
 
   fun ref _on_closed() =>
     _out.print("Server: closed")

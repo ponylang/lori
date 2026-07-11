@@ -129,7 +129,7 @@ actor \nodoc\ _TestBackpressureDrainServer
       _h.complete_action("server payload delivered")
     end
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if not _got_ready then
       _got_ready = true
       // Switch framing to expect "ping" (4 bytes)
@@ -155,6 +155,7 @@ actor \nodoc\ _TestBackpressureDrainServer
       _tcp_connection.close()
       _h.complete(true)
     end
+    KeepReading
 
 actor \nodoc\ _TestBackpressureDrainClient
   is (TCPConnectionActor & ClientLifecycleEventReceiver)
@@ -194,7 +195,7 @@ actor \nodoc\ _TestBackpressureDrainClient
     _payload_size = payload_size
     _tcp_connection.unmute()
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _total_received == 0 then
       _h.complete_action("client receiving data")
     end
@@ -207,6 +208,7 @@ actor \nodoc\ _TestBackpressureDrainClient
       _tcp_connection.send("ping")
       _tcp_connection.close()
     end
+    KeepReading
 
 class \nodoc\ iso _TestWriteOnlyEventReadRecovery is UnitTest
   """
@@ -330,7 +332,7 @@ actor \nodoc\ _TestWriteOnlyEventReadRecoveryServer
     // #276 fix; a server that never muted can't rely on it.
     None
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if not _got_ready then
       _got_ready = true
       match MakeBufferSize(4)
@@ -351,6 +353,7 @@ actor \nodoc\ _TestWriteOnlyEventReadRecoveryServer
       _tcp_connection.close()
       _h.complete(true)
     end
+    KeepReading
 
 actor \nodoc\ _TestWriteOnlyEventReadRecoveryClient
   is (TCPConnectionActor & ClientLifecycleEventReceiver)
@@ -386,7 +389,7 @@ actor \nodoc\ _TestWriteOnlyEventReadRecoveryClient
     _payload_size = payload_size
     _tcp_connection.unmute()
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _total_received == 0 then
       _h.complete_action("client receiving data")
     end
@@ -396,6 +399,7 @@ actor \nodoc\ _TestWriteOnlyEventReadRecoveryClient
       _h.complete_action("client sent ping")
       _tcp_connection.send("ping")
     end
+    KeepReading
 
 class \nodoc\ iso _TestReadableEventWriteRecovery is UnitTest
   """
@@ -407,10 +411,9 @@ class \nodoc\ iso _TestReadableEventWriteRecovery is UnitTest
   disarms it. When backpressure has armed write interest and a readable event
   arrives, the read that mutes must NOT reach _read's EAGAIN resubscribe — that
   resubscribe re-arms every not-ready direction, so it would restore the write
-  interest and self-heal. The read reaches _queue_read instead of EAGAIN when it
-  fills the buffer, which needs more inbound data than one buffer holds. So the
-  poke here is larger than the read buffer: the muting read fills the buffer and
-  returns via _queue_read, nothing re-arms the write, and the connection wedges.
+  interest and self-heal. A read that mutes returns at the top of _read's loop,
+  before it touches the socket again, so it never reaches EAGAIN. Nothing
+  re-arms the write, and the connection wedges.
 
   Sequence:
   1. Client connects, sets small SO_RCVBUF, mutes itself, sends a 64 KiB frame
@@ -419,11 +422,10 @@ class \nodoc\ iso _TestReadableEventWriteRecovery is UnitTest
      the server does NOT mute, and its read loop reaches EAGAIN with reads and
      write both armed
   3. Server tells the listener it throttled; listener tells the client to poke
-  4. Client sends a poke larger than the server's read buffer (still muted) — a
-     fresh readable event at the throttled server; it reads a bufferful, can't
-     echo the first chunk, stashes it and mutes, and the read exits via
-     _queue_read (buffer full) rather than EAGAIN, so the whole-fd write interest
-     stays dropped
+  4. Client sends a poke (still muted) — a fresh readable event at the throttled
+     server; it can't echo the first chunk, so it stashes it and mutes, and the
+     read returns before its next socket read rather than reaching EAGAIN, so
+     the whole-fd write interest stays dropped
   5. Server tells the listener it muted; listener tells the client to drain
   6. Client unmutes and reads; the write re-arm restores the writeable edge, the
      server unthrottles, echoes the poke, and the client sees all bytes back
@@ -551,11 +553,11 @@ actor \nodoc\ _TestReadableEventWriteRecoveryServer
       _tcp_connection.unmute()
     end
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if not _got_frame then
       _got_frame = true
-      // Stream from here: the poke is larger than the read buffer, so the read
-      // that mutes fills the buffer and exits via _queue_read (not EAGAIN),
+      // Stream from here. The read that mutes returns at the top of _read's
+      // loop, before it touches the socket again, so it never reaches EAGAIN --
       // which is what leaves the whole-fd write interest dropped.
       _tcp_connection.buffer_until(Streaming)
       // Echo the frame. The muted client can't drain it, so this backpressures
@@ -569,9 +571,9 @@ actor \nodoc\ _TestReadableEventWriteRecoveryServer
       _tcp_connection.send(consume data)
     else
       // The first poke chunk: a fresh readable event while throttled. We can't
-      // echo it, so we stash it and mute. Because the poke overflows the read
-      // buffer, this read returns via _queue_read rather than EAGAIN, so on a
-      // whole-fd one-shot backend the pending write interest stays dropped.
+      // echo it, so we stash it and mute. The muting read returns before its
+      // next socket read, so it never reaches EAGAIN, and on a whole-fd
+      // one-shot backend the pending write interest stays dropped.
       // Signal once — later chunks take the writeable branch above.
       _pending = consume data
       _tcp_connection.mute()
@@ -581,6 +583,7 @@ actor \nodoc\ _TestReadableEventWriteRecoveryServer
         _listener.server_muted()
       end
     end
+    KeepReading
 
 actor \nodoc\ _TestReadableEventWriteRecoveryClient
   is (TCPConnectionActor & ClientLifecycleEventReceiver)
@@ -616,9 +619,9 @@ actor \nodoc\ _TestReadableEventWriteRecoveryClient
   be send_poke() =>
     // Sent while still muted, so it lands at the throttled server as a readable
     // event before any writeable edge (the server's send buffer is still full).
-    // Several times the server's read buffer, so however the poke fragments,
-    // the server's muting read fills the buffer and exits via _queue_read
-    // instead of EAGAIN — see the test docstring.
+    // Big enough that the server sees it however it fragments; the muting read
+    // returns before its next socket read either way, so it never reaches
+    // EAGAIN — see the test docstring.
     let poke = recover iso Array[U8].init('y', 524288) end
     _tcp_connection.send(consume poke)
     _h.complete_action("client sent poke")
@@ -629,7 +632,7 @@ actor \nodoc\ _TestReadableEventWriteRecoveryClient
     // let the server's send buffer drain.
     _tcp_connection.unmute()
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _total_received = _total_received + data.size()
     // 65536 (frame echo) + 524288 (poke echo). Without the write re-arm the
     // server stays throttled, the poke is never echoed, and this never
@@ -639,3 +642,4 @@ actor \nodoc\ _TestReadableEventWriteRecoveryClient
       _tcp_connection.close()
       _h.complete(true)
     end
+    KeepReading

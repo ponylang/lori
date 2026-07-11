@@ -85,7 +85,7 @@ actor \nodoc\ _TestPinger is (TCPConnectionActor & ClientLifecycleEventReceiver)
       _pings_to_send = _pings_to_send - 1
     end
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _pings_to_send > 0 then
       _tcp_connection.send("Ping")
       _pings_to_send = _pings_to_send - 1
@@ -94,6 +94,7 @@ actor \nodoc\ _TestPinger is (TCPConnectionActor & ClientLifecycleEventReceiver)
     else
       _h.fail("Too many pongs received")
     end
+    KeepReading
 
 actor \nodoc\ _TestPonger is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
@@ -119,7 +120,7 @@ actor \nodoc\ _TestPonger is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _pings_to_receive > 0 then
       _tcp_connection.send("Pong")
       _pings_to_receive = _pings_to_receive - 1
@@ -128,6 +129,7 @@ actor \nodoc\ _TestPonger is (TCPConnectionActor & ServerLifecycleEventReceiver)
     else
       _h.fail("Too many pings received")
     end
+    KeepReading
 
 actor \nodoc\ _TestPongerListener is TCPListenerActor
   let _port: String
@@ -201,8 +203,9 @@ actor \nodoc\ _TestBasicBufferUntilClient is (TCPConnectionActor & ClientLifecyc
     _h.complete_action("client connected")
     _tcp_connection.send("hi there, how are you???")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _h.fail("Client shouldn't get data")
+    KeepReading
 
 actor \nodoc\ _TestBasicBufferUntilListener is TCPListenerActor
   let _h: TestHelper
@@ -252,7 +255,7 @@ actor \nodoc\ _TestBasicBufferUntilServer is (TCPConnectionActor & ServerLifecyc
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _received_count = _received_count + 1
 
     if _received_count == 1 then
@@ -270,6 +273,7 @@ actor \nodoc\ _TestBasicBufferUntilServer is (TCPConnectionActor & ServerLifecyc
       _h.complete_action("expected data received")
       _tcp_connection.close()
     end
+    KeepReading
 
 class \nodoc\ iso _TestCanListen is UnitTest
   """
@@ -472,11 +476,12 @@ actor \nodoc\ _TestHardCloseDuringReceiveServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     // Hard close from inside the read callback (see the class docstring).
     _closed_in_receive = true
     _tcp_connection.mute()
     _tcp_connection.close()
+    KeepReading
 
   fun ref _on_closed() =>
     if _closed_in_receive then
@@ -492,7 +497,7 @@ class \nodoc\ iso _TestHardCloseAfterFramedReceive is UnitTest
   time from a single buffered read. A `hard_close()` in the first frame's
   `_on_received` transitions the connection to `_Closed`; the loop must stop
   rather than deliver the buffered second frame after `_on_closed` fired. The
-  close is unmuted, so `can_receive()` — not `_muted` — is what has to stop it.
+  close is unmuted, so `is_live()` — not `_muted` — is what has to stop it.
   The delivery count is checked in a self-behavior that runs after `_read`
   returns, so a regression fails with a clear assertion, not a process exit.
 
@@ -590,7 +595,7 @@ actor \nodoc\ _TestHardCloseAfterFramedReceiveServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _received_count = _received_count + 1
     if _received_count == 1 then
       _h.assert_eq[String]("AAAA", String.from_array(consume data))
@@ -600,6 +605,7 @@ actor \nodoc\ _TestHardCloseAfterFramedReceiveServer
       _tcp_connection.hard_close()
       _check_delivery_count()
     end
+    KeepReading
 
   be _check_delivery_count() =>
     if _received_count == 1 then

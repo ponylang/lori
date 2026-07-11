@@ -67,7 +67,7 @@ actor \nodoc\ _TestStartTLSClient
   fun ref _on_connected() =>
     _tcp_connection.send("STARTTLS")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let msg = String.from_array(consume data)
     if msg == "OK" then
       match _tcp_connection.start_tls(_sslctx, "localhost")
@@ -80,6 +80,7 @@ actor \nodoc\ _TestStartTLSClient
     else
       _h.fail("Client got unexpected: " + msg)
     end
+    KeepReading
 
   fun ref _on_tls_ready() =>
     _h.complete_action("client tls ready")
@@ -116,7 +117,7 @@ actor \nodoc\ _TestStartTLSServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let msg = String.from_array(consume data)
     if msg == "STARTTLS" then
       _tcp_connection.send("OK")
@@ -130,6 +131,7 @@ actor \nodoc\ _TestStartTLSServer
     else
       _h.fail("Server got unexpected: " + msg)
     end
+    KeepReading
 
   fun ref _on_tls_ready() =>
     _h.complete_action("server tls ready")
@@ -547,7 +549,7 @@ actor \nodoc\ _TestStartTLSHandshakeFailureClient
   fun ref _on_connected() =>
     _tcp_connection.send("STARTTLS")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let msg = String.from_array(consume data)
     if msg == "OK" then
       match _tcp_connection.start_tls(_sslctx, "localhost")
@@ -557,6 +559,7 @@ actor \nodoc\ _TestStartTLSHandshakeFailureClient
     else
       _h.fail("Client got unexpected: " + msg)
     end
+    KeepReading
 
   fun ref _on_tls_ready() =>
     _h.fail("TLS handshake should not have succeeded")
@@ -591,7 +594,7 @@ actor \nodoc\ _TestStartTLSHandshakeFailureServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _awaiting_client_hello then
       // Client sent a ClientHello — respond with garbage to break the
       // handshake.
@@ -604,6 +607,7 @@ actor \nodoc\ _TestStartTLSHandshakeFailureServer
         _awaiting_client_hello = true
       end
     end
+    KeepReading
 
 actor \nodoc\ _TestStartTLSHandshakeFailureListener is TCPListenerActor
   let _port: String
@@ -816,7 +820,7 @@ actor \nodoc\ _TestStartTLSAuthFailureClient
   fun ref _on_connected() =>
     _tcp_connection.send("STARTTLS")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let msg = String.from_array(consume data)
     if msg == "OK" then
       match _tcp_connection.start_tls(_sslctx, "not.localhost")
@@ -826,6 +830,7 @@ actor \nodoc\ _TestStartTLSAuthFailureClient
     else
       _h.fail("Client got unexpected: " + msg)
     end
+    KeepReading
 
   fun ref _on_tls_ready() =>
     _h.fail("TLS handshake should not have succeeded")
@@ -868,7 +873,7 @@ actor \nodoc\ _TestStartTLSAuthFailureServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let msg = String.from_array(consume data)
     if msg == "STARTTLS" then
       _tcp_connection.send("OK")
@@ -878,6 +883,7 @@ actor \nodoc\ _TestStartTLSAuthFailureServer
         _h.complete(false)
       end
     end
+    KeepReading
 
 actor \nodoc\ _TestStartTLSAuthFailureListener is TCPListenerActor
   let _port: String
@@ -984,7 +990,7 @@ actor \nodoc\ _TestSetTimerAfterTLSUpgradeClient
   fun ref _on_connected() =>
     _tcp_connection.send("STARTTLS")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let msg = String.from_array(consume data)
     if msg == "OK" then
       match _tcp_connection.start_tls(_sslctx, "localhost")
@@ -995,6 +1001,7 @@ actor \nodoc\ _TestSetTimerAfterTLSUpgradeClient
     else
       _h.fail("Client got unexpected: " + msg)
     end
+    KeepReading
 
   fun ref _on_tls_ready() =>
     match MakeTimerDuration(2_000)
@@ -1050,7 +1057,7 @@ actor \nodoc\ _TestSetTimerAfterTLSUpgradeServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let msg = String.from_array(consume data)
     if msg == "STARTTLS" then
       _tcp_connection.send("OK")
@@ -1062,6 +1069,7 @@ actor \nodoc\ _TestSetTimerAfterTLSUpgradeServer
     else
       _h.fail("Server got unexpected: " + msg)
     end
+    KeepReading
 
   fun ref _on_tls_failure(reason: TLSFailureReason) =>
     _h.fail("Server TLS handshake failed")
@@ -1111,7 +1119,7 @@ class \nodoc\ iso _TestStartTLSHardCloseOnTLSReady is UnitTest
   Test that hard_close() from inside _on_tls_ready is safe. _on_tls_ready
   fires from `_ssl_poll()` via `_TLSUpgrading.ssl_handshake_complete()`,
   which moves the connection to `_Open` before the callback runs. The
-  delivery loop below the callback must not touch the disposed session.
+  flush below the callback must not touch the disposed session.
   """
   fun name(): String => "StartTLSHardCloseOnTLSReady"
 
@@ -1200,7 +1208,7 @@ actor \nodoc\ _TestStartTLSHardCloseClient
   fun ref _on_connected() =>
     _tcp_connection.send("STARTTLS")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let msg = String.from_array(consume data)
     if msg == "OK" then
       match _tcp_connection.start_tls(_sslctx, "localhost")
@@ -1211,6 +1219,7 @@ actor \nodoc\ _TestStartTLSHardCloseClient
     else
       _h.fail("Client got unexpected: " + msg)
     end
+    KeepReading
 
   fun ref _on_tls_ready() =>
     _h.complete_action("client tls ready")
@@ -1248,7 +1257,7 @@ actor \nodoc\ _TestStartTLSHardCloseServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let msg = String.from_array(consume data)
     if msg == "STARTTLS" then
       _tcp_connection.send("OK")
@@ -1260,3 +1269,4 @@ actor \nodoc\ _TestStartTLSHardCloseServer
     else
       _h.fail("Server got unexpected: " + msg)
     end
+    KeepReading

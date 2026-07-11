@@ -28,3 +28,33 @@ Calling `mute()` from `_on_received` stops a plaintext connection delivering dat
 
 `mute()` now stops delivery on an SSL connection as soon as the application calls it. Messages already decrypted but not yet delivered are held, not dropped, and `unmute()` delivers them before anything read off the socket afterward. Closing a muted connection still drops them, as it always has for a muted plaintext connection.
 
+## Fix a yield from _on_received not taking effect on SSL connections until every waiting message was delivered
+
+Returning `YieldReading` from `_on_received` stops the connection reading until the next scheduler turn, so other actors get one. (See the API change below; before this release you called `yield_read()` for the same thing.)
+
+On an SSL connection the yield did not stop reading. Messages that had arrived together were all delivered first, so an application yielding after every single message could still be handed a hundred of them before anything else ran. Under load that is the stall yielding exists to prevent, and there was no way around it.
+
+The yield now takes effect after the message that returned it, on SSL connections as on plaintext ones.
+
+## _on_received now returns what the read loop should do next
+
+`yield_read()` is gone. `_on_received` returns a `ReadAction`: return `YieldReading` to stop the read loop after this message and give other actors a turn, or `KeepReading` to take the next one.
+
+```pony
+// Before
+fun ref _on_received(data: Array[U8] iso) =>
+  _handled = _handled + 1
+  if (_handled % 10) == 0 then
+    _tcp_connection.yield_read()
+  end
+
+// After
+fun ref _on_received(data: Array[U8] iso): ReadAction =>
+  _handled = _handled + 1
+  if (_handled % 10) == 0 then
+    return YieldReading
+  end
+  KeepReading
+```
+
+Every `_on_received` has to return one of the two. `KeepReading` is what the trait returns by default, so a receiver that does not override `_on_received` needs no change.

@@ -65,8 +65,8 @@ actor Sink is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
-    None
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    KeepReading
 
   fun ref _on_closed() =>
     _out.print("Sink: connection closed")

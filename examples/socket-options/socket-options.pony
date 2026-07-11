@@ -87,8 +87,9 @@ actor SocketOptionsServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
       _out.print("Server: failed to read buffer sizes")
     end
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _tcp_connection.send(consume data)
+    KeepReading
 
   fun ref _on_closed() =>
     _out.print("Server: connection closed")
@@ -110,9 +111,10 @@ actor SocketOptionsClient is
   fun ref _on_connected() =>
     _tcp_connection.send("Hello")
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _out.print("Client: received echo: " + String.from_array(consume data))
     _tcp_connection.close()
+    KeepReading
 
   fun ref _on_closed() =>
     _out.print("Client: closed")

@@ -59,9 +59,12 @@ lori/
   tcp_listener_actor.pony   -- TCPListenerActor trait (actor wrapper)
   lifecycle_event_receiver.pony -- Client/ServerLifecycleEventReceiver traits
   send_token.pony           -- SendToken class, SendError primitives and type alias
+  _pending_writes.pony      -- _PendingWrites: the write queue (buffers + offset + total)
   timer_token.pony          -- TimerToken class, SetTimerError primitives and type alias
   timer_duration.pony       -- TimerDuration constrained type and validator
   read_buffer.pony          -- Read buffer result types (ReadBufferResized, BufferUntilSet, etc.)
+  read_action.pony          -- ReadAction: KeepReading, YieldReading
+  _tls_state.pony           -- _TLSState: _NoTLS, _TLS, _TLSDisposed, _TLSFailed; _MakeTLS
   read_buffer_size.pony     -- ReadBufferSize constrained type, validator, and default
   buffer_size.pony          -- BufferSize constrained type, validator, Streaming primitive
   start_tls_error.pony      -- StartTLSError primitives and type alias
@@ -85,11 +88,11 @@ lori/
   _test_backpressure_drain.pony -- Backpressure drain + unmute read recovery and write-only oneshot read recovery tests
   _test_flow_control.pony   -- Mute/unmute tests (plaintext and SSL)
   _test_send.pony           -- Send, sendv, send-after-close tests
-  _test_ssl.pony            -- SSL ping-pong, SSL sendv, SSL handshake state, and close/hard-close-from-callback tests
+  _test_ssl.pony            -- SSL ping-pong, SSL sendv, SSL handshake state, large-payload framing, and close/hard-close-from-callback tests
   _test_start_tls.pony      -- STARTTLS upgrade, precondition, TLS upgrade state, TLS failure, hard-close-from-callback, and post-upgrade timer tests
   _test_close_while_connecting.pony -- Close/hard_close during connecting phase
   _test_idle_timeout.pony   -- Idle timeout (plaintext + SSL) tests
-  _test_yield_read.pony     -- Yield read tests
+  _test_yield_read.pony     -- Yield read tests (plaintext and SSL)
   _test_ip_version.pony     -- IPv4/IPv6 specific tests
   _test_constrained_types.pony -- Validation tests for constrained types
   _test_read_buffer.pony    -- Read buffer sizing and buffer_until interaction tests
@@ -111,7 +114,7 @@ examples/
   starttls-ping-pong/       -- STARTTLS upgrade from plaintext to TLS
   connection-timeout/        -- Connection timeout with non-routable address
   timer/                    -- Query-timeout simulation with set_timer()
-  yield-read/               -- Cooperative scheduler fairness with yield_read()
+  yield-read/               -- Cooperative scheduler fairness with YieldReading
 stress-tests/
   tcp-swarm/                -- Swarm TCP stress test: churn + per-connection echo oracle
 ```
@@ -137,8 +140,9 @@ actor MyServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
 
   fun ref _connection(): TCPConnection => _tcp_connection
 
-  fun ref _on_received(data: Array[U8] iso) =>
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
     // handle data
+    KeepReading
 ```
 
 ### How to implement a client
@@ -153,7 +157,7 @@ actor MyClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
   fun ref _connection(): TCPConnection => _tcp_connection
 
   fun ref _on_connected() => // connected
-  fun ref _on_received(data: Array[U8] iso) => // handle data
+  fun ref _on_received(data: Array[U8] iso): ReadAction => KeepReading
 ```
 
 ### How to add SSL
@@ -205,7 +209,7 @@ _Open → _TLSUpgrading (start_tls) → _Open (ssl_handshake_complete)
                                    ↘ _Closed (hard_close / TLS error)
 ```
 
-| State | `is_open()` | `is_closed()` | `sends_allowed()` | `can_receive()` | Description |
+| State | `is_open()` | `is_closed()` | `sends_allowed()` | `is_live()` | Description |
 |---|---|---|---|---|---|
 | `_ConnectionNone` | false | false | false | false | Before `_finish_initialization`. Most dispatch methods call `_Unreachable()`. Socket options return error values; `idle_timeout` stores the value; `set_timer` returns `SetTimerNotOpen`. `hard_close` is a no-op (dispose can race with initialization). |
 | `_ClientConnecting` | false | false | false | false | Happy Eyeballs in progress. `close()` transitions to `_UnconnectedClosing`. |
@@ -218,38 +222,102 @@ _Open → _TLSUpgrading (start_tls) → _Open (ssl_handshake_complete)
 
 State classes dispatch lifecycle-gated operations (`send`, `close`, `hard_close`, `start_tls`, `read_again`, `receive`, `ssl_handshake_complete`, `own_event`, `foreign_event`, `keepalive`, `getsockopt`, `getsockopt_u32`, `setsockopt`, `setsockopt_u32`, `idle_timeout`, `set_timer`) and delegate to TCPConnection methods for the actual work. All I/O, SSL, buffer, and flow control logic remains on TCPConnection.
 
-Each state also answers `can_receive()`: whether the connection still takes in incoming data in this state. It is the read-side counterpart to `sends_allowed()`, and it is broader than `is_open()` — a connection receives before the app is handed it (the SSL handshake) and after the app has closed it (`_Closing`, reading for the peer's FIN), not just while it is open. `_read()` checks it after every `_deliver_received()`: the application's `_on_received` can `hard_close()` mid-loop, and `_read()` breaks its loop on that transition instead of reading the just-closed fd. `_ssl_poll()` bounds its decrypted-record delivery loop and its trailing `_ssl_flush_sends()` on the same predicate, for the same reason one layer down: `hard_close()` disposes the SSL session, and `_ssl_poll()` holds a `ref` alias to it across the application callbacks it runs. The socket read is the dispatched `receive` operation — reading states perform it, the rest are `_Unreachable()`, so a read that reaches a state that can't receive fails loudly instead of reading a dead fd (which under connection churn can block a scheduler thread on a reused fd and hang the runtime). Per-state values are in the table above.
+Each state also answers `is_live()`: whether the connection has a socket fd it can still do I/O on. It is broader than `is_open()` — the fd is live before the app is handed the connection (the SSL handshake) and after the app has gracefully closed it (`_Closing`, draining and reading for the peer's FIN), not just while open. It is false before the fd exists (connecting) and after a hard close tears it down. `_read()`'s loop checks it at the top of every iteration, before any `_next_message()` or `_fill()`: the application's `_on_received` can `hard_close()` mid-loop, and the loop returns on that transition instead of reading the just-closed fd. It is about the socket, not the SSL session — the session guards itself, see "TLS session state". The two post-establish paths check it before their first read, so a callback that closed the connection skips it. Per-state values are in the table above.
 
 **Private field access**: Pony restricts private field access to the defining type. State classes use helper methods on TCPConnection (`_set_state`, `_decrement_inflight`, `_establish_connection`, `_straggler_cleanup`, etc.) rather than accessing fields directly.
 
-**Flags kept on TCPConnection**: `_shutdown` and `_shutdown_peer` remain as data fields (set by I/O methods, checked by `_Closing`). Flow control flags (`_throttled`, `_readable`, `_writeable`, `_muted`, `_yield_read`) are orthogonal to lifecycle state. `_ssl_delivery_paused` records that `_ssl_poll()` stopped delivering because the application muted, so `_read()` knows to re-poll the SSL session before reading the socket again — see "SSL internals". SSL error flags (`_ssl_failed`, `_ssl_auth_failed`) remain as data fields for callback routing during hard-close. `_ssl_ready` is a one-shot guard in `_ssl_poll()` against persistent `SSLReady` — it prevents the handshake completion logic from re-executing on every read event after the handshake finishes. It is not a lifecycle state (the state machine handles that via `_SSLHandshaking` → `_Open`). Connect timeout flags (`_connect_timed_out`, `_connect_timer_errored`) are set before `hard_close()` to route the failure reason in `_hard_close_connecting()` and `_hard_close_ssl_handshaking()`.
+**Flags kept on TCPConnection**: `_shutdown` and `_shutdown_peer` remain as data fields (set by I/O methods, checked by `_Closing`). Flow control flags (`_throttled`, `_readable`, `_writeable`, `_muted`) are orthogonal to lifecycle state, and `_hard_close_cleanup()` clears the first three so a closed connection carries no live flow-control state. Why a hard close is happening is not a flag either: it is a `_HardCloseCause` the caller passes to `_hard_close()` — see "Close causes".
 
 **`_event_notify` dispatch**: A single `if/elseif/else` chain dispatches on event identity: connect timer, idle timer, user timer, socket event (`_event`), or everything else (the `else` branch). Timer identity checks must come before the `event is _event` check. Each timer branch checks `AsioEvent.errored(flags)` first — connect timer errors call `_fire_connect_timer_error()`, idle timer errors call `_cancel_idle_timer()`, and user timer errors call `_cancel_user_timer()`. The `else` branch checks disposable first (destroys stale timer disposables and straggler disposables), then checks for stale errored events from cancelled timers (errored flag set AND event struct is disposable from the prior unsubscribe — destroyed here to prevent misidentification as a Happy Eyeballs straggler), otherwise dispatches to `foreign_event` for Happy Eyeballs stragglers.
 
 Design: Discussion #219.
 
+### Read path
+
+There is one read loop, and every control the application has over reading lives
+in it exactly once.
+
+```
+fun ref _read() =>
+  while _readable do
+    if _muted or (not _state.is_live()) then return end
+    match _next_message()
+    | let m: Array[U8] iso => s._on_received(consume m); <yield check>
+    | None => <scheduler yield check>; if _fill(s)? is None then return end
+    end
+  end
+```
+
+- **`_next_message()`** returns the next message for the application, or `None`
+  when there aren't enough bytes yet. It returns a value and never calls the
+  application, which is what keeps `mute` and `is_live` in the
+  loop and out of it. For an SSL connection the message comes from the SSL
+  session, which frames it (`ssl.read(_user_buffer_until())`). Otherwise it is
+  chopped off `_read_buffer`.
+- **`_fill()`** is the only thing that knows whether the connection is using SSL.
+  It reads the socket into `_read_buffer`; on an SSL connection it then hands all
+  of it to `ssl.receive()` and runs `_ssl_poll()`. It returns the byte count, or
+  `None` when the socket has nothing more (read interest is re-armed first), and
+  raises when the read fails — a peer close or an unrecoverable error (`_read()`
+  hard closes on either).
+
+`_fill()` returns as soon as it has fed the session. `_ssl_poll()` runs handshake
+callbacks that can `hard_close()` and dispose the session, so the next look at
+the session happens only after the loop has re-checked its guards. Nothing has to
+remember to guard it; the loop does.
+
+Reading the SSL session is not read-only: `ssl.read()` in `_next_message()` can make it queue protocol output — a TLS 1.3 KeyUpdate response, a TLS 1.2 renegotiation. `_ssl_poll()` only flushes what `ssl.receive()` produces, so once the session has drained (`_next_message()` returns `None`) `_read()` flushes the read side via `_ssl_flush_sends()` before it blocks on the socket, or a peer waiting on that output would wedge. `_ssl_flush_sends()` does nothing without a live session (so it is a no-op on a plaintext connection, and inert after a hard close) and can `hard_close()` on a write error, so the loop re-checks `is_live()` after it. `mute()` gets the same flush on its way out of the loop: mute is a read-side control and must not hold write-side protocol output, and a mute lasts as long as the application likes.
+
+Undelivered data lives in one place per connection: `_read_buffer` for plaintext,
+the SSL session for SSL. `mute()` therefore holds data rather than dropping it on
+both, and `unmute()` delivers it before anything read off the socket afterward —
+`_next_message()` is asked before `_fill()` is called.
+
+An earlier design had `_ssl_poll()` deliver to the application in a second loop of
+its own. Every read-side control then had to be written twice, and two of them
+shipped as bugs before the second copy was written: the liveness check now called `is_live()` (a segfault, PR #311) and
+`_muted` (issue #313). Do not put a delivery call back into `_ssl_poll()`.
+
 ### SSL internals
 
-SSL handshake state is managed by the connection state machine: `_SSLHandshaking` (initial SSL from constructor) and `_TLSUpgrading` (mid-stream upgrade via `start_tls()`). Both transition to `_Open` when `ssl.state()` returns `SSLReady`, dispatched through `_state.ssl_handshake_complete()`. SSL error flags (`_ssl_failed`, `_ssl_auth_failed`) remain as data fields on `TCPConnection` for callback routing during hard-close. Key behaviors:
+SSL handshake state is managed by the connection state machine: `_SSLHandshaking` (initial SSL from constructor) and `_TLSUpgrading` (mid-stream upgrade via `start_tls()`). Both transition to `_Open` when `ssl.state()` returns `SSLReady`, dispatched through `_state.ssl_handshake_complete()`. Key behaviors:
 
 - **0-to-N output per input on both sides:** Both read and write can produce zero, one, or many output chunks per input chunk. During handshake, output may be zero (buffered). A single TCP read containing multiple SSL records produces multiple decrypted chunks.
-- **`_ssl_poll()` pump:** Called after `ssl.receive()` in `_deliver_received()`, and by `_read()` to resume a delivery that `mute()` cut short. Checks SSL state via `ssl.state()`: `SSLReady` dispatches to `_state.ssl_handshake_complete()` (guarded by `_ssl_ready` to fire only once), `SSLAuthFail` sets `_ssl_auth_failed` then triggers `hard_close()`, `SSLError` triggers `hard_close()` directly. After state checks, delivers decrypted data to the lifecycle event receiver, and flushes encrypted protocol data (handshake responses, etc.) via `_ssl_flush_sends()`.
-- **Callbacks that close mid-poll:** `_ssl_poll()` runs application code in two places — `ssl_handshake_complete()` (which fires `_on_connected`, `_on_started`, or `_on_tls_ready`) and `_on_received`, once per decrypted message. Any of them can call `hard_close()`, which moves the state to `_Closed` and disposes the SSL session while `_ssl_poll()` still holds a `ref` alias to it. Both the delivery loop and the trailing `_ssl_flush_sends()` are therefore bounded on `_state.can_receive()`. Graceful `close()` moves to `_Closing`, which still receives and does not dispose, so delivery and flushing continue there.
-- **Callbacks that mute mid-poll:** the same callbacks can call `mute()`, so the delivery loop is bounded on `not _muted` as well — an SSL connection stops handing over messages the moment the application says stop, the way a plaintext one does. The messages it has not delivered stay inside the SSL session, where `_read_buffer` cannot see them (SSL forces `_tcp_buffer_until()` to `Streaming`, so `_deliver_received()` streams the whole read buffer into `ssl.receive()` and leaves it empty). `_ssl_poll()` therefore sets `_ssl_delivery_paused`, and `_read()`'s buffered-data loop takes a branch on it — re-polling the session — before the branch that drains `_read_buffer`. That branch is the only way back into `_ssl_poll()`; without it nothing would ever deliver the held messages. `mute()` is a read-side control, so it does not bound `_ssl_flush_sends()`. The flag is set after the flush and only when `can_receive()` still holds, so a flush that hard-closes on a write error leaves nothing to resume. `_ssl_poll()` captures `_buffer_until` into a local once per call, so a `buffer_until()` call from `_on_received` reframes the resumed poll's messages but not the rest of the current poll's.
-- **Client handshake initiation:** When TCP connects, `_ssl_flush_sends()` sends the ClientHello. The state transitions from `_ClientConnecting` to `_SSLHandshaking`. The handshake proceeds via `_deliver_received()` → `ssl.receive()` → `_ssl_poll()`.
-- **Ready signaling:** `_SSLHandshaking.ssl_handshake_complete()` transitions to `_Open`, cancels the connect timer, arms the idle timer, and fires `_on_connected`/`_on_started`. `_TLSUpgrading.ssl_handshake_complete()` transitions to `_Open` and fires `_on_tls_ready()`. All other states have `_Unreachable()` — the `_ssl_ready` guard in `_ssl_poll()` ensures `ssl_handshake_complete` is only called once.
+- **`_ssl_poll()`:** Called by `_fill()` after `ssl.receive()` has fed the session new ciphertext. Checks SSL state via `ssl.state()`: `SSLReady` dispatches to `_state.ssl_handshake_complete()`, `SSLAuthFail` calls `_hard_close(_TLSAuthFailure)`, `SSLError` calls `hard_close()`. Then flushes encrypted protocol data (handshake responses, etc.) via `_ssl_flush_sends()`. It does **not** deliver application data — `_read()` takes messages out of the session one at a time via `_next_message()`.
+- **Callbacks that close mid-poll:** `_ssl_poll()` runs application code in one place — `ssl_handshake_complete()`, which fires `_on_connected`, `_on_started`, or `_on_tls_ready`. Any of those can call `hard_close()`, which moves the state to `_Closed` and disposes the SSL session while `_ssl_poll()` still holds a `_TLS` alias to it. The trailing `_ssl_flush_sends()` re-matches `_ssl`, finds `_TLSDisposed`, and does nothing; the stale alias is never used again. Graceful `close()` moves to `_Closing`, which still receives and does not dispose, so reading continues there.
+- **Client handshake initiation:** When TCP connects, `_ssl_flush_sends()` sends the ClientHello. The state transitions from `_ClientConnecting` to `_SSLHandshaking`. The handshake proceeds via `_fill()` → `ssl.receive()` → `_ssl_poll()`.
+- **Ready signaling:** `_SSLHandshaking.ssl_handshake_complete()` transitions to `_Open`, cancels the connect timer, arms the idle timer, and fires `_on_connected`/`_on_started`. `_TLSUpgrading.ssl_handshake_complete()` transitions to `_Open` and fires `_on_tls_ready()`. `_ssl_poll()` dispatches `ssl_handshake_complete()` on every read where the session reports `SSLReady`, which is every read after the handshake. Only `_SSLHandshaking` and `_TLSUpgrading` act on it; `_Open` and `_Closing` return `None`, so the repeat is a no-op. The transition to `_Open` is the one-shot guard — no flag is needed. (`_ClientConnecting`, `_UnconnectedClosing`, `_ConnectionNone`, `_Closed` cannot reach `_ssl_poll` and keep `_Unreachable()`.)
 - **Error handling:** Each handshake state has its own hard-close method. `_hard_close_ssl_handshaking()` fires `ConnectionFailedSSL`/`ConnectionFailedTimeout`/`ConnectionFailedTimerError` (client) or `StartFailedSSL` (server). `_hard_close_tls_upgrading()` fires `_on_tls_failure(reason)` then `_on_closed()`. `_hard_close_connected()` (from `_Open`/`_Closing`) fires only `_on_closed()`.
-- **Buffer-until handling:** The `_buffer_until` field always holds the user's requested value. The TCP read layer uses `_tcp_buffer_until()`, which returns `Streaming` when `_ssl` is non-None (SSL record framing doesn't align with application framing). `_ssl_poll()` reads `_buffer_until` directly, converting to `USize` at the `ssl.read()` call site (0 for `Streaming`).
+- **Buffer-until handling:** `_next_message()` passes `_user_buffer_until()` to `ssl.read()`, so the SSL session does the framing. `_read_buffer` holds only ciphertext on an SSL connection — `_fill()` feeds all of it to `ssl.receive()` and never chops it — so no framing applies to it.
 - **`_enqueue` during handshake:** `_ssl_flush_sends()` pushes handshake protocol data via `_enqueue()`. The `_enqueue()` guard uses `not is_closed()` (not `is_open()`) to allow handshake data through `_SSLHandshaking` (where `is_open() = false`).
 
 Design: Discussion #252.
 
+### TLS session state
+
+`_ssl` is a `_TLSState`, not an `(SSL | None)`. Four variants:
+
+- `_NoTLS` — a plaintext connection, no session, ever.
+- `_TLS` — a TLS connection with a live session. The only variant carrying one.
+- `_TLSDisposed` — a TLS connection whose session has been disposed.
+- `_TLSFailed` — a TLS connection whose session could not be created.
+
+"Is this TLS?" and "may I use the session?" are different questions, and after `ssl.dispose()` they have different answers. `(SSL | None)` could not say "TLS, session gone": clearing the field made `_next_message()` and `_fill()` take their plaintext branches and hand the application ciphertext, and leaving it made `match _ssl` bind a disposed session while looking like a guard. Every site that reached for the session had to ask `_state.is_live()` whether the session it had just matched was really alive. One site did not. That was PR #311's segfault.
+
+`match` is the guard: only `_TLS` carries a session, and it exists only while the session is alive. `_ssl_poll()` can hold a stale `_TLS` alias across a callback that hard-closes, and the trailing `_ssl_flush_sends()` re-matches the field, finds `_TLSDisposed`, and does nothing — it needs no lifecycle check.
+
+`_dispose_tls()` is the only place that disposes. It disposes and moves to `_TLSDisposed` together, so no call site can break the invariant. Disposing without moving leaves a dead session that `_TLS` still binds, and the next use of it is a use-after-free.
+
+`_TLSFailed` exists because the constructors that build a session cannot fail. Previously the failure went into an `_ssl_failed: Bool` and `_ssl` stayed `_NoTLS`, so a connection that asked for TLS and did not get one was indistinguishable from a plaintext connection — only an `if` at the top of `_complete_client_initialization` and `_complete_server_initialization` kept it from carrying application bytes in the clear. `_MakeTLS.client()`/`_MakeTLS.server()` map the failure to `_TLSFailed` in one place, so no constructor can write `_NoTLS` for it. `SSLContext.client()` errors only when OpenSSL allocation fails, so nothing short of fault injection drives this path.
+
+Sites that only ask "is this TLS?" (`_do_start_tls`, `_tcp_buffer_until`, `_establish_connection`, `_complete_server_initialization`) match on `_NoTLS` versus everything else. Sites that need the session and cannot be reached after a close use `_Unreachable()` for `_TLSDisposed`.
+
 ### TLS upgrade (STARTTLS)
 
-`start_tls(ssl_ctx, host)` upgrades an established plaintext connection to TLS. It creates an SSL session, transitions to `_TLSUpgrading`, and flushes the ClientHello. No buffer-until migration is needed — `_tcp_buffer_until()` automatically returns `Streaming` once `_ssl` is set. The state distinguishes initial SSL from TLS upgrades:
+`start_tls(ssl_ctx, host)` upgrades an established plaintext connection to TLS. It creates an SSL session, transitions to `_TLSUpgrading`, and flushes the ClientHello. No buffer-until migration is needed — once `_ssl` is set, `_next_message()` takes its messages from the session, which frames them. The state distinguishes initial SSL from TLS upgrades:
 
 - **`_TLSUpgrading.ssl_handshake_complete()`**: Transitions to `_Open` and calls `_on_tls_ready()`. No timer arming — the idle timer is already running from the plaintext phase.
-- **`_TLSUpgrading.hard_close()`**: Calls `_hard_close_tls_upgrading()`, which fires `_on_tls_failure(reason)` (where `reason` is `TLSAuthFailed` or `TLSGeneralError` based on `_ssl_auth_failed`) then `_on_closed()` (the application already knew about the plaintext connection).
+- **`_TLSUpgrading.hard_close()`**: Calls `_hard_close_tls_upgrading(cause)`, which fires `_on_tls_failure(reason)` (`TLSAuthFailed` when the cause is `_TLSAuthFailure`, otherwise `TLSGeneralError`) then `_on_closed()` (the application already knew about the plaintext connection).
 - **`_TLSUpgrading.send()`**: Returns `SendErrorNotConnected` — sends are blocked during the TLS handshake.
 - **`_TLSUpgrading.close()`**: Delegates to `hard_close()` — can't send FIN during TLS handshake.
 - **`_TLSUpgrading.is_open()`**: Returns `true` — the application has already been notified. `_TLSUpgrading` delegates socket option, `idle_timeout`, and `set_timer` operations to the same helpers as `_Open`.
@@ -280,17 +348,15 @@ The library does not queue data on behalf of the application during backpressure
 
 Pending writes use writev on every platform. The internal fields:
 
-- `_pending_data: Array[ByteSeq]` — buffers awaiting delivery. Also keeps `ByteSeq` values alive for the GC while raw pointers reference them in the IOV array built by `PonyTCP.writev`.
-- `_pending_writev_total: USize` — total bytes remaining (accounts for `_pending_first_buffer_offset`).
-- `_pending_first_buffer_offset: USize` — bytes already sent from `_pending_data(0)`, for partial write resume. COUPLING: points into the buffer owned by `_pending_data(0)` — trimming `_pending_data` without resetting the offset causes a dangling pointer. `_manage_pending_buffer` maintains both.
-- `_pending_tokens: List[(USize, SendToken)]` — FIFO of (completion offset, token). Each accepted send records the cumulative enqueued-byte offset — into the wire-byte stream `_pending_data` drains, not an index into the array — at which its bytes finish. For SSL the offsets are over ciphertext (enqueued synchronously by `_ssl_enqueue_sends()`), for plaintext over the application bytes.
-- `_cumulative_enqueued` / `_cumulative_sent: USize` — running byte totals over `_pending_data`. `_fire_completed_sends()` fires `_on_sent` for every token whose completion offset `<= _cumulative_sent`, in FIFO order. Both counters reset to 0 when the queue empties, so the offsets stay small.
+- `_pending: _PendingWrites` — the buffers awaiting delivery, the byte offset of the last partial write into the first buffer, and the total bytes remaining. These three must change together — the offset points into the buffer `_buffers(0)` owns, so trimming without resetting it dangles — so `_PendingWrites` owns all three and is the only place they change: `push`, `sent`, and `clear` are its only mutations, and each keeps them consistent. It also keeps the `ByteSeq` values alive for the GC while raw pointers reference them in the IOV array `PonyTCP.writev` builds.
+- `_pending_tokens: List[(USize, SendToken)]` — FIFO of (completion offset, token). Each accepted send records the cumulative enqueued-byte offset — into the wire-byte stream `_pending` drains, not an index into its buffers — at which its bytes finish. For SSL the offsets are over ciphertext (enqueued synchronously by `_ssl_enqueue_sends()`), for plaintext over the application bytes.
+- `_cumulative_enqueued` / `_cumulative_sent: USize` — running byte totals over `_pending`. `_fire_completed_sends()` fires `_on_sent` for every token whose completion offset `<= _cumulative_sent`, in FIFO order. Both counters reset to 0 when the queue empties, so the offsets stay small.
 
 The write path uses an enqueue-then-flush pattern:
 
-1. `_enqueue(data)` pushes to `_pending_data` and updates `_pending_writev_total` and `_cumulative_enqueued`. No I/O.
+1. `_enqueue(data)` pushes to `_pending` and updates `_cumulative_enqueued`. No I/O.
 2. `_send_pending_writes()` flushes via `PonyTCP.writev`, which builds the IOV array internally. It loops while writeable and there is pending data, applying backpressure on a partial write or `SocketResultRetry`, then calls `_fire_completed_sends()` to fire `_on_sent` for the tokens the drain completed.
-3. `_manage_pending_buffer(bytes_sent)` walks `_pending_data`, trims fully-sent entries, and updates `_pending_first_buffer_offset` and `_cumulative_sent`.
+3. `_manage_pending_buffer(bytes_sent)` tells `_pending` to account for the bytes (it trims fully-sent buffers and advances its offset) and updates `_cumulative_sent`.
 
 `hard_close()` drains `_pending_tokens` to `_on_send_failed` (every remaining token, in FIFO order) via `_hard_close_cleanup`. The token-mint step in `_do_send` runs only after the flush and the still-open check, so a send that errored out never burns a token id.
 
@@ -302,11 +368,26 @@ Design: Discussion #150.
 
 Failure callbacks carry a reason parameter identifying the failure cause. Three type aliases, each following the `start_tls_error.pony` pattern (primitives + type alias):
 
-- **`ConnectionFailureReason`** (`_on_connection_failure`): `ConnectionFailedDNS` (name resolution failed, no TCP attempts), `ConnectionFailedTCP` (resolved but all TCP connections failed), `ConnectionFailedSSL` (TCP connected but SSL handshake failed), `ConnectionFailedTimeout` (connect-to-ready phase timed out), `ConnectionFailedTimerError` (connect timer ASIO subscription failed). The DNS/TCP distinction uses `_had_inflight` (set after `PonyTCP.connect` returns > 0). The timeout distinction uses `_connect_timed_out` (set by `_fire_connect_timeout()` before calling `hard_close()`). The timer error distinction uses `_connect_timer_errored` (set by `_fire_connect_timer_error()` before calling `hard_close()`).
+- **`ConnectionFailureReason`** (`_on_connection_failure`): `ConnectionFailedDNS` (name resolution failed, no TCP attempts), `ConnectionFailedTCP` (resolved but all TCP connections failed), `ConnectionFailedSSL` (TCP connected but SSL handshake failed), `ConnectionFailedTimeout` (connect-to-ready phase timed out), `ConnectionFailedTimerError` (connect timer ASIO subscription failed). The DNS/TCP distinction uses `_had_inflight` (set after `PonyTCP.connect` returns > 0) — real state, which no caller knows. The timeout and timer-error distinctions come from the `_HardCloseCause` the caller passed.
 - **`StartFailureReason`** (`_on_start_failure`): `StartFailedSSL` (SSL session creation or handshake failure). Currently a single-variant type — future reasons (e.g. resource limits) can be added without breaking the type alias.
-- **`TLSFailureReason`** (`_on_tls_failure`): `TLSAuthFailed` (certificate/auth error), `TLSGeneralError` (protocol error). The distinction uses `_ssl_auth_failed` (set by `_ssl_poll()` on `SSLAuthFail` before calling `hard_close()`).
+- **`TLSFailureReason`** (`_on_tls_failure`): `TLSAuthFailed` (certificate/auth error), `TLSGeneralError` (protocol error). The distinction comes from the `_HardCloseCause`: `_ssl_poll()` passes `_TLSAuthFailure` when it sees `SSLAuthFail`.
 
 Design: Discussion #201.
+
+### Close causes
+
+`hard_close()` takes no argument: when the application calls it, the call is the reason. Internally it is `_hard_close(cause: _HardCloseCause)`, and the code that knows why passes it.
+
+- `_ConnectTimedOut` — `_fire_connect_timeout()`
+- `_ConnectTimerFailed` — `_fire_connect_timer_error()`
+- `_TLSAuthFailure` — `_ssl_poll()` on `SSLAuthFail`
+- `_UnspecifiedCause` — everything else: the application closed it, or the transport failed. Not `None`: a `_HardCloseCause` is always a real variant, so a hard-close path can match it in full. The reason is still determined, but by the state and `_had_inflight`, not by the cause.
+
+The state decides what the cause becomes. `_hard_close_connecting()` turns it into a `ConnectionFailureReason`, `_hard_close_tls_upgrading()` into a `TLSFailureReason`, `_hard_close_connected()` ignores it and just fires `_on_closed()`.
+
+`_had_inflight` is not a cause. It records whether any TCP attempt ever started, which is what separates `ConnectionFailedDNS` from `ConnectionFailedTCP`. No caller knows it; it accumulates during Happy Eyeballs.
+
+An earlier design had three fields — `_connect_timed_out`, `_connect_timer_errored`, `_ssl_auth_failed` — each set immediately before a `hard_close()` that took no arguments, and dug back out afterwards. They were arguments in the wrong place, and each carried a comment saying so. Do not add a fourth, and do not push the "no distinguishing cause" case back out to a `None` beside the type.
 
 ### Idle timeout
 
@@ -328,8 +409,6 @@ Optional one-shot ASIO timer that bounds the connect-to-ready phase for client c
 
 - `_connect_timer_event: AsioEventID` — the ASIO timer event, `AsioEvent.none()` when inactive.
 - `_connect_timeout_nsec: U64` — configured timeout in nanoseconds, 0 when disabled.
-- `_connect_timed_out: Bool` — set by `_fire_connect_timeout()` before `hard_close()`, read by `_hard_close_connecting()` and `_hard_close_ssl_handshaking()` to route `ConnectionFailedTimeout`.
-- `_connect_timer_errored: Bool` — set by `_fire_connect_timer_error()` before `hard_close()`, read by `_hard_close_connecting()` and `_hard_close_ssl_handshaking()` to route `ConnectionFailedTimerError`.
 
 Lifecycle:
 
@@ -392,13 +471,22 @@ Design: Discussion #212 (implementation plan), Discussion #199 section 11 (desig
 
 ### Read yielding
 
-`yield_read()` lets the application exit the read loop cooperatively, giving other actors a chance to run. Reading resumes automatically in the next scheduler turn via `_read_again()`. Field:
+`_on_received` returns a `ReadAction` — `KeepReading` or `YieldReading` — saying what the read loop should do next. `KeepReading` is the trait default. `_read()` matches on the return value:
 
-- `_yield_read: Bool` — set by `yield_read()`, cleared by the yield check in the dispatch loop.
+```pony
+match \exhaustive\ s._on_received(consume m)
+| KeepReading => None
+| YieldReading =>
+  _queue_read()
+  return
+end
+```
 
-The yield check is placed immediately after the delivery in `_read()`'s inner `while not _muted and _state.can_receive() and (_ssl_delivery_paused or _there_is_buffered_read_data())` loop — covering both of that loop's branches, the resumed SSL delivery and `_deliver_received()`. When triggered, it calls `e._read_again()` and returns, exiting both inner and outer loops. On resume, `_read()` re-enters (via `_do_read_again()`) and processes remaining buffered data before reading from the socket. The state machine guards resume against calling after `hard_close()`: `_Closed.read_again()` is a no-op, while `_Closing.read_again()` still calls `_read()` because the socket's read side is open and needs to detect the peer's FIN.
+On resume, `_read()` re-enters (via `_do_read_again()`) and takes the next message before reading from the socket. The state machine guards resume against calling after `hard_close()`: `_Closed.read_again()` is a no-op, while `_Closing.read_again()` still calls `_read()` because the socket's read side is open and needs to detect the peer's FIN.
 
-**SSL granularity**: `yield_read()` operates at TCP-read granularity. Every SSL-decrypted message from a single `ssl.receive()` call is delivered inside `_ssl_poll()` before the yield check fires. Two callbacks stop that delivery early: `hard_close()` drops the messages still undelivered from that read, and `mute()` holds them until `unmute()`. Per-SSL-message yielding would need `_ssl_poll()` to check `_yield_read` too; the pause-and-resume machinery `mute()` uses is already there.
+There is one read loop, so SSL connections yield after the message that returned `YieldReading`, exactly as plaintext ones do.
+
+An earlier design had `yield_read()` set a `_yield_read: Bool` that the loop read afterwards. The callback's answer lived in a field, so where the loop checked that field became load-bearing, and a comment had to defend the spot. A callback that is asked a question should return the answer. Do not put the decision back in a field.
 
 ### Socket options
 
