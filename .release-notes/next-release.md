@@ -66,3 +66,9 @@ Lori can now be built against OpenSSL 4.0.x. Select it at compile time with `-Do
 ## Update ssl dependency to 3.0.0
 
 Lori now requires ssl 3.0.0. Building an `SSLContext` and passing it to `ssl_client`, `ssl_server`, or `start_tls` works as before. If your own code calls other parts of the ssl package directly, see the ssl 3.0.0 release notes for its API changes.
+## Fix graceful close dropping writes queued under backpressure
+
+When a connection was under write backpressure — bytes you sent were queued because the socket couldn't take them yet — a graceful `close()` dropped those queued bytes. They never reached the peer, and their sends completed with `_on_send_failed` instead of `_on_sent`, even though you closed the connection cleanly rather than aborting it.
+
+A graceful `close()` now sends what is still queued before shutting the connection down, so the data you handed to an accepted `send()` goes out rather than being dropped, and those sends fire `_on_sent`. `hard_close()` is unchanged: it still drops queued writes and fails their sends with `_on_send_failed`.
+
