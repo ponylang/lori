@@ -321,8 +321,10 @@ class TCPConnection
     `_on_idle_timeout()` to the lifecycle event receiver. When `duration`
     is `None`, the idle timeout is disabled.
 
-    The timer automatically re-arms after each firing until disabled or
-    the connection closes.
+    The timer re-arms after each firing while the connection is open.
+    `hard_close()` cancels it. A graceful `close()` does not, so
+    `_on_idle_timeout` can still arrive on a closing connection that is moving
+    bytes.
 
     Can be called before the connection is established — the value is
     stored and the timer starts when the connection is ready.
@@ -1390,6 +1392,9 @@ class TCPConnection
     Dispatch _on_idle_timeout to the lifecycle event receiver, then re-arm
     the timer if the connection is still open and the timeout is still
     configured.
+
+    Not the only thing that arms it: `_reset_idle_timer()` re-arms an
+    already-fired timer on any I/O, in any state.
     """
     match \exhaustive\ _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>

@@ -110,9 +110,11 @@ trait ServerLifecycleEventReceiver
     not wire-level: pending OS write buffer drains and failed sends
     (`SendErrorNotWriteable`) do not count as activity.
 
-    The timer automatically re-arms after each firing. Call
-    `idle_timeout(None)` to disable it. The application decides what action
-    to take — close the connection, send a keepalive, log a warning, etc.
+    The timer re-arms after each firing while the connection is open. Call
+    `idle_timeout(None)` to disable it; `hard_close()` cancels it. A graceful
+    `close()` does not, so this can still arrive on a closing connection that is
+    moving bytes. The application decides what action to take — close the
+    connection, send a keepalive, log a warning, etc.
 
     If the idle timer's ASIO event subscription fails,
     `_on_idle_timer_failure()` is delivered instead of this callback.
@@ -305,9 +307,11 @@ trait ClientLifecycleEventReceiver
     not wire-level: pending OS write buffer drains and failed sends
     (`SendErrorNotWriteable`) do not count as activity.
 
-    The timer automatically re-arms after each firing. Call
-    `idle_timeout(None)` to disable it. The application decides what action
-    to take — close the connection, send a keepalive, log a warning, etc.
+    The timer re-arms after each firing while the connection is open. Call
+    `idle_timeout(None)` to disable it; `hard_close()` cancels it. A graceful
+    `close()` does not, so this can still arrive on a closing connection that is
+    moving bytes. The application decides what action to take — close the
+    connection, send a keepalive, log a warning, etc.
 
     If the idle timer's ASIO event subscription fails,
     `_on_idle_timer_failure()` is delivered instead of this callback.
