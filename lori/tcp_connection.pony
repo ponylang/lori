@@ -1261,6 +1261,10 @@ class TCPConnection
         // being unthrottled doesn't however mean we are writable
         _set_unwriteable()
         PonyAsio.resubscribe_write(_event)
+        // A hard close from `_on_throttled` fails every token still on the
+        // queue, so report the sends this flush has completed before the
+        // application runs.
+        _fire_completed_sends()
         s._on_throttled()
       end
     | None =>
