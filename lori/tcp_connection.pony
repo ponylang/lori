@@ -321,8 +321,11 @@ class TCPConnection
     `_on_idle_timeout()` to the lifecycle event receiver. When `duration`
     is `None`, the idle timeout is disabled.
 
-    The timer automatically re-arms after each firing until disabled or
-    the connection closes.
+    The timer re-arms after each firing while the connection is open.
+    `hard_close()` cancels it. A graceful `close()` does not: the firing itself
+    stops re-arming the timer once a close has begun, but I/O on the closing
+    connection still resets it, so `_on_idle_timeout` can arrive again while
+    bytes are still moving.
 
     Can be called before the connection is established — the value is
     stored and the timer starts when the connection is ready.
@@ -748,16 +751,42 @@ class TCPConnection
 
     _spawner_notification()
 
-  fun is_open(): Bool =>
-    _state.is_open()
-
   fun is_closed(): Bool =>
+    """
+    Returns whether the connection has been closed or is closing. Once this is
+    true, no `send()` will be accepted and the connection will not re-open, so
+    data an application is holding for this connection can be dropped.
+
+    False does not mean a `send()` will be accepted — the connection may not be
+    established yet, or may be under backpressure. `is_writeable()` is the
+    predicate for that.
+
+    A graceful `close()` makes this true at once, and the connection goes on
+    delivering `_on_received` until the peer closes its end. So this does not
+    say the connection is finished with. The terminal callback says that:
+    `_on_closed` for a connection the application was handed,
+    `_on_connection_failure` for a client closed before it ever connected, and
+    `_on_start_failure` for a server whose SSL handshake never completed.
+    """
     _state.is_closed()
 
   fun is_writeable(): Bool =>
     """
-    Returns whether the connection can currently accept a `send()` call.
-    Checks that the state allows sends and the socket is writeable.
+    Returns whether the connection is in a state that accepts sends and the
+    socket can take them. False while the connection is still being established,
+    during an SSL or TLS handshake, while the socket is under backpressure, and
+    once a close has begun.
+
+    On a plaintext connection, true means `send()` returns a `SendToken`. On an
+    SSL connection it does not promise one: `send()` still returns
+    `SendErrorNotWriteable` if the SSL session rejects the write.
+
+    Check this before `send(consume data)`: `send()` takes the buffer even when
+    it returns a `SendError`, so a rejected send loses an `iso` payload.
+
+    The answer can go stale inside a single behavior turn: a partial write
+    applies backpressure from within `send()` itself. A loop that sends more
+    than once has to check on every pass, not once at the top.
     """
     _state.sends_allowed() and _writeable
 
@@ -850,6 +879,17 @@ class TCPConnection
     `_on_send_failed(token)` if the connection is lost or hard-closed before
     the bytes are written. A graceful `close()` sends what's still queued, so
     those sends fire `_on_sent`, not `_on_send_failed`.
+
+    A `SendError` gets no callback: no token was minted, so none can come back.
+
+    The connection can close during this call. `send()` writes to the socket
+    before it returns, a partial write applies backpressure, and `_on_throttled`
+    runs right then, so an application that closes from `_on_throttled` — or a
+    write that fails outright — closes the connection from inside `send()`. That
+    still accepts the send: `send()` returns a token and the token gets its
+    callback. But `hard_close()` fires `_on_closed()` synchronously, so the
+    application can see `_on_closed` before `send()` hands back the token, with
+    `_on_send_failed` for it arriving after.
     """
     _state.send(this, data)
 
@@ -876,7 +916,9 @@ class TCPConnection
       end
       _ssl_enqueue_sends()
     | _TLSDisposed | _TLSFailed =>
-      // `sends_allowed()` is false without a live session.
+      // `_Open` never holds either. A session is disposed only on a hard close,
+      // which leaves `_Closed`, and a connection whose session failed to build
+      // goes from `_ConnectionNone` straight to `_Closed`.
       _Unreachable()
       return SendErrorNotConnected
     | _NoTLS =>
@@ -890,35 +932,22 @@ class TCPConnection
       end
     end
 
-    // This send's bytes finish at the current cumulative-enqueued offset.
-    // Flush; that fires any earlier sends this drain completed.
-    let offset = _cumulative_enqueued
-    _send_pending_writes()
-
-    // A flush that hits a write error hard-closes. Return the error -- the send
-    // never took hold, no callback.
-    if not is_open() then
-      return SendErrorNotConnected
-    end
-
-    // Mint the token only now, so a send that failed above never burns an id.
+    // Mint before the flush, not after. The flush can end the connection: a
+    // write error hard closes, and the `_on_throttled` it fires on a partial
+    // write lets the application close too. A token already on
+    // `_pending_tokens` gets `_on_sent` when the queue drains past its offset,
+    // or `_on_send_failed` when a hard close discards the queue -- so an
+    // accepted send has a terminal callback whatever the flush does. Mint it
+    // afterwards and a flush that ends the connection strands the send: its
+    // bytes are on the wire and nothing reports them.
+    //
+    // Every error return above sits upstream of this, so a send that failed
+    // never burns a token id.
     _next_token_id = _next_token_id + 1
     let token = SendToken._create(_next_token_id)
+    _pending_tokens.push((_cumulative_enqueued, token))
 
-    // Fire now if this send fully drained during the flush; otherwise track
-    // it so `_on_sent` fires when the queue drains past its offset.
-    // `_has_pending_writes` (not the offset) decides, because a full drain
-    // resets the counters.
-    if not _has_pending_writes() then
-      match \exhaustive\ _enclosing
-      | let e: TCPConnectionActor ref =>
-        e._notify_sent(token)
-      | None =>
-        _Unreachable()
-      end
-    else
-      _pending_tokens.push((offset, token))
-    end
+    _send_pending_writes()
 
     token
 
@@ -949,17 +978,17 @@ class TCPConnection
   fun ref _enqueue(data: ByteSeq) =>
     """
     Add a buffer to the pending write queue, without flushing. Enqueue and
-    flush are separate steps because `_do_send` records a send's completion
-    offset between them; `_send_pending_writes()` is the flush.
+    flush are separate steps because `_do_send` mints a send's token and records
+    its completion offset between them; `_send_pending_writes()` is the flush.
 
-    Uses `not is_closed()` rather than `is_open()` because
-    `_ssl_enqueue_sends()` calls `_enqueue()` during `_SSLHandshaking` (where
-    `is_open() = false`) to push handshake protocol data. The wider guard
-    allows handshake data through while still blocking enqueue after the
-    connection closes.
+    The guard is `not is_closed()` rather than anything narrower because
+    `_ssl_enqueue_sends()` pushes handshake protocol data during both
+    handshakes, where application sends are still refused. So bytes go on the
+    queue in `_SSLHandshaking`, `_TLSUpgrading` and `_Open`, and once a close
+    has begun nothing more does.
     """
     if data.size() == 0 then return end
-    if not is_closed() then
+    if not _state.is_closed() then
       _pending.push(data)
       _cumulative_enqueued = _cumulative_enqueued + data.size()
     end
@@ -1266,6 +1295,22 @@ class TCPConnection
     end
 
   fun ref _apply_backpressure() =>
+    """
+    Called from the write flush when the socket stops taking bytes.
+
+    `_on_throttled` runs the application, and the application can close the
+    connection from there, so the token queue has to be truthful before the
+    callback. `_send_pending_writes()` accounts the bytes a `writev` sent and
+    only fires the sends that completes at the end of the flush, which leaves a
+    window where a send whose bytes all reached the OS is still on the queue --
+    and `_hard_close_cleanup` fails every token on the queue. Report those sends
+    before handing control over, or a hard close from `_on_throttled` calls a
+    send that reached the OS failed, and an application that trusts the split
+    resends bytes the peer may already have.
+
+    The flush's other call into the application, `hard_close()` on a write
+    error, does the same thing for the same reason.
+    """
     match \exhaustive\ _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver =>
       if not _throttled then
@@ -1274,6 +1319,7 @@ class TCPConnection
         // being unthrottled doesn't however mean we are writable
         _set_unwriteable()
         PonyAsio.resubscribe_write(_event)
+        _fire_completed_sends()
         s._on_throttled()
       end
     | None =>
@@ -1396,9 +1442,17 @@ class TCPConnection
 
   fun ref _fire_idle_timeout() =>
     """
-    Dispatch _on_idle_timeout to the lifecycle event receiver, then re-arm
-    the timer if the connection is still open and the timeout is still
-    configured.
+    Dispatch `_on_idle_timeout` to the lifecycle event receiver, then dispatch
+    the re-arm through the state. The ASIO timer is one-shot: `_Open` and
+    `_TLSUpgrading` re-arm it here, and no other state does.
+
+    The callback runs first, so the re-arm runs against the state the callback
+    left behind: a callback that closes the connection gets no re-arm here.
+
+    This is not the only thing that arms the timer. `_reset_idle_timer()` also
+    runs from `_read()` and `_send_pending_writes()` on any I/O, in whatever
+    state the connection is in, so a closing connection that is still moving
+    bytes keeps its idle timer alive.
     """
     match \exhaustive\ _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
@@ -1406,9 +1460,7 @@ class TCPConnection
     | None =>
       _Unreachable()
     end
-    if is_open() and (_idle_timeout_nsec > 0) then
-      _reset_idle_timer()
-    end
+    _state.idle_timer_fired(this)
 
   fun ref _fire_idle_timer_failure() =>
     """
@@ -1640,8 +1692,8 @@ class TCPConnection
     // Mirror for the write side: a readable event drops the write interest, and
     // a read that mutes or yields before EAGAIN never re-arms it, so a
     // backpressured write wedges. Re-arm it, guarded by `_throttled`.
-    // `is_live()` (was `is_open()`) covers `_Closing`, which now drains queued
-    // writes before it closes. Do not weaken; see #294, #296.
+    // `is_live()` has to be the predicate here: it covers `_Closing`, which
+    // drains queued writes before it closes. Do not narrow it; see #294, #296.
     if _throttled and _state.is_live()
       and not PonyAsio.get_disposable(_event)
     then

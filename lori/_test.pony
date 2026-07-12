@@ -40,6 +40,9 @@ actor \nodoc\ Main is TestList
     test(_TestIdleTimeout)
     test(_TestIdleTimeoutReset)
     test(_TestIdleTimeoutDisable)
+    test(_TestIdleTimeoutRearms)
+    test(_TestIdleTimeoutNoRearmDuringClosing)
+    test(_TestIdleTimeoutRearmsDuringTLSUpgrade)
     test(_TestSSLIdleTimeout)
     test(_TestSSLIdleTimeoutNotArmedDuringHandshake)
     test(_TestSSLIdleTimeoutDeferredArm)
@@ -105,4 +108,7 @@ actor \nodoc\ Main is TestList
     ifdef posix then test(_TestSendSSLMidFlightDropBoundary) end
     ifdef posix then test(_TestSendGracefulCloseWithPending) end
     ifdef posix then test(_TestSendSSLGracefulCloseWithPending) end
+    ifdef posix then test(_TestSendCloseFromThrottled) end
+    ifdef posix then test(_TestSendHardCloseFromThrottled) end
+    ifdef posix then test(_TestSendSSLHardCloseFromThrottled) end
     ifdef posix then test(_TestReadableEventWriteRecovery) end

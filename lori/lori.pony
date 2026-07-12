@@ -146,15 +146,41 @@ end
 [`SendToken`](/lori/lori-SendToken/) is an opaque value identifying the send
 operation. Each accepted `send()` gets exactly one terminal callback: the
 token comes back to `_on_sent` once its bytes reach the OS, or to
-`_on_send_failed` if the connection closes first. Callbacks arrive in send
-order, always in a later behavior turn, never during `send()`. "Handed to the
-OS" means written to the kernel send buffer, not received by the peer.
+`_on_send_failed` if the connection closes first. The two token callbacks arrive
+in send order, always in a later behavior turn, never during `send()`. "Handed
+to the OS" means written to the kernel send buffer, not received by the peer.
 
 The library does not queue data during backpressure. When `send()` returns
 [`SendErrorNotWriteable`](/lori/lori-SendErrorNotWriteable/), the application
 decides what to do: queue, drop, or close. Use `_on_throttled` and
 `_on_unthrottled` to track backpressure state, or check `is_writeable()` before
 calling `send()`.
+
+Two predicates say what an application can do about sending. `is_writeable()`
+means the connection accepts a send now — on a plaintext connection `send()`
+returns a `SendToken`; on an SSL connection the session can still reject the
+write. `is_closed()` means no send will ever be accepted again, so data held for
+it can be dropped. Neither one true means hold the data: the connection is still
+connecting, still handshaking, or under backpressure. It resolves either way —
+with `_on_connected`, `_on_started`, `_on_tls_ready` or `_on_unthrottled` when
+it becomes writeable, or with a failure callback (`_on_connection_failure`,
+`_on_start_failure`, `_on_tls_failure`, `_on_closed`), after which `is_closed()`
+is true and the data can be dropped. Both true at once cannot happen.
+
+Check `is_writeable()` before `send(consume data)`. `send()` takes the buffer
+even when it rejects it, so a rejected send loses an `iso` payload — and the
+answer goes stale inside a turn, because a partial write applies backpressure
+from within `send()` itself, so a loop must check on every pass.
+
+`send()` writes to the socket before it returns, and a partial write applies
+backpressure and runs `_on_throttled` right then — inside the `send()` call. So
+closing from `_on_throttled` closes the connection from inside a `send()` that
+has already put bytes on the wire. That send is still accepted: `send()` returns
+a token, and the token gets its callback. But `hard_close()` fires
+`_on_closed()` synchronously, so the application can see `_on_closed` before
+`send()` hands the token back, with `_on_send_failed` for it arriving after. Any
+teardown an application does in `_on_closed` therefore runs before that `send()`
+returns.
 
 `send()` accepts both a single buffer (`ByteSeq`) and multiple buffers
 (`ByteSeqIter`). When a protocol sends structured data (e.g. a length header

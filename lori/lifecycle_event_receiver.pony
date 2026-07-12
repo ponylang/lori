@@ -29,6 +29,12 @@ trait ServerLifecycleEventReceiver
   fun ref _on_throttled() =>
     """
     Called when we start experiencing backpressure.
+
+    This can run inside a `send()` that has not returned yet: `send()` writes to
+    the socket, and a partial write applies backpressure right there. Closing
+    the connection from here is supported. When this runs inside a `send()`,
+    that send is still accepted, and its token still gets `_on_sent` or
+    `_on_send_failed`.
     """
     None
 
@@ -110,9 +116,17 @@ trait ServerLifecycleEventReceiver
     not wire-level: pending OS write buffer drains and failed sends
     (`SendErrorNotWriteable`) do not count as activity.
 
-    The timer automatically re-arms after each firing. Call
-    `idle_timeout(None)` to disable it. The application decides what action
-    to take — close the connection, send a keepalive, log a warning, etc.
+    The timer re-arms after each firing while the connection is open, so it
+    keeps reporting an idle connection until the application acts. Call
+    `idle_timeout(None)` to disable it; `hard_close()` cancels it.
+
+    A graceful `close()` does not cancel it. The firing itself does not re-arm
+    the timer once a close has begun, but I/O on the closing connection still
+    resets it, so this callback can arrive again on a connection that is closing
+    and still moving bytes.
+
+    The application decides what action to take — close the connection, send a
+    keepalive, log a warning, etc.
 
     If the idle timer's ASIO event subscription fails,
     `_on_idle_timer_failure()` is delivered instead of this callback.
@@ -237,6 +251,12 @@ trait ClientLifecycleEventReceiver
   fun ref _on_throttled() =>
     """
     Called when we start experiencing backpressure.
+
+    This can run inside a `send()` that has not returned yet: `send()` writes to
+    the socket, and a partial write applies backpressure right there. Closing
+    the connection from here is supported. When this runs inside a `send()`,
+    that send is still accepted, and its token still gets `_on_sent` or
+    `_on_send_failed`.
     """
     None
 
@@ -305,9 +325,17 @@ trait ClientLifecycleEventReceiver
     not wire-level: pending OS write buffer drains and failed sends
     (`SendErrorNotWriteable`) do not count as activity.
 
-    The timer automatically re-arms after each firing. Call
-    `idle_timeout(None)` to disable it. The application decides what action
-    to take — close the connection, send a keepalive, log a warning, etc.
+    The timer re-arms after each firing while the connection is open, so it
+    keeps reporting an idle connection until the application acts. Call
+    `idle_timeout(None)` to disable it; `hard_close()` cancels it.
+
+    A graceful `close()` does not cancel it. The firing itself does not re-arm
+    the timer once a close has begun, but I/O on the closing connection still
+    resets it, so this callback can arrive again on a connection that is closing
+    and still moving bytes.
+
+    The application decides what action to take — close the connection, send a
+    keepalive, log a warning, etc.
 
     If the idle timer's ASIO event subscription fails,
     `_on_idle_timer_failure()` is delivered instead of this callback.

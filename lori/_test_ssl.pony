@@ -545,8 +545,11 @@ actor \nodoc\ _TestSSLHandshakeFailurePlainClient
 
 class \nodoc\ iso _TestSSLHandshakeCompleteTransitionsToOpen is UnitTest
   """
-  Test that after a successful SSL handshake, the connection is in _Open
-  state: is_open() returns true and send() returns a SendToken.
+  Test that after a successful SSL handshake, the connection is in _Open state:
+  send() returns a SendToken.
+
+  A SendToken comes only from _do_send, which only _Open.send() reaches. No
+  other state calls it -- they return a SendError instead.
   """
   fun name(): String => "SSLHandshakeCompleteTransitionsToOpen"
 
@@ -565,7 +568,6 @@ class \nodoc\ iso _TestSSLHandshakeCompleteTransitionsToOpen is UnitTest
           .> set_server_verify(false)
       end
 
-    h.expect_action("is_open verified")
     h.expect_action("send returns token")
 
     let listener = _TestSSLTransitionToOpenListener(
@@ -626,9 +628,6 @@ actor \nodoc\ _TestSSLTransitionToOpenClient
     _tcp_connection
 
   fun ref _on_connected() =>
-    _h.assert_true(_tcp_connection.is_open(), "is_open should be true")
-    _h.complete_action("is_open verified")
-
     match \exhaustive\ _tcp_connection.send("test")
     | let _: SendToken =>
       _h.complete_action("send returns token")
@@ -1146,8 +1145,9 @@ class \nodoc\ iso _TestSSLCloseDuringReceive is UnitTest
   the same read are delivered.
 
   This is the other side of `_TestSSLHardCloseDuringReceive`, and it is what
-  makes `is_live()` the right predicate to bound `_read()`'s loop:
-  `is_open()` and `is_closed()` both stop delivery here, and both are wrong.
+  makes `is_live()` the right predicate to bound `_read()`'s loop. `_Closing` is
+  live and closed at once, so a loop bounded on `not is_closed()` would stop
+  delivering here.
   """
   fun name(): String => "SSLCloseDuringReceive"
 

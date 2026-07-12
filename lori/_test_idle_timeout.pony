@@ -658,3 +658,381 @@ actor \nodoc\ _TestSSLIdleTimeoutDeferredArmServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+class \nodoc\ iso _TestIdleTimeoutRearms is UnitTest
+  """
+  Test that the idle timeout fires again on a connection that stays idle. The
+  ASIO timer is one-shot, so an idle timeout only repeats because the connection
+  re-arms it after each `_on_idle_timeout`.
+
+  Server sets a 1-second idle timeout and the client sends nothing, so once the
+  timer is armed no read or write resets it. The test completes on the second
+  `_on_idle_timeout`. A connection that armed the timer once and never re-armed
+  it fires once and then goes quiet, and the test times out.
+  """
+  fun name(): String => "IdleTimeoutRearms"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("idle timeout fired twice")
+
+    let listener = _TestIdleTimeoutRearmsListener(h)
+    h.dispose_when_done(listener)
+
+    h.long_test(15_000_000_000)
+
+actor \nodoc\ _TestIdleTimeoutRearmsListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestIdleTimeoutRearmsServer | None) = None
+  var _client: (_TestIdleTimeoutRearmsClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      "9784",
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestIdleTimeoutRearmsServer =>
+    let s = _TestIdleTimeoutRearmsServer(fd, _h)
+    _server = s
+    s
+
+  fun ref _on_closed() =>
+    try (_client as _TestIdleTimeoutRearmsClient).dispose() end
+    try (_server as _TestIdleTimeoutRearmsServer).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestIdleTimeoutRearmsClient(_h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestIdleTimeoutRearmsListener")
+
+actor \nodoc\ _TestIdleTimeoutRearmsClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(_h.env.root),
+      "localhost",
+      "9784",
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+actor \nodoc\ _TestIdleTimeoutRearmsServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _fires: USize = 0
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.server(
+      TCPServerAuth(_h.env.root),
+      fd,
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    match MakeIdleTimeout(1_000)
+    | let t: IdleTimeout =>
+      _tcp_connection.idle_timeout(t)
+    | let _: ValidationFailure =>
+      _h.fail("MakeIdleTimeout(1_000) should succeed")
+      _h.complete(false)
+    end
+
+  fun ref _on_idle_timeout() =>
+    _fires = _fires + 1
+    if _fires == 2 then
+      _h.complete_action("idle timeout fired twice")
+    end
+
+class \nodoc\ iso _TestIdleTimeoutNoRearmDuringClosing is UnitTest
+  """
+  Test that a firing does not re-arm the idle timer once a graceful close has
+  begun. A graceful close cancels no timers, so an armed idle timer survives
+  into `_Closing` and fires there; `_Closing.idle_timer_fired` is what stops it
+  firing again.
+
+  Server sets a 1-second idle timeout and calls `close()` from the first
+  `_on_idle_timeout`. A second fire fails the test; a watchdog completes it
+  after 5 seconds, which leaves room for four re-arms at the 1-second period.
+
+  The client mutes itself and sends nothing. Both halves are load-bearing. It
+  never reads, so it never answers the server's FIN, and the server stays in
+  `_Closing` for the whole window rather than hard closing (which would cancel
+  the timer and make the test vacuous). And it sends nothing, so the server does
+  no I/O -- `_read()` and `_send_pending_writes()` call `_reset_idle_timer()`
+  regardless of state, and either would re-arm the timer behind the state
+  machine's back. This test therefore covers the firing, not the timer: a
+  closing connection that is still moving bytes does keep firing.
+  """
+  fun name(): String => "IdleTimeoutNoRearmDuringClosing"
+
+  fun apply(h: TestHelper) =>
+    let listener = _TestIdleTimeoutNoRearmListener(h)
+    h.dispose_when_done(listener)
+
+    h.long_test(20_000_000_000)
+
+actor \nodoc\ _TestIdleTimeoutNoRearmListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestIdleTimeoutNoRearmServer | None) = None
+  var _client: (_TestIdleTimeoutNoRearmClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      "9785",
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestIdleTimeoutNoRearmServer =>
+    let s = _TestIdleTimeoutNoRearmServer(fd, _h)
+    _server = s
+    s
+
+  fun ref _on_closed() =>
+    try (_client as _TestIdleTimeoutNoRearmClient).dispose() end
+    try (_server as _TestIdleTimeoutNoRearmServer).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestIdleTimeoutNoRearmClient(_h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestIdleTimeoutNoRearmListener")
+
+actor \nodoc\ _TestIdleTimeoutNoRearmClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(_h.env.root),
+      "localhost",
+      "9785",
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    // Never read, so the server's FIN goes unanswered and the server stays in
+    // _Closing. Never send either: I/O would reset the server's idle timer.
+    _tcp_connection.mute()
+
+actor \nodoc\ _TestIdleTimeoutNoRearmServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  let _timers: Timers = Timers
+  var _fires: USize = 0
+  var _done: Bool = false
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.server(
+      TCPServerAuth(_h.env.root),
+      fd,
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    match MakeIdleTimeout(1_000)
+    | let t: IdleTimeout =>
+      _tcp_connection.idle_timeout(t)
+    | let _: ValidationFailure =>
+      _h.fail("MakeIdleTimeout(1_000) should succeed")
+      _h.complete(false)
+    end
+
+  fun ref _on_idle_timeout() =>
+    _fires = _fires + 1
+    if _fires == 1 then
+      _tcp_connection.close()
+      let server: _TestIdleTimeoutNoRearmServer tag = this
+      let timer = Timer(
+        _TestIdleTimeoutNoRearmWatchdog(server),
+        5_000_000_000,
+        0)
+      _timers(consume timer)
+    else
+      _h.fail("idle timer re-armed during _Closing")
+      _h.complete(false)
+    end
+
+  fun ref _on_closed() =>
+    // The server must stay in _Closing until the watchdog runs. A hard close
+    // cancels the idle timer, so leaving _Closing early would make a second
+    // fire impossible for a reason unrelated to what this test checks. Only the
+    // teardown dispose() may reach here.
+    if not _done then
+      _h.fail("server must stay in _Closing for the whole watchdog window")
+      _h.complete(false)
+    end
+
+  be _watchdog_complete() =>
+    _done = true
+    _h.complete(true)
+
+  be dispose() =>
+    _timers.dispose()
+    _tcp_connection.hard_close()
+
+class \nodoc\ _TestIdleTimeoutNoRearmWatchdog is TimerNotify
+  let _server: _TestIdleTimeoutNoRearmServer tag
+
+  new iso create(server: _TestIdleTimeoutNoRearmServer tag) =>
+    _server = server
+
+  fun ref apply(timer: Timer, count: U64): Bool =>
+    _server._watchdog_complete()
+    false
+
+class \nodoc\ iso _TestIdleTimeoutRearmsDuringTLSUpgrade is UnitTest
+  """
+  Test that the idle timeout keeps firing while a TLS upgrade is in progress.
+
+  `_TLSUpgrading` is the other state that re-arms. A `start_tls()` whose peer
+  never answers the ClientHello stalls there indefinitely, which is exactly when
+  an application needs `_on_idle_timeout` to keep firing while nothing moves.
+
+  Client connects in plaintext, sets a 1-second idle timeout, and calls
+  `start_tls()` against a server that never responds. The test completes on the
+  second `_on_idle_timeout`.
+  """
+  fun name(): String => "IdleTimeoutRearmsDuringTLSUpgrade"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9786"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("idle timeout fired twice during TLS upgrade")
+
+    let listener = _TestIdleTimeoutTLSUpgradeListener(port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(15_000_000_000)
+
+actor \nodoc\ _TestIdleTimeoutTLSUpgradeListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestDoNothingServerActor | None) = None
+  var _client: (_TestIdleTimeoutTLSUpgradeClient | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestDoNothingServerActor =>
+    let s = _TestDoNothingServerActor(fd, _h)
+    _server = s
+    s
+
+  fun ref _on_closed() =>
+    try (_client as _TestIdleTimeoutTLSUpgradeClient).dispose() end
+    try (_server as _TestDoNothingServerActor).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestIdleTimeoutTLSUpgradeClient(_port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestIdleTimeoutTLSUpgradeListener")
+
+actor \nodoc\ _TestIdleTimeoutTLSUpgradeClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _sslctx: SSLContext val
+  let _h: TestHelper
+  var _fires: USize = 0
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _sslctx = sslctx
+    _h = h
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(h.env.root),
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    match MakeIdleTimeout(1_000)
+    | let t: IdleTimeout =>
+      _tcp_connection.idle_timeout(t)
+    | let _: ValidationFailure =>
+      _h.fail("MakeIdleTimeout(1_000) should succeed")
+      _h.complete(false)
+    end
+    // The server never answers the ClientHello, so this parks in _TLSUpgrading.
+    match _tcp_connection.start_tls(_sslctx, "localhost")
+    | None => None
+    | let _: StartTLSError =>
+      _h.fail("start_tls should have succeeded")
+      _h.complete(false)
+    end
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+
+  fun ref _on_tls_ready() =>
+    _h.fail("the server never answers, so the upgrade must not complete")
+
+  fun ref _on_idle_timeout() =>
+    _fires = _fires + 1
+    if _fires == 2 then
+      _h.complete_action("idle timeout fired twice during TLS upgrade")
+    end

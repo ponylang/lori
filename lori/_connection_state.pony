@@ -51,8 +51,13 @@ trait _ConnectionState
   fun ref set_timer(conn: TCPConnection ref,
     duration: TimerDuration): (TimerToken | SetTimerError)
     """Start a user timer, or return why it can't be started in this state."""
-  fun is_open(): Bool
-    """The connection is open for application I/O (`_Open`/`_TLSUpgrading`)."""
+  fun ref idle_timer_fired(conn: TCPConnection ref)
+    """
+    The idle timer fired and `_on_idle_timeout` has run. `_Open` and
+    `_TLSUpgrading` re-arm it here; no other state does. Not re-arming here does
+    not cancel the timer -- `_reset_idle_timer()` still re-arms it on I/O, in
+    any state -- so a connection that is still moving bytes goes on firing.
+    """
   fun is_closed(): Bool
     """The connection is closed or closing."""
   fun sends_allowed(): Bool
@@ -153,7 +158,9 @@ class _ConnectionNone is _ConnectionState
   =>
     SetTimerNotOpen
 
-  fun is_open(): Bool => false
+  fun ref idle_timer_fired(conn: TCPConnection ref) =>
+    None
+
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
   fun is_live(): Bool => false
@@ -253,7 +260,9 @@ class _ClientConnecting is _ConnectionState
   =>
     SetTimerNotOpen
 
-  fun is_open(): Bool => false
+  fun ref idle_timer_fired(conn: TCPConnection ref) =>
+    None
+
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
   fun is_live(): Bool => false
@@ -344,7 +353,9 @@ class _Open is _ConnectionState
   =>
     conn._do_set_timer(duration)
 
-  fun is_open(): Bool => true
+  fun ref idle_timer_fired(conn: TCPConnection ref) =>
+    conn._reset_idle_timer()
+
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => true
   fun is_live(): Bool => true
@@ -439,7 +450,14 @@ class _Closing is _ConnectionState
   =>
     SetTimerNotOpen
 
-  fun is_open(): Bool => false
+  // A graceful close cancels no timers, so an armed idle timer survives into
+  // `_Closing` and fires here. Firing does not re-arm it. That does not end the
+  // idle timeout: `_reset_idle_timer()` still runs from `_read()` and
+  // `_send_pending_writes()` on any I/O, so a closing connection that is still
+  // moving bytes keeps firing. Only a quiet one stops.
+  fun ref idle_timer_fired(conn: TCPConnection ref) =>
+    None
+
   fun is_closed(): Bool => true
   fun sends_allowed(): Bool => false
   fun is_live(): Bool => true
@@ -533,7 +551,9 @@ class _UnconnectedClosing is _ConnectionState
   =>
     SetTimerNotOpen
 
-  fun is_open(): Bool => false
+  fun ref idle_timer_fired(conn: TCPConnection ref) =>
+    None
+
   fun is_closed(): Bool => true
   fun sends_allowed(): Bool => false
   fun is_live(): Bool => false
@@ -619,7 +639,9 @@ class _Closed is _ConnectionState
   =>
     SetTimerNotOpen
 
-  fun is_open(): Bool => false
+  fun ref idle_timer_fired(conn: TCPConnection ref) =>
+    None
+
   fun is_closed(): Bool => true
   fun sends_allowed(): Bool => false
   fun is_live(): Bool => false
@@ -721,7 +743,9 @@ class _SSLHandshaking is _ConnectionState
   =>
     SetTimerNotOpen
 
-  fun is_open(): Bool => false
+  fun ref idle_timer_fired(conn: TCPConnection ref) =>
+    None
+
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
   fun is_live(): Bool => true
@@ -818,7 +842,9 @@ class _TLSUpgrading is _ConnectionState
   =>
     conn._do_set_timer(duration)
 
-  fun is_open(): Bool => true
+  fun ref idle_timer_fired(conn: TCPConnection ref) =>
+    conn._reset_idle_timer()
+
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
   fun is_live(): Bool => true
