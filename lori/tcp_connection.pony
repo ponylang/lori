@@ -1229,6 +1229,13 @@ class TCPConnection
     | Streaming => _bytes_in_read_buffer > 0
     end
 
+  fun ref _read_buffer_free_space(): USize =>
+    """
+    Bytes the read buffer has room for before it has to grow. Zero means the
+    next read has nowhere to put what it gets.
+    """
+    _read_buffer.size() - _bytes_in_read_buffer
+
   fun ref _resize_read_buffer_if_needed() =>
     """
     Resize the read buffer if it's smaller than the buffer-until threshold, or

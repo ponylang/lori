@@ -256,6 +256,296 @@ actor \nodoc\ _TestUnmuteServer
     _h.complete(true)
     KeepReading
 
+class \nodoc\ iso _TestMuteWithFullReadBuffer is UnitTest
+  """
+  Test that `mute()` called from `_on_received` with a full read buffer holds
+  the buffered data rather than closing the connection.
+
+  The read buffer is 256 bytes and `buffer_until` is 4.
+
+  Getting a full read buffer takes a read that fills the whole free window, and
+  a read returns whatever is queued, up to that window. So the test makes sure
+  the bytes are queued before the connection reads any of them. The client sends
+  "PING" and waits for the server's "ACK!" before sending anything else, so the
+  PING is alone in the first read: it leaves the read buffer a 252-byte array
+  with nothing in it. The server then mutes and stays muted while the client
+  sends 1024 bytes and reports them handed to the OS. Only then does the server
+  unmute, and the read that follows has 1024 bytes to draw on and 252 bytes of
+  room: it fills the array.
+
+  Muting on the first 4-byte message chopped out of that array leaves 248 bytes
+  in a 248-byte array — a buffer with nowhere left to read into, which is the
+  state issue #324 turned into a peer close. A 500 millisecond timer unmutes.
+
+  The two mutes do different jobs. The first is scaffolding: it holds the
+  payload in the socket so one read can take a full buffer's worth. The second
+  is the test.
+
+  All 1024 bytes must then arrive, in the order they were sent. The payload
+  counts up rather than repeating one byte, so data arriving out of order fails
+  the test instead of adding up to the same total.
+
+  The test fails if the buffer has room left in it at the second mute, if data
+  arrives while the server is muted, if a byte arrives out of order, if
+  `_on_closed` fires before all 1024 bytes have arrived, or if the 15 second
+  timeout is reached because reading never resumed.
+
+  The first of those is the one that keeps the rest honest: the bug needs a
+  buffer with no room in it, and a test that quietly failed to build one would
+  pass while covering nothing.
+  """
+  fun name(): String => "MuteWithFullReadBuffer"
+
+  fun ref apply(h: TestHelper) =>
+    let s = _TestMuteWithFullReadBufferListener(h)
+    h.dispose_when_done(s)
+
+    h.long_test(15_000_000_000)
+
+actor \nodoc\ _TestMuteWithFullReadBufferListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestMuteWithFullReadBufferServer | None) = None
+  var _client: (_TestMuteWithFullReadBufferClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      "6868",
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestMuteWithFullReadBufferServer =>
+    let s = _TestMuteWithFullReadBufferServer(fd, _h)
+    _server = s
+    s
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestMuteWithFullReadBufferListener")
+    _h.complete(false)
+
+  fun ref _on_listening() =>
+    _client = _TestMuteWithFullReadBufferClient(_h, this)
+
+  be payload_sent() =>
+    try (_server as _TestMuteWithFullReadBufferServer).payload_sent() end
+
+  be dispose() =>
+    try (_client as _TestMuteWithFullReadBufferClient).dispose() end
+    try (_server as _TestMuteWithFullReadBufferServer).dispose() end
+    _tcp_listener.close()
+
+actor \nodoc\ _TestMuteWithFullReadBufferClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  let _listener: _TestMuteWithFullReadBufferListener
+  var _payload_token: (SendToken | None) = None
+
+  new create(h: TestHelper,
+    listener: _TestMuteWithFullReadBufferListener)
+  =>
+    _h = h
+    _listener = listener
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(_h.env.root),
+      "localhost",
+      "6868",
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _tcp_connection.send("PING")
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+    _h.complete(false)
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    // The ACK. 1024 bytes is four times the 252 the server has left in its read
+    // buffer now that it has taken the PING out, so one read of it can fill the
+    // buffer. Byte n is n modulo 256, so the server can tell where in the
+    // payload each message it gets belongs.
+    let payload = recover val
+      let a = Array[U8](1024)
+      var i: USize = 0
+      while i < 1024 do
+        a.push((i % 256).u8())
+        i = i + 1
+      end
+      a
+    end
+
+    match _tcp_connection.send(payload)
+    | let t: SendToken => _payload_token = t
+    | let _: SendError =>
+      _h.fail("client could not send the payload")
+      _h.complete(false)
+    end
+    KeepReading
+
+  fun ref _on_sent(token: SendToken) =>
+    // The payload is with the OS, so it is in the server's socket by the time
+    // the server hears about it and unmutes. Its next read has more bytes to
+    // draw on than its buffer has room for.
+    match _payload_token
+    | let t: SendToken if token is t => _listener.payload_sent()
+    end
+
+actor \nodoc\ _TestMuteWithFullReadBufferServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _saw_ping: Bool = false
+  var _muted: Bool = false
+  var _holding_payload: Bool = false
+  var _mute_done: Bool = false
+  var _bytes_received: USize = 0
+  var _done: Bool = false
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    match \exhaustive\ MakeReadBufferSize(256)
+    | let r: ReadBufferSize =>
+      _tcp_connection = TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this,
+        r)
+    | let _: ValidationFailure =>
+      _h.fail("MakeReadBufferSize(256) should succeed")
+      _h.complete(false)
+    end
+
+    // Framing at 4 bytes is what makes a mute land on a buffer the reader has
+    // left full. Without it the connection streams, `_on_received` takes
+    // everything the buffer holds, and the mute lands on an empty one.
+    match \exhaustive\ MakeBufferSize(4)
+    | let b: BufferSize =>
+      match \exhaustive\ _tcp_connection.buffer_until(b)
+      | BufferUntilSet => None
+      | BufferSizeAboveMinimum =>
+        _h.fail("buffer_until(4) was refused")
+        _h.complete(false)
+      end
+    | let _: ValidationFailure =>
+      _h.fail("MakeBufferSize(4) should succeed")
+      _h.complete(false)
+    end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    if _muted then
+      _h.fail("server received data while muted")
+      _h.complete(false)
+      return KeepReading
+    end
+
+    if not _saw_ping then
+      // Delivering the PING has left the read buffer a 252-byte array with
+      // nothing in it. Stop reading until the client says the payload is with
+      // the OS, so the read that resumes finds more bytes waiting than the
+      // array has room for and fills it.
+      _saw_ping = true
+      _tcp_connection.send("ACK!")
+      _muted = true
+      _holding_payload = true
+      _tcp_connection.mute()
+      return KeepReading
+    end
+
+    if data.size() != 4 then
+      _h.fail("message was " + data.size().string()
+        + " bytes; buffer_until(4) is not framing")
+      _h.complete(false)
+      return KeepReading
+    end
+
+    if not _mute_done then
+      _mute_done = true
+
+      // The state issue #324 hard closed on: a read buffer the read filled, so
+      // the next read has nowhere to put anything. Asserted rather than
+      // assumed — the test is worthless if it never built the state.
+      let free = _tcp_connection._read_buffer_free_space()
+      if free != 0 then
+        _h.fail("muting with " + free.string()
+          + " bytes free in the read buffer; wanted a full one")
+        _h.complete(false)
+        return KeepReading
+      end
+
+      _muted = true
+      _tcp_connection.mute()
+      match \exhaustive\ MakeTimerDuration(500)
+      | let d: TimerDuration =>
+        match _tcp_connection.set_timer(d)
+        | let _: TimerToken => None
+        | let _: SetTimerError =>
+          _h.fail("set_timer returned error")
+          _h.complete(false)
+        end
+      | let _: ValidationFailure =>
+        _h.fail("MakeTimerDuration(500) should succeed")
+        _h.complete(false)
+      end
+    end
+
+    let d: Array[U8] val = consume data
+    var i: USize = 0
+    while i < d.size() do
+      let want = ((_bytes_received + i) % 256).u8()
+      let got = try d(i)? else _Unreachable(); 0 end
+      if got != want then
+        _h.fail("byte " + (_bytes_received + i).string() + " was "
+          + got.string() + ", wanted " + want.string())
+        _h.complete(false)
+        return KeepReading
+      end
+      i = i + 1
+    end
+
+    _bytes_received = _bytes_received + d.size()
+    if _bytes_received >= 1024 then
+      if _bytes_received > 1024 then
+        _h.fail("received " + _bytes_received.string()
+          + " bytes, wanted 1024")
+        _h.complete(false)
+      else
+        _done = true
+        _h.complete(true)
+      end
+    end
+    KeepReading
+
+  be payload_sent() =>
+    if _holding_payload then
+      _holding_payload = false
+      _muted = false
+      _tcp_connection.unmute()
+    end
+
+  fun ref _on_timer(token: TimerToken) =>
+    _muted = false
+    _tcp_connection.unmute()
+
+  fun ref _on_closed() =>
+    if not _done then
+      _h.fail("connection closed before all data was delivered")
+      _h.complete(false)
+    end
+
 class \nodoc\ iso _TestSSLMute is UnitTest
   """
   Test that `mute()` called from `_on_received` stops delivery of the decrypted
