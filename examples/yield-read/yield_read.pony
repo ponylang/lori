@@ -19,6 +19,9 @@ actor Main
     Listener(TCPListenAuth(env.root), TCPConnectAuth(env.root), env.out)
 
 actor Listener is TCPListenerActor
+  """
+  Listens on the example's port and starts the client once listening.
+  """
   var _tcp_listener: TCPListener = TCPListener.none()
   let _out: OutStream
   let _connect_auth: TCPConnectAuth
@@ -91,7 +94,9 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
-  new create(auth: TCPConnectAuth, host: String, port: String,
+  new create(auth: TCPConnectAuth,
+    host: String,
+    port: String,
     out: OutStream)
   =>
     _out = out

@@ -48,5 +48,6 @@ type TimerDuration is Constrained[U64, TimerDurationValidator]
 
 type MakeTimerDuration is MakeConstrained[U64, TimerDurationValidator]
   """
-  Factory for `TimerDuration` values. Returns `(TimerDuration | ValidationFailure)`.
+  Factory for `TimerDuration` values. Returns
+  `(TimerDuration | ValidationFailure)`.
   """

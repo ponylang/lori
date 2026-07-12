@@ -19,6 +19,9 @@ actor Main
     QueryTimeoutListener(listen_auth, connect_auth, env.out)
 
 actor QueryTimeoutListener is TCPListenerActor
+  """
+  Listens on the example's port and starts the client once listening.
+  """
   var _tcp_listener: TCPListener = TCPListener.none()
   let _out: OutStream
   let _server_auth: TCPServerAuth
@@ -50,6 +53,9 @@ actor QueryTimeoutListener is TCPListenerActor
     QueryTimeoutClient(_connect_auth, _out)
 
 actor SlowServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  """
+  Receives the query and never responds.
+  """
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
@@ -70,18 +76,23 @@ actor SlowServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
 
 actor QueryTimeoutClient
   is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  """
+  Sends a query and closes the connection when its query timer fires.
+  """
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
   var _query_timer: (TimerToken | None) = None
 
   new create(auth: TCPConnectAuth, out: OutStream) =>
     _out = out
-    _tcp_connection = TCPConnection.client(auth,
-      "localhost",
-      "7678",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        auth,
+        "localhost",
+        "7678",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -91,7 +102,7 @@ actor QueryTimeoutClient
     _tcp_connection.send("SELECT * FROM big_table")
     match MakeTimerDuration(3_000)
     | let d: TimerDuration =>
-      match _tcp_connection.set_timer(d)
+      match \exhaustive\ _tcp_connection.set_timer(d)
       | let t: TimerToken => _query_timer = t
       | let _: SetTimerError =>
         _out.print("[client] Failed to set timer.")

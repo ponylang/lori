@@ -15,10 +15,10 @@ type _HardCloseCause is
   that knows passes the distinguishing cause.
 
   `_UnspecifiedCause` is every other hard close -- the application closed it, or
-  the transport failed -- where the state and `_had_inflight` decide the callback
-  and there is nothing for the caller to add. It is a variant, not a missing one:
-  a `_HardCloseCause` is always one of these, so every hard-close path matches it
-  in full.
+  the transport failed -- where the state and `_had_inflight` decide the
+  callback and there is nothing for the caller to add. It is a variant, not a
+  missing one: a `_HardCloseCause` is always one of these, so every hard-close
+  path matches it in full.
 
   This is the internal counterpart of the `ConnectionFailureReason` /
   `TLSFailureReason` a callback receives: the cause is what a caller knows, the

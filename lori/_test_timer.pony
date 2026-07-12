@@ -25,11 +25,12 @@ actor \nodoc\ _TestTimerFiresListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9746",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9746",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -53,13 +54,14 @@ actor \nodoc\ _TestTimerFiresClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "9746",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "9746",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -72,19 +74,20 @@ actor \nodoc\ _TestTimerFiresServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _on_started() =>
-    match MakeTimerDuration(2_000)
+    match \exhaustive\ MakeTimerDuration(2_000)
     | let d: TimerDuration =>
-      match _tcp_connection.set_timer(d)
+      match \exhaustive\ _tcp_connection.set_timer(d)
       | let t: TimerToken => _expected_token = t
       | let _: SetTimerError =>
         _h.fail("set_timer returned error")
@@ -127,11 +130,12 @@ actor \nodoc\ _TestTimerCancelListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9747",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9747",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -155,13 +159,14 @@ actor \nodoc\ _TestTimerCancelClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "9747",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "9747",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -174,19 +179,20 @@ actor \nodoc\ _TestTimerCancelServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _on_started() =>
-    match MakeTimerDuration(5_000)
+    match \exhaustive\ MakeTimerDuration(5_000)
     | let d: TimerDuration =>
-      match _tcp_connection.set_timer(d)
+      match \exhaustive\ _tcp_connection.set_timer(d)
       | let t: TimerToken =>
         _tcp_connection.cancel_timer(t)
         // Double-cancel should be a no-op
@@ -201,10 +207,11 @@ actor \nodoc\ _TestTimerCancelServer
     end
     // Watchdog: complete the test after 7 seconds
     let server: _TestTimerCancelServer tag = this
-    let timer = Timer(
-      _TestTimerCancelWatchdog(server),
-      7_000_000_000,
-      0)
+    let timer =
+      Timer(
+        _TestTimerCancelWatchdog(server),
+        7_000_000_000,
+        0)
     _timers(consume timer)
 
   fun ref _on_timer(token: TimerToken) =>
@@ -252,11 +259,12 @@ actor \nodoc\ _TestTimerNotResetByIOListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9748",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9748",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -282,13 +290,14 @@ actor \nodoc\ _TestTimerNotResetByIOClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "9748",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "9748",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -301,10 +310,11 @@ actor \nodoc\ _TestTimerNotResetByIOClient
   fun ref _schedule_next_send() =>
     if _sends_remaining > 0 then
       let client: _TestTimerNotResetByIOClient tag = this
-      let timer = Timer(
-        _TestTimerNotResetByIOTimerNotify(client),
-        1_000_000_000,
-        0)
+      let timer =
+        Timer(
+          _TestTimerNotResetByIOTimerNotify(client),
+          1_000_000_000,
+          0)
       _timers(consume timer)
     end
 
@@ -335,17 +345,18 @@ actor \nodoc\ _TestTimerNotResetByIOServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _on_started() =>
-    match MakeTimerDuration(3_000)
+    match \exhaustive\ MakeTimerDuration(3_000)
     | let d: TimerDuration =>
       match _tcp_connection.set_timer(d)
       | let _: SetTimerError =>
@@ -377,14 +388,15 @@ class \nodoc\ iso _TestSetTimerNotOpen is UnitTest
 
   fun apply(h: TestHelper) =>
     let conn = TCPConnection.none()
-    match MakeTimerDuration(1_000)
+    match \exhaustive\ MakeTimerDuration(1_000)
     | let d: TimerDuration =>
-      match conn.set_timer(d)
+      match \exhaustive\ conn.set_timer(d)
       | let _: SetTimerNotOpen => h.assert_true(true)
       | let _: TimerToken =>
         h.fail("set_timer should return SetTimerNotOpen")
       | let _: SetTimerAlreadyActive =>
-        h.fail("set_timer should return SetTimerNotOpen, not SetTimerAlreadyActive")
+        h.fail(
+          "set_timer should return SetTimerNotOpen, not SetTimerAlreadyActive")
       end
     | let _: ValidationFailure =>
       h.fail("MakeTimerDuration(1_000) should succeed")
@@ -411,11 +423,12 @@ actor \nodoc\ _TestSetTimerAlreadyActiveListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9749",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9749",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -439,13 +452,14 @@ actor \nodoc\ _TestSetTimerAlreadyActiveClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "9749",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "9749",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -457,17 +471,18 @@ actor \nodoc\ _TestSetTimerAlreadyActiveServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _on_started() =>
-    match MakeTimerDuration(5_000)
+    match \exhaustive\ MakeTimerDuration(5_000)
     | let d: TimerDuration =>
       // First set_timer should succeed
       match _tcp_connection.set_timer(d)
@@ -493,7 +508,7 @@ actor \nodoc\ _TestSetTimerAlreadyActiveServer
       return
     end
     // Now set a short timer that should fire
-    match MakeTimerDuration(2_000)
+    match \exhaustive\ MakeTimerDuration(2_000)
     | let d: TimerDuration =>
       match _tcp_connection.set_timer(d)
       | let _: SetTimerError =>
@@ -529,11 +544,12 @@ actor \nodoc\ _TestTimerRearmListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9750",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9750",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -557,13 +573,14 @@ actor \nodoc\ _TestTimerRearmClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "9750",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "9750",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -576,11 +593,12 @@ actor \nodoc\ _TestTimerRearmServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -589,7 +607,7 @@ actor \nodoc\ _TestTimerRearmServer
     _set_one_second_timer()
 
   fun ref _set_one_second_timer() =>
-    match MakeTimerDuration(1_000)
+    match \exhaustive\ MakeTimerDuration(1_000)
     | let d: TimerDuration =>
       match _tcp_connection.set_timer(d)
       | let _: SetTimerError =>
@@ -631,11 +649,12 @@ actor \nodoc\ _TestTimerCancelWrongTokenListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9751",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9751",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -659,13 +678,14 @@ actor \nodoc\ _TestTimerCancelWrongTokenClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "9751",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "9751",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -677,25 +697,26 @@ actor \nodoc\ _TestTimerCancelWrongTokenServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _on_started() =>
-    match MakeTimerDuration(5_000)
+    match \exhaustive\ MakeTimerDuration(5_000)
     | let d: TimerDuration =>
-      match _tcp_connection.set_timer(d)
+      match \exhaustive\ _tcp_connection.set_timer(d)
       | let token_a: TimerToken =>
         _tcp_connection.cancel_timer(token_a)
         // Set timer B (2 seconds)
-        match MakeTimerDuration(2_000)
+        match \exhaustive\ MakeTimerDuration(2_000)
         | let d2: TimerDuration =>
-          match _tcp_connection.set_timer(d2)
+          match \exhaustive\ _tcp_connection.set_timer(d2)
           | let _: TimerToken =>
             // Cancel with stale token A — should be a no-op
             _tcp_connection.cancel_timer(token_a)
@@ -741,11 +762,12 @@ actor \nodoc\ _TestTimerHardCloseListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9752",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9752",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -769,13 +791,14 @@ actor \nodoc\ _TestTimerHardCloseClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "9752",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "9752",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -788,11 +811,12 @@ actor \nodoc\ _TestTimerHardCloseServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -806,10 +830,11 @@ actor \nodoc\ _TestTimerHardCloseServer
     // Watchdog: complete the test after 7 seconds. If _on_timer fires
     // before then, the test fails.
     let server: _TestTimerHardCloseServer tag = this
-    let timer = Timer(
-      _TestTimerHardCloseWatchdog(server),
-      7_000_000_000,
-      0)
+    let timer =
+      Timer(
+        _TestTimerHardCloseWatchdog(server),
+        7_000_000_000,
+        0)
     _timers(consume timer)
 
   fun ref _on_timer(token: TimerToken) =>
@@ -853,11 +878,12 @@ actor \nodoc\ _TestTimerSetDuringClosingListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9753",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9753",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -881,13 +907,14 @@ actor \nodoc\ _TestTimerSetDuringClosingClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "9753",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "9753",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -899,11 +926,12 @@ actor \nodoc\ _TestTimerSetDuringClosingServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -911,16 +939,17 @@ actor \nodoc\ _TestTimerSetDuringClosingServer
   fun ref _on_started() =>
     _tcp_connection.close()
     // Now in _Closing — is_open() returns false
-    match MakeTimerDuration(1_000)
+    match \exhaustive\ MakeTimerDuration(1_000)
     | let d: TimerDuration =>
-      match _tcp_connection.set_timer(d)
+      match \exhaustive\ _tcp_connection.set_timer(d)
       | let _: SetTimerNotOpen =>
         _h.complete(true)
       | let _: TimerToken =>
         _h.fail("set_timer should return SetTimerNotOpen during _Closing")
         _h.complete(false)
       | let _: SetTimerAlreadyActive =>
-        _h.fail("set_timer should return SetTimerNotOpen, not SetTimerAlreadyActive")
+        _h.fail(
+          "set_timer should return SetTimerNotOpen, not SetTimerAlreadyActive")
         _h.complete(false)
       end
     | let _: ValidationFailure =>
@@ -961,11 +990,12 @@ actor \nodoc\ _TestSetTimerNotOpenSSLListener is TCPListenerActor
   new create(sslctx: SSLContext val, h: TestHelper) =>
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9754",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9754",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -989,29 +1019,33 @@ actor \nodoc\ _TestSetTimerNotOpenSSLClient
 
   new create(sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    match MakeConnectionTimeout(5_000)
+    match \exhaustive\ MakeConnectionTimeout(5_000)
     | let ct: ConnectionTimeout =>
-      _tcp_connection = TCPConnection.ssl_client(
-        TCPConnectAuth(_h.env.root),
-        sslctx,
-        "localhost",
-        "9754",
-        "",
-        this,
-        this
-        where connection_timeout = ct)
+      _tcp_connection =
+        TCPConnection.ssl_client(
+          TCPConnectAuth(_h.env.root),
+          sslctx,
+          "localhost",
+          "9754",
+          "",
+          this,
+          this
+          where connection_timeout = ct)
       // Try to set a timer before _finish_initialization runs.
       // The state is still _ConnectionNone (is_open() is false).
-      match MakeTimerDuration(1_000)
+      match \exhaustive\ MakeTimerDuration(1_000)
       | let d: TimerDuration =>
-        match _tcp_connection.set_timer(d)
+        match \exhaustive\ _tcp_connection.set_timer(d)
         | let _: SetTimerNotOpen =>
           None // Expected — will verify via connection timeout
         | let _: TimerToken =>
-          _h.fail("set_timer should return SetTimerNotOpen during SSL handshake")
+          _h.fail(
+            "set_timer should return SetTimerNotOpen during SSL handshake")
           _h.complete(false)
         | let _: SetTimerAlreadyActive =>
-          _h.fail("set_timer should return SetTimerNotOpen, not SetTimerAlreadyActive")
+          _h.fail(
+            "set_timer should return SetTimerNotOpen, not SetTimerAlreadyActive"
+          )
           _h.complete(false)
         end
       | let _: ValidationFailure =>
@@ -1048,11 +1082,12 @@ actor \nodoc\ _TestSetTimerNotOpenSSLServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1093,11 +1128,12 @@ actor \nodoc\ _TestSetTimerNotOpenSSLServerListener is TCPListenerActor
   new create(sslctx: SSLContext val, h: TestHelper) =>
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9755",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9755",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -1118,10 +1154,11 @@ actor \nodoc\ _TestSetTimerNotOpenSSLServerListener is TCPListenerActor
     // The SSL server verified set_timer returns SetTimerNotOpen.
     // Now wait a bit then complete to let the connection clean up.
     let listener: _TestSetTimerNotOpenSSLServerListener tag = this
-    let timer = Timer(
-      _TestSetTimerNotOpenSSLServerWatchdog(listener),
-      2_000_000_000,
-      0)
+    let timer =
+      Timer(
+        _TestSetTimerNotOpenSSLServerWatchdog(listener),
+        2_000_000_000,
+        0)
     _timers(consume timer)
 
   be _watchdog_complete() =>
@@ -1151,13 +1188,14 @@ actor \nodoc\ _TestSetTimerNotOpenSSLServerClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "9755",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "9755",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1168,22 +1206,25 @@ actor \nodoc\ _TestSetTimerNotOpenSSLServerConn
   let _h: TestHelper
   let _listener: _TestSetTimerNotOpenSSLServerListener tag
 
-  new create(sslctx: SSLContext val, fd: U32, h: TestHelper,
+  new create(sslctx: SSLContext val,
+    fd: U32,
+    h: TestHelper,
     listener: _TestSetTimerNotOpenSSLServerListener tag)
   =>
     _h = h
     _listener = listener
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
     // Try to set a timer before _finish_initialization runs.
     // The state is still _ConnectionNone (is_open() is false).
-    match MakeTimerDuration(1_000)
+    match \exhaustive\ MakeTimerDuration(1_000)
     | let d: TimerDuration =>
-      match _tcp_connection.set_timer(d)
+      match \exhaustive\ _tcp_connection.set_timer(d)
       | let _: SetTimerNotOpen =>
         _listener._timer_checked()
       | let _: TimerToken =>
@@ -1230,11 +1271,12 @@ actor \nodoc\ _TestTimerSurvivesCloseListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9756",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9756",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -1261,19 +1303,20 @@ actor \nodoc\ _TestTimerSurvivesCloseClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "9756",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "9756",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _on_connected() =>
-    match MakeTimerDuration(2_000)
+    match \exhaustive\ MakeTimerDuration(2_000)
     | let d: TimerDuration =>
       match _tcp_connection.set_timer(d)
       | let _: SetTimerError =>
@@ -1300,11 +1343,12 @@ actor \nodoc\ _TestTimerSurvivesCloseServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection

@@ -17,6 +17,9 @@ actor Main
     let echo = EchoServer(auth, "", "7669", env.out)
 
 actor EchoServer is TCPListenerActor
+  """
+  Listens on the example's port and hands each accepted connection to an echoer.
+  """
   var _tcp_listener: TCPListener = TCPListener.none()
   let _out: OutStream
   let _server_auth: TCPServerAuth
@@ -47,6 +50,9 @@ actor EchoServer is TCPListenerActor
     _out.print("Echo server started.")
 
 actor Echoer is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  """
+  Echoes received data back to the client.
+  """
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 

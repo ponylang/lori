@@ -4,7 +4,7 @@ A closed, count-driven TCP workload for stressing lori's TCP stack. A fixed numb
 of client connections is churned through a listener at a bounded concurrency; each
 client sends a stamped payload, the server echoes it, and the client verifies the
 echo byte-for-byte before closing. Every behaviour is a CLI flag; the engine
-(`tcp-swarm-stress-test.pony`) draws nothing and sets no runtime defaults, and a
+(`tcp_swarm.pony`) draws nothing and sets no runtime defaults, and a
 swarm orchestrator (`orchestrate_tcp.py`) draws the flags.
 
 This is a port of ponyc's `tcp-swarm` runtime stress test. The draw and the run

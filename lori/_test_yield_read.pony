@@ -37,11 +37,12 @@ actor \nodoc\ _TestYieldReadListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "7900",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "7900",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -65,13 +66,14 @@ actor \nodoc\ _TestYieldReadClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "7900",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "7900",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -93,12 +95,13 @@ actor \nodoc\ _TestYieldReadServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
-    match MakeBufferSize(4)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
+    match \exhaustive\ MakeBufferSize(4)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     | let _: ValidationFailure =>
       _h.fail("MakeBufferSize(4) should succeed")
@@ -182,11 +185,12 @@ actor \nodoc\ _TestSSLYieldReadListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -215,14 +219,15 @@ actor \nodoc\ _TestSSLYieldReadClient
 
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(h.env.root),
-      sslctx,
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(h.env.root),
+        sslctx,
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -243,12 +248,13 @@ actor \nodoc\ _TestSSLYieldReadServer
 
   new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
     match \exhaustive\ MakeBufferSize(4)
     | let b: BufferSize => _tcp_connection.buffer_until(b)
     | let _: ValidationFailure =>

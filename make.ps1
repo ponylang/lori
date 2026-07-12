@@ -211,8 +211,15 @@ switch ($Command.ToLower())
       break
   }
 
+  "lint"
+  {
+      corral run -- pony-lint .
+      if ($LastExitCode -ne 0) { throw "Lint found violations" }
+      break
+  }
+
   default
   {
-      throw "Unknown command '$Command'; must be one of (test, examples, stress-tests)."
+      throw "Unknown command '$Command'; must be one of (test, examples, stress-tests, lint)."
   }
 }

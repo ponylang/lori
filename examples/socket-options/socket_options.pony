@@ -15,17 +15,24 @@ actor Main
   new create(env: Env) =>
     let listen_auth = TCPListenAuth(env.root)
     let connect_auth = TCPConnectAuth(env.root)
-    SocketOptionsListener(listen_auth, connect_auth, "127.0.0.1", "7676",
-      env.out)
+    SocketOptionsListener(
+      listen_auth, connect_auth, "127.0.0.1", "7676", env.out)
 
 actor SocketOptionsListener is TCPListenerActor
+  """
+  Listens on the example's port, creating an echo server for each accepted
+  connection and starting the client once listening.
+  """
   var _tcp_listener: TCPListener = TCPListener.none()
   let _out: OutStream
   let _connect_auth: TCPConnectAuth
   let _server_auth: TCPServerAuth
 
-  new create(listen_auth: TCPListenAuth, connect_auth: TCPConnectAuth,
-    host: String, port: String, out: OutStream)
+  new create(listen_auth: TCPListenAuth,
+    connect_auth: TCPConnectAuth,
+    host: String,
+    port: String,
+    out: OutStream)
   =>
     _out = out
     _connect_auth = connect_auth
@@ -49,6 +56,10 @@ actor SocketOptionsListener is TCPListenerActor
     _out.print("Listener closed.")
 
 actor SocketOptionsServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  """
+  Configures TCP_NODELAY and OS buffer sizes on each accepted connection, then
+  echoes back what it receives.
+  """
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
@@ -96,10 +107,15 @@ actor SocketOptionsServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
 
 actor SocketOptionsClient is
   (TCPConnectionActor & ClientLifecycleEventReceiver)
+  """
+  Connects, sends a message, prints the echoed reply, and closes.
+  """
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
-  new create(auth: TCPConnectAuth, host: String, port: String,
+  new create(auth: TCPConnectAuth,
+    host: String,
+    port: String,
     out: OutStream)
   =>
     _out = out

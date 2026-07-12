@@ -3,11 +3,10 @@ Swarm TCP stress engine for lori.
 
 A closed, count-driven TCP workload for stressing lori's TCP stack. Every
 behaviour is a CLI flag set by the orchestrator (orchestrate_tcp.py); the engine
-draws nothing on its own -- its `_Config` defaults exist only for hand-running. A
-fixed number of client connections
-is churned through a listener at a bounded concurrency; each client sends a
-stamped payload, the server echoes it, and the client verifies the echo
-byte-for-byte before closing.
+draws nothing on its own -- its `_Config` defaults exist only for hand-running.
+A fixed number of client connections is churned through a listener at a bounded
+concurrency; each client sends a stamped payload, the server echoes it, and the
+client verifies the echo byte-for-byte before closing.
 
 Each swarm dimension is tied to a distinct code path in lori's
 `tcp_connection.pony` (see stress-tests/tcp-swarm/README.md):
@@ -17,30 +16,32 @@ Each swarm dimension is tied to a distinct code path in lori's
 * `--write-shape` (`write` | `writev`) -- a single-buffer `send(ByteSeq)` vs a
   vectored `send(ByteSeqIter)`.
 * `--writev-chunks` (N, writev only) -- how many buffers a single vectored
-  `send` splits its payload into. Above `PonyTCP.writev_max()` (IOV_MAX on POSIX,
-  1 on Windows) lori's `_send_pending_writes()` takes its multi-batch path,
-  sending one `writev_max`-sized batch per pass.
+  `send` splits its payload into. Above `PonyTCP.writev_max()` (IOV_MAX on
+  POSIX, 1 on Windows) lori's `_send_pending_writes()` takes its multi-batch
+  path, sending one `writev_max`-sized batch per pass.
 * `--expect` (0 = off, N = frame size) -- fixed-size framed reads via
   `buffer_until(MakeBufferSize(N))` vs whole-buffer `Streaming` reads.
 * `--close` (`graceful` | `hard`) -- a graceful `close()` (FIN, drains) vs a
   muted `close()`, which lori routes to `hard_close()` (immediate teardown). The
-  client closes only after its whole echo is back, so the hard path drops no data
-  here -- it exercises the distinct teardown/unsubscribe code.
-* `--read-buffer-size` -- the per-connection read buffer size (a `ReadBufferSize`).
-* `--yield-after-reading` -- after this many received bytes, the endpoint returns
-  `YieldReading` to exit the read loop cooperatively (it resumes next turn). This
-  is lori's application-driven yield; there is no byte-threshold read yield in the
-  connection itself.
+  client closes only after its whole echo is back, so the hard path drops no
+  data here -- it exercises the distinct teardown/unsubscribe code.
+* `--read-buffer-size` -- the per-connection read buffer size (a
+  `ReadBufferSize`).
+* `--yield-after-reading` -- after this many received bytes, the endpoint
+  returns `YieldReading` to exit the read loop cooperatively (it resumes next
+  turn). This is lori's application-driven yield; there is no byte-threshold
+  read yield in the connection itself.
 * `--connections` / `--concurrency` -- total connections to churn, and the
   in-flight cap.
-* `--host` / `--port` -- where the listener binds (default `localhost` / ephemeral).
+* `--host` / `--port` -- where the listener binds (default `localhost` /
+  ephemeral).
 
 Because lori's `send()` is fallible and does not queue on backpressure, both
 endpoints handle backpressure explicitly (this is the main way this engine
 differs from a `net`-package echo test):
 
-* The client runs a resumable send-pump: it hands the connection one message at a
-  time while `is_writeable()`, and resumes from `_on_unthrottled` after
+* The client runs a resumable send-pump: it hands the connection one message at
+  a time while `is_writeable()`, and resumes from `_on_unthrottled` after
   backpressure clears.
 * The echo server, when it cannot echo a chunk, stashes that one chunk and
   `mute()`s; `_on_unthrottled` sends the stash and `unmute()`s. It checks
@@ -141,16 +142,17 @@ class val _Config
     // lori's multi-batch send. Default 4; writev only.
     writev_chunks = _usize(m, "writev-chunks", 4).max(1)
     read_buffer_size = _usize(m, "read-buffer-size", 16384)
-    // Clamp expect to the read buffer: buffer_until returns BufferSizeAboveMinimum
-    // when the frame exceeds the read-buffer minimum, so clamping here keeps the
-    // call from failing (the call sites then assert that with _Unreachable). The
-    // orchestrator already draws expect <= read-buffer; this clamp only makes a
-    // directly-run engine safe from that one error. NOTE: it does NOT save a
-    // directly-run engine from a non-dividing --expect: for framed reads to
-    // terminate, payload_size * messages must be a whole number of frames, or the
-    // trailing partial frame is never delivered and the client hangs. The
-    // orchestrator guarantees divisibility by drawing only power-of-two sizes; a
-    // hand-run engine must arrange it itself.
+    // Clamp expect to the read buffer: buffer_until returns
+    // BufferSizeAboveMinimum when the frame exceeds the read-buffer minimum, so
+    // clamping here keeps the call from failing (the call sites then assert
+    // that with _Unreachable). The orchestrator already draws expect <=
+    // read-buffer; this clamp only makes a directly-run engine safe from that
+    // one error. NOTE: it does NOT save a directly-run engine from a
+    // non-dividing --expect: for framed reads to terminate, payload_size *
+    // messages must be a whole number of frames, or the trailing partial frame
+    // is never delivered and the client hangs. The orchestrator guarantees
+    // divisibility by drawing only power-of-two sizes; a hand-run engine must
+    // arrange it itself.
     expect_frame = _usize(m, "expect", 0).min(read_buffer_size)
     yield_after_reading = _usize(m, "yield-after-reading", 16384)
 
@@ -182,13 +184,14 @@ class val _Config
 primitive _Keystream
   """
   The echo oracle checks a per-connection pseudo-random byte stream: the byte at
-  stream position `p` is the low 8 bits of a splitmix64 hash of (seed, p). `seed`
-  identifies the connection. The values are 8-bit, so byte values recur, but the
-  per-position pattern does not: systematic corruption -- a wrong run, a misrouted
-  chunk, a byte from another connection -- is caught near-certainly, while a lone
-  single-byte reorder or duplicate aliases ~1/256. It is generated per position (no
-  template to bulk-copy), the price of a stream unique per connection; the per-run
-  byte volume is bounded by the orchestrator so generating it is not the bottleneck.
+  stream position `p` is the low 8 bits of a splitmix64 hash of (seed, p).
+  `seed` identifies the connection. The values are 8-bit, so byte values recur,
+  but the per-position pattern does not: systematic corruption -- a wrong run, a
+  misrouted chunk, a byte from another connection -- is caught near-certainly,
+  while a lone single-byte reorder or duplicate aliases ~1/256. It is generated
+  per position (no template to bulk-copy), the price of a stream unique per
+  connection; the per-run byte volume is bounded by the orchestrator so
+  generating it is not the bottleneck.
   """
   fun byte(seed: U64, p: USize): U8 =>
     var z: U64 = seed + (p.u64() * 0x9E3779B97F4A7C15)
@@ -223,10 +226,10 @@ primitive _Keystream
     // creates and the budget can let an out-of-memory draw through.
     recover val
       let out = Array[ByteSeq]
-      // Clamp to `total` so a small-payload draw (payload < nchunks) doesn't create
-      // zero-length buffers -- lori's _enqueue drops empties, so they'd be pure
-      // allocation churn. Coverage-neutral: the multi-batch path needs payload >=
-      // chunks, where this leaves nchunks untouched.
+      // Clamp to `total` so a small-payload draw (payload < nchunks) doesn't
+      // create zero-length buffers -- lori's _enqueue drops empties, so they'd
+      // be pure allocation churn. Coverage-neutral: the multi-batch path needs
+      // payload >= chunks, where this leaves nchunks untouched.
       let n = if nchunks == 0 then 1 else nchunks.min(total.max(1)) end
       var done: USize = 0
       var c: USize = 0
@@ -250,16 +253,16 @@ primitive _Keystream
 primitive _KeystreamSelfCheck
   """
   Guards the oracle's core before the run. The client both generates its payload
-  and verifies the echo with `_Keystream.byte`, so a degenerate keystream (constant
-  output, or one that ignores the seed) would make every connection verify against
-  matching-but-wrong data -- the swarm would pass while catching nothing. A sanity
-  guard, not a proof: it checks a representative seed pair for the two properties the
-  oracle relies on, and aborts loudly if either fails.
+  and verifies the echo with `_Keystream.byte`, so a degenerate keystream
+  (constant output, or one that ignores the seed) would make every connection
+  verify against matching-but-wrong data -- the swarm would pass while catching
+  nothing. A sanity guard, not a proof: it checks a representative seed pair for
+  the two properties the oracle relies on, and aborts loudly if either fails.
   """
   fun apply() =>
     // Distinct connection seeds must produce distinct streams, or a byte from
-    // another connection wouldn't fail the check. Seeds 0 and 1 are the first two
-    // connection ids.
+    // another connection wouldn't fail the check. Seeds 0 and 1 are the first
+    // two connection ids.
     var seeds_differ = false
     var p: USize = 0
     while p < 256 do
@@ -269,8 +272,8 @@ primitive _KeystreamSelfCheck
       end
       p = p + 1
     end
-    // A single seed must vary across positions, or corruption within a connection
-    // wouldn't fail the check.
+    // A single seed must vary across positions, or corruption within a
+    // connection wouldn't fail the check.
     var seed_varies = false
     let first = _Keystream.byte(0, 0)
     var q: USize = 1
@@ -282,10 +285,11 @@ primitive _KeystreamSelfCheck
       q = q + 1
     end
     if not (seeds_differ and seed_varies) then
-      // Mirror the file's other abort paths: a FAIL marker on stdout for the log,
-      // plus a diagnostic on stderr, then a non-zero exit.
+      // Mirror the file's other abort paths: a FAIL marker on stdout for the
+      // log, plus a diagnostic on stderr, then a non-zero exit.
       @printf("FAIL: keystream self-check\n".cstring())
-      @fprintf(@pony_os_stderr(),
+      @fprintf(
+        @pony_os_stderr(),
         "FATAL: _Keystream self-check failed -- the echo oracle is degenerate\n"
           .cstring())
       @exit(1)
@@ -326,16 +330,20 @@ actor Spawner
     if not _started then
       _started = true
       // Heartbeat on a wall-clock timer, not per-completion: the orchestrator's
-      // watchdog decides "hang" from whether `done` advances between heartbeats,
-      // so liveness must be signalled on a fixed cadence a slow run can always
-      // meet, independent of how fast connections complete. The interval must
-      // stay well under the orchestrator's --no-progress-seconds window.
+      // watchdog decides "hang" from whether `done` advances between
+      // heartbeats, so liveness must be signalled on a fixed cadence a slow run
+      // can always meet, independent of how fast connections complete. The
+      // interval must stay well under the orchestrator's --no-progress-seconds
+      // window.
       let interval: U64 = 5_000_000_000  // 5s
       _timers(Timer(_HeartbeatTimer(this), interval, interval))
       _refill()
     end
 
   be connection_done(verified: Bool, mismatch: Bool) =>
+    """
+    Records a finished connection's verify result and refills the pool.
+    """
     _inflight = _inflight - 1
     _completed = _completed + 1
     if verified then _verified = _verified + 1 end
@@ -348,16 +356,17 @@ actor Spawner
     _refill()
 
   be heartbeat_tick() =>
-    // Fired by _HeartbeatTimer on a fixed wall-clock cadence. Prints the current
-    // completed count so the orchestrator can see progress advancing; a run that
-    // has stopped completing connections stops advancing `done` (the line keeps
-    // coming), which is how the watchdog tells a slow run from a hang.
+    // Fired by _HeartbeatTimer on a fixed wall-clock cadence. Prints the
+    // current completed count so the orchestrator can see progress advancing; a
+    // run that has stopped completing connections stops advancing `done` (the
+    // line keeps coming), which is how the watchdog tells a slow run from a
+    // hang.
     if not _finished then _emit_heartbeat() end
 
   fun _emit_heartbeat() =>
     let done = _completed + _failed
-    // Flushed: a block-buffered line would not reach the watchdog until the buffer
-    // fills, which would defeat the no-progress detection.
+    // Flushed: a block-buffered line would not reach the watchdog until the
+    // buffer fills, which would defeat the no-progress detection.
     @printf("HEARTBEAT done=%zu of %zu\n".cstring(), done, _config.connections)
     @fflush(@pony_os_stdout())
 
@@ -377,9 +386,9 @@ actor Spawner
     then
       _finished = true
       // A final heartbeat with the true completed count before the timer stops:
-      // the last wave completes after the previous tick, so this records the full
-      // total and resets the watchdog's clock at finish (the shutdown that follows
-      // gets a fresh no-progress window).
+      // the last wave completes after the previous tick, so this records the
+      // full total and resets the watchdog's clock at finish (the shutdown that
+      // follows gets a fresh no-progress window).
       _emit_heartbeat()
       // Stop the heartbeat timer so the runtime can reach quiescence: a live
       // repeating timer is a noisy ASIO event that would keep the program from
@@ -393,35 +402,45 @@ actor Spawner
     end
 
   fun _report() =>
-    // %zu (size_t) is the portable format for USize -- %lu is 32-bit on Windows.
+    // %zu (size_t) is the portable format for USize -- %lu is 32-bit on
+    // Windows.
     // COUPLING: RESULT is printed before any FAIL line. The orchestrator's
     // parse_result reads the tally off RESULT with a \b-anchored `failed=`; the
-    // FAIL line below repeats `connect_failed=`, so a FAIL emitted first would be
-    // misread. (orchestrate_tcp.py: parse_result)
-    @printf(("RESULT connections=%zu spawned=%zu completed=%zu failed=%zu "
-      + "verified=%zu mismatched=%zu\n").cstring(),
-      _config.connections, _spawned, _completed, _failed, _verified,
+    // FAIL line below repeats `connect_failed=`, so a FAIL emitted first would
+    // be misread. (orchestrate_tcp.py: parse_result)
+    @printf(
+      ("RESULT connections=%zu spawned=%zu completed=%zu failed=%zu "
+        + "verified=%zu mismatched=%zu\n").cstring(),
+      _config.connections,
+      _spawned,
+      _completed,
+      _failed,
+      _verified,
       _mismatched)
-    // This is a stress test, not fault injection: every connection must connect,
-    // exchange, and verify its echo. Anything less is a failure -- a connect that
-    // failed (a bug, or a mis-set-up harness exhausting ports), a short echo (a
-    // connection that closed with fewer bytes than it sent), or a byte mismatch.
-    // All of them leave verified < connections.
+    // This is a stress test, not fault injection: every connection must
+    // connect, exchange, and verify its echo. Anything less is a failure -- a
+    // connect that failed (a bug, or a mis-set-up harness exhausting ports), a
+    // short echo (a connection that closed with fewer bytes than it sent), or a
+    // byte mismatch. All of them leave verified < connections.
     if _verified == _config.connections then
       @printf("PASS\n".cstring())
     else
       let truncated = (_completed - _verified) - _mismatched
-      @printf(("FAIL: %zu of %zu connections did not verify "
-        + "(connect_failed=%zu truncated=%zu mismatched=%zu)\n").cstring(),
-        _config.connections - _verified, _config.connections,
-        _failed, truncated, _mismatched)
+      @printf(
+        ("FAIL: %zu of %zu connections did not verify "
+          + "(connect_failed=%zu truncated=%zu mismatched=%zu)\n").cstring(),
+        _config.connections - _verified,
+        _config.connections,
+        _failed,
+        truncated,
+        _mismatched)
       @exit(1)
     end
 
 class _HeartbeatTimer is TimerNotify
   """
-  Fires the Spawner's wall-clock heartbeat. Repeats on a fixed interval until the
-  Spawner disposes the timer when the run finishes.
+  Fires the Spawner's wall-clock heartbeat. Repeats on a fixed interval until
+  the Spawner disposes the timer when the run finishes.
   """
   let _spawner: Spawner
 
@@ -446,11 +465,13 @@ actor SwarmListener is TCPListenerActor
     _spawner = spawner
     _config = config
     _listen_auth = listen_auth
-    // limit = None: unbounded accepts. Concurrency is enforced client-side by the
-    // Spawner (it keeps `concurrency` connections in flight), matching the source
-    // engine's unlimited listener.
-    _tcp_listener = TCPListener(listen_auth, config.host, config.port, this
-      where limit = None)
+    // limit = None: unbounded accepts. Concurrency is enforced client-side by
+    // the Spawner (it keeps `concurrency` connections in flight), matching the
+    // source engine's unlimited listener.
+    _tcp_listener =
+      TCPListener(
+        listen_auth, config.host, config.port, this
+        where limit = None)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -471,14 +492,14 @@ actor SwarmListener is TCPListenerActor
 actor EchoServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   """
   The server half of a connection: echoes every byte it receives straight back,
-  unmodified. The client's keystream oracle checks what comes back, so the server
-  stays deliberately dumb -- any corruption it introduced would be
+  unmodified. The client's keystream oracle checks what comes back, so the
+  server stays deliberately dumb -- any corruption it introduced would be
   indistinguishable from a real stack bug.
 
   Because lori's `send()` does not queue on backpressure, the server handles it:
-  when it cannot echo a chunk it stashes that one chunk and `mute()`s (which stops
-  further reads, so at most one chunk is ever held), then sends the stash and
-  `unmute()`s from `_on_unthrottled`.
+  when it cannot echo a chunk it stashes that one chunk and `mute()`s (which
+  stops further reads, so at most one chunk is ever held), then sends the stash
+  and `unmute()`s from `_on_unthrottled`.
   """
   let _config: _Config
   var _tcp_connection: TCPConnection = TCPConnection.none()
@@ -487,8 +508,9 @@ actor EchoServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
 
   new create(auth: TCPServerAuth, fd: U32, config: _Config) =>
     _config = config
-    _tcp_connection = TCPConnection.server(auth, fd, this, this,
-      config.read_buffer())
+    _tcp_connection =
+      TCPConnection.server(
+        auth, fd, this, this, config.read_buffer())
     _set_framing()
 
   fun ref _connection(): TCPConnection =>
@@ -500,7 +522,7 @@ actor EchoServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
       // buffer minimum) and is >= 1 when set, so buffer_until always succeeds.
       match MakeBufferSize(_config.expect_frame)
       | let b: BufferSize =>
-        match _tcp_connection.buffer_until(b)
+        match \exhaustive\ _tcp_connection.buffer_until(b)
         | BufferUntilSet => None
         | BufferSizeAboveMinimum => _Unreachable()
         end
@@ -532,9 +554,9 @@ actor EchoServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
     KeepReading
 
   fun ref _on_unthrottled() =>
-    // Backpressure cleared. If we stashed a chunk, echo it (we are writeable now)
-    // and resume reading.
-    match _pending = None
+    // Backpressure cleared. If we stashed a chunk, echo it (we are writeable
+    // now) and resume reading.
+    match \exhaustive\ _pending = None
     | let d: Array[U8] iso =>
       _tcp_connection.send(consume d)
       _tcp_connection.unmute()
@@ -545,19 +567,19 @@ actor EchoServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
 actor SwarmClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
   """
   The client half of a connection. On connect it pumps its whole keystream --
-  `messages` payloads of `payload_size` bytes, via `write` or `writev` -- handing
-  the connection one message at a time while it is writeable and resuming from
-  `_on_unthrottled` after backpressure. It verifies the echo byte for byte against
-  the same keystream as it comes back. When it has read back everything it will
-  send it closes (gracefully, or muted for a hard close) and reports to the
-  `Spawner` whether the echo verified.
+  `messages` payloads of `payload_size` bytes, via `write` or `writev` --
+  handing the connection one message at a time while it is writeable and
+  resuming from `_on_unthrottled` after backpressure. It verifies the echo byte
+  for byte against the same keystream as it comes back. When it has read back
+  everything it will send it closes (gracefully, or muted for a hard close) and
+  reports to the `Spawner` whether the echo verified.
   """
   let _spawner: Spawner
   let _config: _Config
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _seed: U64
-  // The total bytes this connection will send (and must read back). Fixed intent,
-  // independent of send progress -- the verify closes on reaching it.
+  // The total bytes this connection will send (and must read back). Fixed
+  // intent, independent of send progress -- the verify closes on reaching it.
   let _target_total: USize
   var _sent_total: USize = 0
   var _messages_sent: USize = 0
@@ -567,18 +589,22 @@ actor SwarmClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
   var _reported: Bool = false
   var _closing: Bool = false
 
-  new create(spawner: Spawner, config: _Config, id: USize,
-    connect_auth: TCPConnectAuth, port: String)
+  new create(spawner: Spawner,
+    config: _Config,
+    id: USize,
+    connect_auth: TCPConnectAuth,
+    port: String)
   =>
     _spawner = spawner
     _config = config
     // The connection id keys its own byte stream; distinct ids give distinct,
-    // unrelated streams (splitmix diffuses adjacent seeds), so a byte from another
-    // connection fails this connection's check.
+    // unrelated streams (splitmix diffuses adjacent seeds), so a byte from
+    // another connection fails this connection's check.
     _seed = id.u64()
     _target_total = config.payload_size * config.messages
-    _tcp_connection = TCPConnection.client(connect_auth, config.host, port, "",
-      this, this, config.read_buffer())
+    _tcp_connection =
+      TCPConnection.client(
+        connect_auth, config.host, port, "", this, this, config.read_buffer())
     _set_framing()
 
   fun ref _connection(): TCPConnection =>
@@ -589,7 +615,7 @@ actor SwarmClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
       // Unreachable branches: see EchoServer._set_framing.
       match MakeBufferSize(_config.expect_frame)
       | let b: BufferSize =>
-        match _tcp_connection.buffer_until(b)
+        match \exhaustive\ _tcp_connection.buffer_until(b)
         | BufferUntilSet => None
         | BufferSizeAboveMinimum => _Unreachable()
         end
@@ -619,11 +645,11 @@ actor SwarmClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
       and _tcp_connection.is_writeable()
     do
       if _config.use_writev then
-        _tcp_connection.send(_Keystream.make_chunks(_seed, _sent_total,
-          _config.payload_size, _config.writev_chunks))
+        _tcp_connection.send(_Keystream.make_chunks(
+          _seed, _sent_total, _config.payload_size, _config.writev_chunks))
       else
-        _tcp_connection.send(_Keystream.make(_seed, _sent_total,
-          _config.payload_size))
+        _tcp_connection.send(_Keystream.make(
+          _seed, _sent_total, _config.payload_size))
       end
       _sent_total = _sent_total + _config.payload_size
       _messages_sent = _messages_sent + 1
@@ -638,10 +664,10 @@ actor SwarmClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
       var i: USize = 0
       while i < n do
         let pos = _recv_count + i
-        // A byte past the total we asked to have echoed back is over-delivery -- a
-        // teardown/re-delivery bug, a class this harness exists to catch. Keep
-        // verifying after _close() (lori's graceful _Closing still reads) so such a
-        // byte is flagged, not silently dropped.
+        // A byte past the total we asked to have echoed back is over-delivery
+        // -- a teardown/re-delivery bug, a class this harness exists to catch.
+        // Keep verifying after _close() (lori's graceful _Closing still reads)
+        // so such a byte is flagged, not silently dropped.
         if pos >= _target_total then
           _mismatch = true
         elseif data(i)? != _Keystream.byte(_seed, pos) then
@@ -695,8 +721,8 @@ actor Main
   run. All the work happens in the `Spawner` and the per-connection actors.
   """
   new create(env: Env) =>
-    // Guard the echo oracle before doing anything: a degenerate keystream would let
-    // the whole swarm pass while catching nothing.
+    // Guard the echo oracle before doing anything: a degenerate keystream would
+    // let the whole swarm pass while catching nothing.
     _KeystreamSelfCheck()
     let config = _Config(_Flags(env.args))
     let spawner = Spawner(config, TCPConnectAuth(env.root))
@@ -704,14 +730,16 @@ actor Main
 
 primitive _Unreachable
   """
-  For a branch the compiler forces us to write but that we know is dead: if it is
-  ever reached, crash with the source location rather than silently continuing on
-  corrupt state.
+  For a branch the compiler forces us to write but that we know is dead: if it
+  is ever reached, crash with the source location rather than silently
+  continuing on corrupt state.
   """
   fun apply(loc: SourceLoc = __loc) =>
-    @fprintf(@pony_os_stderr(),
-      ("Reached unreachable code at %s:%s\n" +
-       "Please open an issue at https://github.com/ponylang/lori/issues\n")
-       .cstring(),
-      loc.file().cstring(), loc.line().string().cstring())
+    @fprintf(
+      @pony_os_stderr(),
+      ("Reached unreachable code at %s:%s\n"
+        + "Please open an issue at https://github.com/ponylang/lori/issues\n")
+        .cstring(),
+      loc.file().cstring(),
+      loc.line().string().cstring())
     @exit(1)

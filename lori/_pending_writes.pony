@@ -14,15 +14,21 @@ class _PendingWrites
   var _total: USize = 0
 
   fun size(): USize =>
-    """Number of queued buffers."""
+    """
+    Number of queued buffers.
+    """
     _buffers.size()
 
   fun total(): USize =>
-    """Bytes still to send, counting the offset into the first buffer."""
+    """
+    Bytes still to send, counting the offset into the first buffer.
+    """
     _total
 
   fun first_offset(): USize =>
-    """Bytes of the first buffer already sent."""
+    """
+    Bytes of the first buffer already sent.
+    """
     _first_offset
 
   fun prefix_total(n: USize): USize =>
@@ -45,7 +51,9 @@ class _PendingWrites
     sum
 
   fun buffers(): this->Array[ByteSeq] =>
-    """The buffers, for `PonyTCP.writev`. Read together with `first_offset`."""
+    """
+    The buffers, for `PonyTCP.writev`. Read together with `first_offset`.
+    """
     _buffers
 
   fun ref push(buffer: ByteSeq) =>

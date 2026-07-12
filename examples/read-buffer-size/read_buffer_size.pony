@@ -16,6 +16,10 @@ actor Main
     Listener(TCPListenAuth(env.root), TCPConnectAuth(env.root), env.out)
 
 actor Listener is TCPListenerActor
+  """
+  Listens on the example's port, creating a server for each accepted connection
+  and launching the client once listening.
+  """
   var _tcp_listener: TCPListener = TCPListener.none()
   let _out: OutStream
   let _connect_auth: TCPConnectAuth
@@ -55,10 +59,12 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
   new create(auth: TCPServerAuth, fd: U32, out: OutStream) =>
     _out = out
     // Start with a small 128-byte buffer for the control phase
-    match MakeReadBufferSize(128)
+    match \exhaustive\ MakeReadBufferSize(128)
     | let rbs: ReadBufferSize =>
-      _tcp_connection = TCPConnection.server(auth, fd, this, this
-        where read_buffer_size = rbs)
+      _tcp_connection =
+        TCPConnection.server(
+          auth, fd, this, this
+          where read_buffer_size = rbs)
     | let _: ValidationFailure =>
       _tcp_connection = TCPConnection.server(auth, fd, this, this)
     end
@@ -103,7 +109,9 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
-  new create(auth: TCPConnectAuth, host: String, port: String,
+  new create(auth: TCPConnectAuth,
+    host: String,
+    port: String,
     out: OutStream)
   =>
     _out = out
@@ -117,15 +125,16 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
     // Send control command
     _tcp_connection.send("BULK")
     // Send bulk data (1KB payload)
-    let payload = recover val
-      let a = Array[U8](1024)
-      var i: USize = 0
-      while i < 1024 do
-        a.push('X')
-        i = i + 1
+    let payload =
+      recover val
+        let a = Array[U8](1024)
+        var i: USize = 0
+        while i < 1024 do
+          a.push('X')
+          i = i + 1
+        end
+        a
       end
-      a
-    end
     _tcp_connection.send(payload)
     _out.print("Client: sent BULK command + 1024 bytes of data")
 

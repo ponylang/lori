@@ -14,12 +14,12 @@ certificate paths resolve correctly.
 
 IMPORTANT: This example treats each `_on_received` callback as delivering a
 complete message ("STARTTLS", "OK", "Ping", "Pong"). TCP is stream-oriented, not
-message-oriented — in a real program, data can arrive split across multiple reads
-or concatenated together. A production implementation needs to account for this;
-common approaches include length-prefixed framing (see the framed-protocol
-example), line-delimited protocols, or using `buffer_until()` to read
-fixed-size chunks. The framing code is omitted here to keep the STARTTLS flow easy to
-follow.
+message-oriented — in a real program, data can arrive split across multiple
+reads or concatenated together. A production implementation needs to account
+for this; common approaches include length-prefixed framing (see the
+framed-protocol example), line-delimited protocols, or using `buffer_until()`
+to read fixed-size chunks. The framing code is omitted here to keep the
+STARTTLS flow easy to follow.
 """
 use "files"
 use "ssl/net"
@@ -53,6 +53,10 @@ actor Main
     Listener(listen_auth, connect_auth, sslctx, env.out)
 
 actor Listener is TCPListenerActor
+  """
+  Listens on the example's port, creating a server for each accepted connection
+  and starting the client once listening.
+  """
   var _tcp_listener: TCPListener = TCPListener.none()
   let _out: OutStream
   let _connect_auth: TCPConnectAuth
@@ -84,11 +88,17 @@ actor Listener is TCPListenerActor
     _out.print("Unable to open listener")
 
 actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  """
+  Replies to a STARTTLS request by upgrading to TLS, then answers each Ping with
+  Pong.
+  """
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _sslctx: SSLContext val
   let _out: OutStream
 
-  new create(auth: TCPServerAuth, sslctx: SSLContext val, fd: U32,
+  new create(auth: TCPServerAuth,
+    sslctx: SSLContext val,
+    fd: U32,
     out: OutStream)
   =>
     _out = out
@@ -120,6 +130,10 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
     _out.print("Server: TLS handshake failed")
 
 actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  """
+  Requests a STARTTLS upgrade, upgrades to TLS on OK, then exchanges Ping/Pong
+  over the encrypted connection.
+  """
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _sslctx: SSLContext val
   let _out: OutStream

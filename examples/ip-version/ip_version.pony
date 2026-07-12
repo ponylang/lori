@@ -18,20 +18,27 @@ actor Main
     IP4EchoListener(listen_auth, connect_auth, env.out)
 
 actor IP4EchoListener is TCPListenerActor
+  """
+  Listens on the example's port over IPv4, creating an echo server for each
+  accepted connection and launching the IPv4 client once listening.
+  """
   var _tcp_listener: TCPListener = TCPListener.none()
   let _out: OutStream
   let _server_auth: TCPServerAuth
   let _connect_auth: TCPConnectAuth
   var _client: (IP4EchoClient | None) = None
 
-  new create(listen_auth: TCPListenAuth, connect_auth: TCPConnectAuth,
+  new create(listen_auth: TCPListenAuth,
+    connect_auth: TCPConnectAuth,
     out: OutStream)
   =>
     _out = out
     _connect_auth = connect_auth
     _server_auth = TCPServerAuth(listen_auth)
-    _tcp_listener = TCPListener(listen_auth, "127.0.0.1", "7674", this
-      where ip_version = IP4)
+    _tcp_listener =
+      TCPListener(
+        listen_auth, "127.0.0.1", "7674", this
+        where ip_version = IP4)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -50,6 +57,9 @@ actor IP4EchoListener is TCPListenerActor
     _client = IP4EchoClient(_connect_auth, _out)
 
 actor IP4Echoer is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  """
+  Echoes back over IPv4 whatever it receives.
+  """
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
@@ -69,13 +79,17 @@ actor IP4Echoer is (TCPConnectionActor & ServerLifecycleEventReceiver)
     KeepReading
 
 actor IP4EchoClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  """
+  Connects over IPv4, sends a message, prints the echoed reply, and closes.
+  """
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
   new create(auth: TCPConnectAuth, out: OutStream) =>
     _out = out
-    _tcp_connection = TCPConnection.client(
-      auth, "127.0.0.1", "7674", "", this, this where ip_version = IP4)
+    _tcp_connection =
+      TCPConnection.client(
+        auth, "127.0.0.1", "7674", "", this, this where ip_version = IP4)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection

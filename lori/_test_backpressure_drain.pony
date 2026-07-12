@@ -51,11 +51,12 @@ actor \nodoc\ _TestBackpressureDrainListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      ifdef linux then "127.0.0.2" else "localhost" end,
-      "9770",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "9770",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -92,16 +93,18 @@ actor \nodoc\ _TestBackpressureDrainServer
   var _got_ready: Bool = false
   var _payload_token: (SendToken | None) = None
 
-  new create(fd: U32, h: TestHelper,
+  new create(fd: U32,
+    h: TestHelper,
     listener: _TestBackpressureDrainListener)
   =>
     _h = h
     _listener = listener
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -143,7 +146,7 @@ actor \nodoc\ _TestBackpressureDrainServer
       _tcp_connection.set_so_sndbuf(16384)
       _payload_size = 256_000
       let payload = recover iso Array[U8].init('x', _payload_size) end
-      match _tcp_connection.send(consume payload)
+      match \exhaustive\ _tcp_connection.send(consume payload)
       | let t: SendToken =>
         _payload_token = t
         _h.complete_action("server queued payload")
@@ -167,13 +170,14 @@ actor \nodoc\ _TestBackpressureDrainClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      ifdef linux then "127.0.0.2" else "localhost" end,
-      "9770",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "9770",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -260,11 +264,12 @@ actor \nodoc\ _TestWriteOnlyEventReadRecoveryListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      ifdef linux then "127.0.0.2" else "localhost" end,
-      "9771",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "9771",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -300,16 +305,18 @@ actor \nodoc\ _TestWriteOnlyEventReadRecoveryServer
   var _payload_size: USize = 0
   var _got_ready: Bool = false
 
-  new create(fd: U32, h: TestHelper,
+  new create(fd: U32,
+    h: TestHelper,
     listener: _TestWriteOnlyEventReadRecoveryListener)
   =>
     _h = h
     _listener = listener
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -342,7 +349,7 @@ actor \nodoc\ _TestWriteOnlyEventReadRecoveryServer
       _tcp_connection.set_so_sndbuf(16384)
       _payload_size = 256_000
       let payload = recover iso Array[U8].init('x', _payload_size) end
-      match _tcp_connection.send(consume payload)
+      match \exhaustive\ _tcp_connection.send(consume payload)
       | let _: SendToken =>
         _h.complete_action("server queued payload")
       | let _: SendError =>
@@ -365,13 +372,14 @@ actor \nodoc\ _TestWriteOnlyEventReadRecoveryClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      ifdef linux then "127.0.0.2" else "localhost" end,
-      "9771",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "9771",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -460,11 +468,12 @@ actor \nodoc\ _TestReadableEventWriteRecoveryListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      ifdef linux then "127.0.0.2" else "localhost" end,
-      "9772",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "9772",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -505,7 +514,8 @@ actor \nodoc\ _TestReadableEventWriteRecoveryServer
   var _got_frame: Bool = false
   var _poke_muted: Bool = false
 
-  new create(fd: U32, h: TestHelper,
+  new create(fd: U32,
+    h: TestHelper,
     listener: _TestReadableEventWriteRecoveryListener)
   =>
     _h = h
@@ -519,12 +529,13 @@ actor \nodoc\ _TestReadableEventWriteRecoveryServer
         _Unreachable()
         DefaultReadBufferSize()
       end
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this,
-      rbs)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this,
+        rbs)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -593,13 +604,14 @@ actor \nodoc\ _TestReadableEventWriteRecoveryClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      ifdef linux then "127.0.0.2" else "localhost" end,
-      "9772",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "9772",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection

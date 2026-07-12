@@ -31,8 +31,9 @@ class \nodoc\ iso _TestStartTLSPingPong is UnitTest
     h.expect_action("server tls ready")
     h.expect_action("client got pong")
 
-    let listener = _TestStartTLSListener(
-      port, consume sslctx, h)
+    let listener =
+      _TestStartTLSListener(
+        port, consume sslctx, h)
     h.dispose_when_done(listener)
 
     h.long_test(5_000_000_000)
@@ -50,13 +51,14 @@ actor \nodoc\ _TestStartTLSClient
     _sslctx = sslctx
     _h = h
 
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(h.env.root),
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(h.env.root),
+        "localhost",
+        port,
+        "",
+        this,
+        this)
     match MakeBufferSize(2)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -105,11 +107,12 @@ actor \nodoc\ _TestStartTLSServer
     _sslctx = sslctx
     _h = h
 
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
     match MakeBufferSize(8)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -156,11 +159,12 @@ actor \nodoc\ _TestStartTLSListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -174,8 +178,9 @@ actor \nodoc\ _TestStartTLSListener is TCPListenerActor
     end
 
   fun ref _on_listening() =>
-    _client = _TestStartTLSClient(
-      _port, _sslctx, _h)
+    _client =
+      _TestStartTLSClient(
+        _port, _sslctx, _h)
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestStartTLSListener")
@@ -205,8 +210,9 @@ class \nodoc\ iso _TestStartTLSPreconditions is UnitTest
     h.expect_action("already tls verified")
     h.expect_action("not ready verified")
 
-    let listener = _TestStartTLSPreconditionsListener(
-      consume sslctx, h)
+    let listener =
+      _TestStartTLSPreconditionsListener(
+        consume sslctx, h)
     h.dispose_when_done(listener)
 
     h.long_test(5_000_000_000)
@@ -227,13 +233,14 @@ actor \nodoc\ _TestStartTLSPreconditionsNotConnectedClient
     _sslctx = sslctx
     _h = h
 
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(h.env.root),
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(h.env.root),
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -265,13 +272,14 @@ actor \nodoc\ _TestStartTLSPreconditionsAlreadyTLSClient
     _sslctx = sslctx
     _h = h
 
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(h.env.root),
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(h.env.root),
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -307,13 +315,14 @@ actor \nodoc\ _TestStartTLSPreconditionsNotReadyClient
     _sslctx = sslctx
     _h = h
 
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(h.env.root),
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(h.env.root),
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -341,11 +350,12 @@ actor \nodoc\ _TestStartTLSPreconditionsListener is TCPListenerActor
   new create(sslctx: SSLContext val, h: TestHelper) =>
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9734",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9734",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -404,8 +414,9 @@ class \nodoc\ iso _TestStartTLSSendDuringUpgrade is UnitTest
 
     h.expect_action("send blocked during upgrade")
 
-    let listener = _TestStartTLSSendDuringUpgradeListener(
-      port, consume sslctx, h)
+    let listener =
+      _TestStartTLSSendDuringUpgradeListener(
+        port, consume sslctx, h)
     h.dispose_when_done(listener)
 
     h.long_test(5_000_000_000)
@@ -420,20 +431,21 @@ actor \nodoc\ _TestStartTLSSendDuringUpgradeClient
     _sslctx = sslctx
     _h = h
 
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(h.env.root),
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(h.env.root),
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _on_connected() =>
     // Initiate TLS upgrade
-    match _tcp_connection.start_tls(_sslctx, "localhost")
+    match \exhaustive\ _tcp_connection.start_tls(_sslctx, "localhost")
     | None =>
       // Now in _TLSUpgrading — send() should fail
       match \exhaustive\ _tcp_connection.send("should fail")
@@ -460,11 +472,12 @@ actor \nodoc\ _TestStartTLSSendDuringUpgradeListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -479,8 +492,9 @@ actor \nodoc\ _TestStartTLSSendDuringUpgradeListener is TCPListenerActor
     try (_client as _TestStartTLSSendDuringUpgradeClient).dispose() end
 
   fun ref _on_listening() =>
-    _client = _TestStartTLSSendDuringUpgradeClient(
-      _port, _sslctx, _h)
+    _client =
+      _TestStartTLSSendDuringUpgradeClient(
+        _port, _sslctx, _h)
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestStartTLSSendDuringUpgradeListener")
@@ -512,8 +526,9 @@ class \nodoc\ iso _TestStartTLSHandshakeFailure is UnitTest
     h.expect_action("tls failure received")
     h.expect_action("on closed received")
 
-    let listener = _TestStartTLSHandshakeFailureListener(
-      port, consume sslctx, h)
+    let listener =
+      _TestStartTLSHandshakeFailureListener(
+        port, consume sslctx, h)
     h.dispose_when_done(listener)
 
     h.long_test(5_000_000_000)
@@ -532,13 +547,14 @@ actor \nodoc\ _TestStartTLSHandshakeFailureClient
     _sslctx = sslctx
     _h = h
 
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(h.env.root),
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(h.env.root),
+        "localhost",
+        port,
+        "",
+        this,
+        this)
     match MakeBufferSize(2)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -585,11 +601,12 @@ actor \nodoc\ _TestStartTLSHandshakeFailureServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -621,11 +638,12 @@ actor \nodoc\ _TestStartTLSHandshakeFailureListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -640,8 +658,9 @@ actor \nodoc\ _TestStartTLSHandshakeFailureListener is TCPListenerActor
     try (_client as _TestStartTLSHandshakeFailureClient).dispose() end
 
   fun ref _on_listening() =>
-    _client = _TestStartTLSHandshakeFailureClient(
-      _port, _sslctx, _h)
+    _client =
+      _TestStartTLSHandshakeFailureClient(
+        _port, _sslctx, _h)
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestStartTLSHandshakeFailureListener")
@@ -671,8 +690,9 @@ class \nodoc\ iso _TestStartTLSIsWriteableDuringUpgrade is UnitTest
 
     h.expect_action("is_writeable false during upgrade")
 
-    let listener = _TestStartTLSIsWriteableListener(
-      port, consume sslctx, h)
+    let listener =
+      _TestStartTLSIsWriteableListener(
+        port, consume sslctx, h)
     h.dispose_when_done(listener)
 
     h.long_test(5_000_000_000)
@@ -687,20 +707,21 @@ actor \nodoc\ _TestStartTLSIsWriteableClient
     _sslctx = sslctx
     _h = h
 
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(h.env.root),
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(h.env.root),
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _on_connected() =>
     // Initiate TLS upgrade
-    match _tcp_connection.start_tls(_sslctx, "localhost")
+    match \exhaustive\ _tcp_connection.start_tls(_sslctx, "localhost")
     | None =>
       // Now in _TLSUpgrading — is_writeable() should be false
       _h.assert_false(
@@ -723,11 +744,12 @@ actor \nodoc\ _TestStartTLSIsWriteableListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -742,8 +764,9 @@ actor \nodoc\ _TestStartTLSIsWriteableListener is TCPListenerActor
     try (_client as _TestStartTLSIsWriteableClient).dispose() end
 
   fun ref _on_listening() =>
-    _client = _TestStartTLSIsWriteableClient(
-      _port, _sslctx, _h)
+    _client =
+      _TestStartTLSIsWriteableClient(
+        _port, _sslctx, _h)
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestStartTLSIsWriteableListener")
@@ -782,8 +805,9 @@ class \nodoc\ iso _TestStartTLSAuthFailure is UnitTest
     h.expect_action("tls auth failure received")
     h.expect_action("on closed received")
 
-    let listener = _TestStartTLSAuthFailureListener(
-      port, consume server_sslctx, consume client_sslctx, h)
+    let listener =
+      _TestStartTLSAuthFailureListener(
+        port, consume server_sslctx, consume client_sslctx, h)
     h.dispose_when_done(listener)
 
     h.long_test(5_000_000_000)
@@ -803,13 +827,14 @@ actor \nodoc\ _TestStartTLSAuthFailureClient
     _sslctx = sslctx
     _h = h
 
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(h.env.root),
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(h.env.root),
+        "localhost",
+        port,
+        "",
+        this,
+        this)
     match MakeBufferSize(2)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -836,7 +861,7 @@ actor \nodoc\ _TestStartTLSAuthFailureClient
     _h.fail("TLS handshake should not have succeeded")
 
   fun ref _on_tls_failure(reason: TLSFailureReason) =>
-    match reason
+    match \exhaustive\ reason
     | TLSAuthFailed =>
       _h.complete_action("tls auth failure received")
     | TLSGeneralError =>
@@ -861,11 +886,12 @@ actor \nodoc\ _TestStartTLSAuthFailureServer
     _sslctx = sslctx
     _h = h
 
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
     match MakeBufferSize(8)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -894,18 +920,21 @@ actor \nodoc\ _TestStartTLSAuthFailureListener is TCPListenerActor
   var _client: (_TestStartTLSAuthFailureClient | None) = None
   var _server: (_TestStartTLSAuthFailureServer | None) = None
 
-  new create(port: String, server_sslctx: SSLContext val,
-    client_sslctx: SSLContext val, h: TestHelper)
+  new create(port: String,
+    server_sslctx: SSLContext val,
+    client_sslctx: SSLContext val,
+    h: TestHelper)
   =>
     _port = port
     _server_sslctx = server_sslctx
     _client_sslctx = client_sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -920,8 +949,9 @@ actor \nodoc\ _TestStartTLSAuthFailureListener is TCPListenerActor
     try (_client as _TestStartTLSAuthFailureClient).dispose() end
 
   fun ref _on_listening() =>
-    _client = _TestStartTLSAuthFailureClient(
-      _port, _client_sslctx, _h)
+    _client =
+      _TestStartTLSAuthFailureClient(
+        _port, _client_sslctx, _h)
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestStartTLSAuthFailureListener")
@@ -953,8 +983,9 @@ class \nodoc\ iso _TestSetTimerAfterTLSUpgrade is UnitTest
     h.expect_action("set_timer succeeded")
     h.expect_action("timer fired")
 
-    let listener = _TestSetTimerAfterTLSUpgradeListener(
-      port, consume sslctx, h)
+    let listener =
+      _TestSetTimerAfterTLSUpgradeListener(
+        port, consume sslctx, h)
     h.dispose_when_done(listener)
 
     h.long_test(5_000_000_000)
@@ -973,13 +1004,14 @@ actor \nodoc\ _TestSetTimerAfterTLSUpgradeClient
     _sslctx = sslctx
     _h = h
 
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(h.env.root),
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(h.env.root),
+        "localhost",
+        port,
+        "",
+        this,
+        this)
     match MakeBufferSize(2)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -1004,9 +1036,9 @@ actor \nodoc\ _TestSetTimerAfterTLSUpgradeClient
     KeepReading
 
   fun ref _on_tls_ready() =>
-    match MakeTimerDuration(2_000)
+    match \exhaustive\ MakeTimerDuration(2_000)
     | let d: TimerDuration =>
-      match _tcp_connection.set_timer(d)
+      match \exhaustive\ _tcp_connection.set_timer(d)
       | let t: TimerToken =>
         _expected_token = t
         _h.complete_action("set_timer succeeded")
@@ -1045,11 +1077,12 @@ actor \nodoc\ _TestSetTimerAfterTLSUpgradeServer
     _sslctx = sslctx
     _h = h
 
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
     match MakeBufferSize(8)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -1089,11 +1122,12 @@ actor \nodoc\ _TestSetTimerAfterTLSUpgradeListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -1108,8 +1142,9 @@ actor \nodoc\ _TestSetTimerAfterTLSUpgradeListener is TCPListenerActor
     try (_client as _TestSetTimerAfterTLSUpgradeClient).dispose() end
 
   fun ref _on_listening() =>
-    _client = _TestSetTimerAfterTLSUpgradeClient(
-      _port, _sslctx, _h)
+    _client =
+      _TestSetTimerAfterTLSUpgradeClient(
+        _port, _sslctx, _h)
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestSetTimerAfterTLSUpgradeListener")
@@ -1158,11 +1193,12 @@ actor \nodoc\ _TestStartTLSHardCloseListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -1191,13 +1227,14 @@ actor \nodoc\ _TestStartTLSHardCloseClient
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _sslctx = sslctx
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(h.env.root),
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(h.env.root),
+        "localhost",
+        port,
+        "",
+        this,
+        this)
     match MakeBufferSize(2)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -1245,11 +1282,12 @@ actor \nodoc\ _TestStartTLSHardCloseServer
   new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
     _sslctx = sslctx
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
     match MakeBufferSize(8)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end

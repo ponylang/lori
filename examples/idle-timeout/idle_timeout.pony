@@ -16,6 +16,9 @@ actor Main
     IdleTimeoutServer(TCPListenAuth(env.root), "", "7672", env.out)
 
 actor IdleTimeoutServer is TCPListenerActor
+  """
+  Listens on the example's port and hands each accepted connection to an echoer.
+  """
   var _tcp_listener: TCPListener = TCPListener.none()
   let _out: OutStream
   let _server_auth: TCPServerAuth
@@ -46,6 +49,10 @@ actor IdleTimeoutServer is TCPListenerActor
 
 actor IdleTimeoutEchoer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  """
+  Echoes received data back and closes the connection after 10 seconds of
+  inactivity.
+  """
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 

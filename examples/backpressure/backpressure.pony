@@ -17,6 +17,9 @@ actor Main
     Listener(TCPListenAuth(env.root), TCPConnectAuth(env.root), env.out)
 
 actor Listener is TCPListenerActor
+  """
+  Listens on the example's port and starts the flood client once listening.
+  """
   var _tcp_listener: TCPListener = TCPListener.none()
   let _out: OutStream
   let _connect_auth: TCPConnectAuth
@@ -85,7 +88,9 @@ actor Flood is (TCPConnectionActor & ClientLifecycleEventReceiver)
   var _sends_confirmed: USize = 0
   var _throttle_count: USize = 0
 
-  new create(auth: TCPConnectAuth, host: String, port: String,
+  new create(auth: TCPConnectAuth,
+    host: String,
+    port: String,
     out: OutStream)
   =>
     _out = out

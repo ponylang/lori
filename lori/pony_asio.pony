@@ -11,9 +11,13 @@ use @pony_asio_event_setnsec[U32](event: AsioEventID, nsec: U64)
 use @pony_asio_event_unsubscribe[None](event: AsioEventID)
 
 primitive PonyAsio
+  """
+  Wrappers for the runtime's `pony_asio_event_*` functions. Used internally to
+  subscribe socket and timer events with the ASIO backend.
+  """
   fun create_event(the_actor: AsioEventNotify, fd: U32): AsioEventID =>
-    @pony_asio_event_create(the_actor, fd, AsioEvent.read_write_oneshot(), 0,
-      true)
+    @pony_asio_event_create(
+      the_actor, fd, AsioEvent.read_write_oneshot(), 0, true)
 
   fun destroy(event: AsioEventID) =>
     @pony_asio_event_destroy(event)

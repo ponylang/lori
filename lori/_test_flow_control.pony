@@ -44,11 +44,12 @@ actor \nodoc\ _TestMuteListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "6666",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "6666",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -80,13 +81,14 @@ actor \nodoc\ _TestMuteClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "6666",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "6666",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -98,8 +100,8 @@ actor \nodoc\ _TestMuteClient
     _h.fail("client connect failed")
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
-     _tcp_connection.send("it's sad that you won't ever read this")
-     _h.complete_action("client sent data")
+    _tcp_connection.send("it's sad that you won't ever read this")
+    _h.complete_action("client sent data")
     KeepReading
 
 actor \nodoc\ _TestMuteServer
@@ -109,11 +111,12 @@ actor \nodoc\ _TestMuteServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -169,11 +172,12 @@ actor \nodoc\ _TestUnmuteListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "6767",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "6767",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -205,13 +209,14 @@ actor \nodoc\ _TestUnmuteClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "6767",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "6767",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -223,8 +228,8 @@ actor \nodoc\ _TestUnmuteClient
     _h.fail("client connect failed")
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
-     _tcp_connection.send("i'm happy you will receive this")
-     _h.complete_action("client sent data")
+    _tcp_connection.send("i'm happy you will receive this")
+    _h.complete_action("client sent data")
     KeepReading
 
 actor \nodoc\ _TestUnmuteServer
@@ -234,11 +239,12 @@ actor \nodoc\ _TestUnmuteServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -310,11 +316,12 @@ actor \nodoc\ _TestMuteWithFullReadBufferListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "6868",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "6868",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -351,13 +358,14 @@ actor \nodoc\ _TestMuteWithFullReadBufferClient
   =>
     _h = h
     _listener = listener
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "6868",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "6868",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -374,17 +382,18 @@ actor \nodoc\ _TestMuteWithFullReadBufferClient
     // buffer now that it has taken the PING out, so one read of it can fill the
     // buffer. Byte n is n modulo 256, so the server can tell where in the
     // payload each message it gets belongs.
-    let payload = recover val
-      let a = Array[U8](1024)
-      var i: USize = 0
-      while i < 1024 do
-        a.push((i % 256).u8())
-        i = i + 1
+    let payload =
+      recover val
+        let a = Array[U8](1024)
+        var i: USize = 0
+        while i < 1024 do
+          a.push((i % 256).u8())
+          i = i + 1
+        end
+        a
       end
-      a
-    end
 
-    match _tcp_connection.send(payload)
+    match \exhaustive\ _tcp_connection.send(payload)
     | let t: SendToken => _payload_token = t
     | let _: SendError =>
       _h.fail("client could not send the payload")
@@ -415,12 +424,13 @@ actor \nodoc\ _TestMuteWithFullReadBufferServer
     _h = h
     match \exhaustive\ MakeReadBufferSize(256)
     | let r: ReadBufferSize =>
-      _tcp_connection = TCPConnection.server(
-        TCPServerAuth(_h.env.root),
-        fd,
-        this,
-        this,
-        r)
+      _tcp_connection =
+        TCPConnection.server(
+          TCPServerAuth(_h.env.root),
+          fd,
+          this,
+          this,
+          r)
     | let _: ValidationFailure =>
       _h.fail("MakeReadBufferSize(256) should succeed")
       _h.complete(false)
@@ -490,7 +500,7 @@ actor \nodoc\ _TestMuteWithFullReadBufferServer
       _tcp_connection.mute()
       match \exhaustive\ MakeTimerDuration(500)
       | let d: TimerDuration =>
-        match _tcp_connection.set_timer(d)
+        match \exhaustive\ _tcp_connection.set_timer(d)
         | let _: TimerToken => None
         | let _: SetTimerError =>
           _h.fail("set_timer returned error")
@@ -607,11 +617,12 @@ actor \nodoc\ _TestSSLMuteListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -640,14 +651,15 @@ actor \nodoc\ _TestSSLMuteClient
 
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(h.env.root),
-      sslctx,
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(h.env.root),
+        sslctx,
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -684,12 +696,13 @@ actor \nodoc\ _TestSSLMuteServer
 
   new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
     match \exhaustive\ MakeBufferSize(4)
     | let b: BufferSize => _tcp_connection.buffer_until(b)
     | let _: ValidationFailure =>
@@ -721,9 +734,9 @@ actor \nodoc\ _TestSSLMuteServer
     if _mute_on.contains(_received) then
       _muted = true
       _tcp_connection.mute()
-      match MakeTimerDuration(500)
+      match \exhaustive\ MakeTimerDuration(500)
       | let d: TimerDuration =>
-        match _tcp_connection.set_timer(d)
+        match \exhaustive\ _tcp_connection.set_timer(d)
         | let _: TimerToken => None
         | let _: SetTimerError =>
           _h.fail("set_timer returned error")
@@ -807,11 +820,12 @@ actor \nodoc\ _TestSSLMuteCloseListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -840,14 +854,15 @@ actor \nodoc\ _TestSSLMuteCloseClient
 
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(h.env.root),
-      sslctx,
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(h.env.root),
+        sslctx,
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -868,12 +883,13 @@ actor \nodoc\ _TestSSLMuteCloseServer
 
   new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
     match \exhaustive\ MakeBufferSize(4)
     | let b: BufferSize => _tcp_connection.buffer_until(b)
     | let _: ValidationFailure =>
@@ -895,9 +911,9 @@ actor \nodoc\ _TestSSLMuteCloseServer
 
     _h.complete_action("server received")
     _tcp_connection.mute()
-    match MakeTimerDuration(500)
+    match \exhaustive\ MakeTimerDuration(500)
     | let d: TimerDuration =>
-      match _tcp_connection.set_timer(d)
+      match \exhaustive\ _tcp_connection.set_timer(d)
       | let _: TimerToken => None
       | let _: SetTimerError =>
         _h.fail("set_timer returned error")

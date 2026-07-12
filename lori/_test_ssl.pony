@@ -26,8 +26,9 @@ class \nodoc\ iso _TestSSLPingPong is UnitTest
 
     let pings_to_send: I32 = 100
 
-    let listener = _TestSSLPongerListener(
-      port, consume sslctx, pings_to_send, h)
+    let listener =
+      _TestSSLPongerListener(
+        port, consume sslctx, pings_to_send, h)
     h.dispose_when_done(listener)
 
     h.long_test(5_000_000_000)
@@ -46,14 +47,15 @@ actor \nodoc\ _TestSSLPinger
     _pings_to_send = pings_to_send
     _h = h
 
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(h.env.root),
-      sslctx,
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(h.env.root),
+        sslctx,
+        "localhost",
+        port,
+        "",
+        this,
+        this)
     match MakeBufferSize(4)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -92,12 +94,13 @@ actor \nodoc\ _TestSSLPonger
     _pings_to_receive = pings_to_receive
     _h = h
 
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
     match MakeBufferSize(4)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -133,11 +136,12 @@ actor \nodoc\ _TestSSLPongerListener is TCPListenerActor
     _sslctx = sslctx
     _pings_to_receive = pings_to_receive
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -151,8 +155,9 @@ actor \nodoc\ _TestSSLPongerListener is TCPListenerActor
     end
 
   fun ref _on_listening() =>
-    _pinger = _TestSSLPinger(
-      _port, _sslctx, _pings_to_receive, _h)
+    _pinger =
+      _TestSSLPinger(
+        _port, _sslctx, _pings_to_receive, _h)
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestSSLPongerListener")
@@ -184,8 +189,9 @@ class \nodoc\ iso _TestSSLSendv is UnitTest
     h.expect_action("data verified")
     h.expect_action("on_sent fired")
 
-    let listener = _TestSSLSendvListener(
-      port, consume sslctx, h)
+    let listener =
+      _TestSSLSendvListener(
+        port, consume sslctx, h)
     h.dispose_when_done(listener)
 
     h.long_test(5_000_000_000)
@@ -204,11 +210,12 @@ actor \nodoc\ _TestSSLSendvListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -238,14 +245,15 @@ actor \nodoc\ _TestSSLSendvClient
   =>
     _h = h
 
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(h.env.root),
-      sslctx,
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(h.env.root),
+        sslctx,
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -281,12 +289,13 @@ actor \nodoc\ _TestSSLSendvServer
   =>
     _h = h
 
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
     match MakeBufferSize(15)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -303,7 +312,8 @@ actor \nodoc\ _TestSSLSendvServer
 class \nodoc\ iso _TestSSLHandshakeFailureClient is UnitTest
   """
   Test that an SSL client whose handshake fails (peer sends garbage) gets
-  `_on_connection_failure(ConnectionFailedSSL)` via `_hard_close_ssl_handshaking`.
+  `_on_connection_failure(ConnectionFailedSSL)` via
+  `_hard_close_ssl_handshaking`.
   """
   fun name(): String => "SSLHandshakeFailureClient"
 
@@ -324,8 +334,9 @@ class \nodoc\ iso _TestSSLHandshakeFailureClient is UnitTest
 
     h.expect_action("client failure")
 
-    let listener = _TestSSLHandshakeFailureClientListener(
-      port, consume sslctx, h)
+    let listener =
+      _TestSSLHandshakeFailureClientListener(
+        port, consume sslctx, h)
     h.dispose_when_done(listener)
 
     h.long_test(5_000_000_000)
@@ -345,11 +356,12 @@ actor \nodoc\ _TestSSLHandshakeFailureClientListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -361,8 +373,9 @@ actor \nodoc\ _TestSSLHandshakeFailureClientListener is TCPListenerActor
     try (_client as _TestSSLHandshakeFailureSSLClient).dispose() end
 
   fun ref _on_listening() =>
-    _client = _TestSSLHandshakeFailureSSLClient(
-      _port, _sslctx, _h)
+    _client =
+      _TestSSLHandshakeFailureSSLClient(
+        _port, _sslctx, _h)
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestSSLHandshakeFailureClientListener")
@@ -377,11 +390,12 @@ actor \nodoc\ _TestSSLHandshakeFailurePlainServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -400,14 +414,15 @@ actor \nodoc\ _TestSSLHandshakeFailureSSLClient
 
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(h.env.root),
-      sslctx,
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(h.env.root),
+        sslctx,
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -447,8 +462,9 @@ class \nodoc\ iso _TestSSLHandshakeFailureServer is UnitTest
 
     h.expect_action("server failure")
 
-    let listener = _TestSSLHandshakeFailureServerListener(
-      port, consume sslctx, h)
+    let listener =
+      _TestSSLHandshakeFailureServerListener(
+        port, consume sslctx, h)
     h.dispose_when_done(listener)
 
     h.long_test(5_000_000_000)
@@ -468,11 +484,12 @@ actor \nodoc\ _TestSSLHandshakeFailureServerListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -499,12 +516,13 @@ actor \nodoc\ _TestSSLHandshakeFailureSSLServer
 
   new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -513,7 +531,7 @@ actor \nodoc\ _TestSSLHandshakeFailureSSLServer
     _h.fail("Should not have started")
 
   fun ref _on_start_failure(reason: StartFailureReason) =>
-    match reason
+    match \exhaustive\ reason
     | StartFailedSSL =>
       _h.complete_action("server failure")
     end
@@ -528,13 +546,14 @@ actor \nodoc\ _TestSSLHandshakeFailurePlainClient
 
   new create(port: String, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(h.env.root),
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(h.env.root),
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -568,8 +587,9 @@ class \nodoc\ iso _TestSSLHandshakeCompleteTransitionsToOpen is UnitTest
     h.expect_action("is_open verified")
     h.expect_action("send returns token")
 
-    let listener = _TestSSLTransitionToOpenListener(
-      port, consume sslctx, h)
+    let listener =
+      _TestSSLTransitionToOpenListener(
+        port, consume sslctx, h)
     h.dispose_when_done(listener)
 
     h.long_test(5_000_000_000)
@@ -585,11 +605,12 @@ actor \nodoc\ _TestSSLTransitionToOpenListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -613,14 +634,15 @@ actor \nodoc\ _TestSSLTransitionToOpenClient
 
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(h.env.root),
-      sslctx,
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(h.env.root),
+        sslctx,
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -644,12 +666,13 @@ actor \nodoc\ _TestSSLTransitionToOpenServer
 
   new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -683,8 +706,9 @@ class \nodoc\ iso _TestSSLIsWriteableDuringHandshake is UnitTest
 
     h.expect_action("is_writeable false during ssl handshake")
 
-    let listener = _TestSSLIsWriteableListener(
-      port, consume sslctx, h)
+    let listener =
+      _TestSSLIsWriteableListener(
+        port, consume sslctx, h)
     h.dispose_when_done(listener)
 
     h.long_test(5_000_000_000)
@@ -701,11 +725,12 @@ actor \nodoc\ _TestSSLIsWriteableListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -739,12 +764,13 @@ actor \nodoc\ _TestSSLIsWriteableServer
 
   new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
     check_writeable()
 
   fun ref _connection(): TCPConnection =>
@@ -770,13 +796,14 @@ actor \nodoc\ _TestSSLIsWriteablePlainClient
 
   new create(port: String, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -829,11 +856,12 @@ actor \nodoc\ _TestSSLHardCloseReceiveListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -860,14 +888,15 @@ actor \nodoc\ _TestSSLHardCloseReceiveClient
 
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(_h.env.root),
-      sslctx,
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(_h.env.root),
+        sslctx,
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -884,12 +913,13 @@ actor \nodoc\ _TestSSLHardCloseReceiveServer
 
   new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -937,8 +967,9 @@ class \nodoc\ iso _TestSSLHardCloseOnConnected is UnitTest
 
     h.expect_action("client closed")
 
-    let listener = _TestSSLHardCloseOnConnectedListener(
-      port, consume sslctx, h)
+    let listener =
+      _TestSSLHardCloseOnConnectedListener(
+        port, consume sslctx, h)
     h.dispose_when_done(listener)
 
     h.long_test(5_000_000_000)
@@ -955,11 +986,12 @@ actor \nodoc\ _TestSSLHardCloseOnConnectedListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -986,14 +1018,15 @@ actor \nodoc\ _TestSSLHardCloseOnConnectedClient
 
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(h.env.root),
-      sslctx,
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(h.env.root),
+        sslctx,
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1015,12 +1048,13 @@ actor \nodoc\ _TestSSLHardCloseOnConnectedServer
 
   new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1068,11 +1102,12 @@ actor \nodoc\ _TestSSLHardCloseOnStartedListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -1103,14 +1138,15 @@ actor \nodoc\ _TestSSLHardCloseOnStartedClient
 
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(_h.env.root),
-      sslctx,
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(_h.env.root),
+        sslctx,
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1122,12 +1158,13 @@ actor \nodoc\ _TestSSLHardCloseOnStartedServer
 
   new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1186,11 +1223,12 @@ actor \nodoc\ _TestSSLCloseReceiveListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -1217,14 +1255,15 @@ actor \nodoc\ _TestSSLCloseReceiveClient
 
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(_h.env.root),
-      sslctx,
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(_h.env.root),
+        sslctx,
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1241,12 +1280,13 @@ actor \nodoc\ _TestSSLCloseReceiveServer
 
   new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1317,11 +1357,12 @@ actor \nodoc\ _TestSSLLargePayloadListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -1350,14 +1391,15 @@ actor \nodoc\ _TestSSLLargePayloadClient
 
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(h.env.root),
-      sslctx,
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(h.env.root),
+        sslctx,
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1365,19 +1407,20 @@ actor \nodoc\ _TestSSLLargePayloadClient
   fun ref _on_connected() =>
     // 100 frames of 1000 bytes. Frame n is filled with the byte n % 256, so a
     // frame delivered out of order or stitched together wrong is visible.
-    let payload = recover val
-      let a = Array[U8](100000)
-      var frame: USize = 0
-      while frame < 100 do
-        var i: USize = 0
-        while i < 1000 do
-          a.push(frame.u8())
-          i = i + 1
+    let payload =
+      recover val
+        let a = Array[U8](100000)
+        var frame: USize = 0
+        while frame < 100 do
+          var i: USize = 0
+          while i < 1000 do
+            a.push(frame.u8())
+            i = i + 1
+          end
+          frame = frame + 1
         end
-        frame = frame + 1
+        a
       end
-      a
-    end
     _tcp_connection.send(payload)
 
   fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
@@ -1392,12 +1435,13 @@ actor \nodoc\ _TestSSLLargePayloadServer
 
   new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
     match \exhaustive\ MakeBufferSize(1000)
     | let b: BufferSize => _tcp_connection.buffer_until(b)
     | let _: ValidationFailure =>
