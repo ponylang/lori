@@ -752,12 +752,14 @@ class TCPConnection
     _state.is_open()
 
   fun is_closed(): Bool =>
+    """
+    Returns whether the connection is closed or closing.
+    """
     _state.is_closed()
 
   fun is_writeable(): Bool =>
     """
-    Returns whether the connection can currently accept a `send()` call.
-    Checks that the state allows sends and the socket is writeable.
+    Returns whether the socket can currently send.
     """
     _state.sends_allowed() and _writeable
 
