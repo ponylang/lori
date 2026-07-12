@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file. This projec
 - Fix a yield from _on_received not taking effect on SSL connections until every waiting message was delivered ([PR #315](https://github.com/ponylang/lori/pull/315))
 - Fix graceful close dropping writes queued under backpressure ([PR #322](https://github.com/ponylang/lori/pull/322))
 - Fix send() reporting a delivered send as rejected ([PR #327](https://github.com/ponylang/lori/pull/327))
+- Fix a delivered send being reported as failed on a hard close ([PR #328](https://github.com/ponylang/lori/pull/328))
 
 ### Added
 
