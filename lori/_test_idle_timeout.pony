@@ -661,14 +661,10 @@ actor \nodoc\ _TestSSLIdleTimeoutDeferredArmServer
 
 class \nodoc\ iso _TestIdleTimeoutRearms is UnitTest
   """
-  Test that the idle timeout fires again on a connection that stays idle. The
-  ASIO timer is one-shot, so an idle timeout only repeats because the connection
-  re-arms it after each `_on_idle_timeout`.
+  Test that the idle timeout fires again on a connection that stays idle.
 
-  Server sets a 1-second idle timeout and the client sends nothing, so once the
-  timer is armed no read or write resets it. The test completes on the second
-  `_on_idle_timeout`. A connection that armed the timer once and never re-armed
-  it fires once and then goes quiet, and the test times out.
+  Server sets a 1 second idle timeout; the client sends nothing. Completes on
+  the second `_on_idle_timeout`.
   """
   fun name(): String => "IdleTimeoutRearms"
 
@@ -765,22 +761,15 @@ actor \nodoc\ _TestIdleTimeoutRearmsServer
 class \nodoc\ iso _TestIdleTimeoutNoRearmDuringClosing is UnitTest
   """
   Test that a firing does not re-arm the idle timer once a graceful close has
-  begun. A graceful close cancels no timers, so an armed idle timer survives
-  into `_Closing` and fires there; `_fire_idle_timeout`'s re-arm is what stops
-  it firing again.
+  begun.
 
-  Server sets a 1-second idle timeout and calls `close()` from the first
-  `_on_idle_timeout`. A second fire fails the test; a watchdog completes it
-  after 5 seconds, which leaves room for four re-arms at the 1-second period.
+  Server sets a 1 second idle timeout and calls `close()` from the first
+  `_on_idle_timeout`. A second fire fails; a watchdog completes the test after
+  5 seconds.
 
-  The client mutes itself and sends nothing. Both halves are load-bearing. It
-  never reads, so it never answers the server's FIN, and the server stays in
-  `_Closing` for the whole window rather than hard closing (which would cancel
-  the timer and make the test vacuous). And it sends nothing, so the server does
-  no I/O -- `_read()` and `_send_pending_writes()` call `_reset_idle_timer()`
-  regardless of state, and either would re-arm the timer. This test therefore
-  covers the firing, not the timer: a closing connection that is still moving
-  bytes does keep firing.
+  The client mutes and sends nothing, and both matter. Reading would answer the
+  server's FIN and hard close it, which cancels the timer. Sending would reset
+  the timer through `_read()`, behind the decision under test.
   """
   fun name(): String => "IdleTimeoutNoRearmDuringClosing"
 
@@ -841,8 +830,7 @@ actor \nodoc\ _TestIdleTimeoutNoRearmClient
     _tcp_connection
 
   fun ref _on_connected() =>
-    // Never read, so the server's FIN goes unanswered and the server stays in
-    // _Closing. Never send either: I/O would reset the server's idle timer.
+    // Never read: the server's FIN goes unanswered and it stays in _Closing.
     _tcp_connection.mute()
 
 actor \nodoc\ _TestIdleTimeoutNoRearmServer
@@ -889,10 +877,8 @@ actor \nodoc\ _TestIdleTimeoutNoRearmServer
     end
 
   fun ref _on_closed() =>
-    // The server must stay in _Closing until the watchdog runs. A hard close
-    // cancels the idle timer, so leaving _Closing early would make a second
-    // fire impossible for a reason unrelated to what this test checks. Only the
-    // teardown dispose() may reach here.
+    // A hard close cancels the idle timer, so leaving _Closing early would make
+    // a second fire impossible for the wrong reason. Only teardown gets here.
     if not _done then
       _h.fail("server must stay in _Closing for the whole watchdog window")
       _h.complete(false)
@@ -918,15 +904,11 @@ class \nodoc\ _TestIdleTimeoutNoRearmWatchdog is TimerNotify
 
 class \nodoc\ iso _TestIdleTimeoutRearmsDuringTLSUpgrade is UnitTest
   """
-  Test that the idle timeout keeps firing while a TLS upgrade is in progress.
+  Test that the idle timeout keeps firing during a TLS upgrade.
 
-  `_TLSUpgrading` is the other state that re-arms. A `start_tls()` whose peer
-  never answers the ClientHello stalls there indefinitely, which is exactly when
-  an application needs `_on_idle_timeout` to keep firing while nothing moves.
-
-  Client connects in plaintext, sets a 1-second idle timeout, and calls
-  `start_tls()` against a server that never responds. The test completes on the
-  second `_on_idle_timeout`.
+  Client sets a 1 second idle timeout and calls `start_tls()` against a server
+  that never answers the ClientHello, so it stalls in `_TLSUpgrading`. Completes
+  on the second `_on_idle_timeout`.
   """
   fun name(): String => "IdleTimeoutRearmsDuringTLSUpgrade"
 
@@ -1017,7 +999,7 @@ actor \nodoc\ _TestIdleTimeoutTLSUpgradeClient
       _h.fail("MakeIdleTimeout(1_000) should succeed")
       _h.complete(false)
     end
-    // The server never answers the ClientHello, so this parks in _TLSUpgrading.
+    // The server never answers, so this parks in _TLSUpgrading.
     match _tcp_connection.start_tls(_sslctx, "localhost")
     | None => None
     | let _: StartTLSError =>
