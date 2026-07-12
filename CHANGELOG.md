@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file. This projec
 - Fix mute() not stopping data delivery on SSL connections ([PR #314](https://github.com/ponylang/lori/pull/314))
 - Fix a yield from _on_received not taking effect on SSL connections until every waiting message was delivered ([PR #315](https://github.com/ponylang/lori/pull/315))
 - Fix graceful close dropping writes queued under backpressure ([PR #322](https://github.com/ponylang/lori/pull/322))
+- Fix send() reporting a delivered send as rejected ([PR #327](https://github.com/ponylang/lori/pull/327))
 
 ### Added
 
