@@ -2347,3 +2347,214 @@ actor \nodoc\ _TestSendSSLHardCloseFromThrottledServer
       _h.fail("_on_send_failed fired with an unexpected token")
     end
 
+
+class \nodoc\ iso _TestSendDeliveredNotFailedOnHardClose is UnitTest
+  """
+  A hard close from `_on_throttled` must not report a delivered send as failed.
+
+  `_on_throttled` runs inside the write flush, after a partial `writev` has
+  accounted its bytes and before the flush reports the sends those bytes
+  completed. A `hard_close()` from the callback fails every send still on the
+  queue, so a send the flush had just finished gets `_on_send_failed` even
+  though its bytes are gone. An application that believed that would resend
+  them, and the peer would see them twice.
+
+  The peer is the oracle. `hard_close()` is a plain `close(2)` and lori sets no
+  `SO_LINGER`, so the kernel sends what is in the socket's send buffer before it
+  FINs: the peer receives every byte the OS took. Sends complete in order, so a
+  send whose last byte sits at cumulative offset N reached the OS once the peer
+  holds N bytes, and every such send must have reported `_on_sent`. The client
+  counts to its own `_on_closed`; report any earlier and it is still reading
+  while bytes arrive, and it undercounts.
+
+  A 256,000-byte send opens a backlog deep enough to keep the connection
+  throttled, and twenty-five 32,000-byte sends pile up behind it. Against a
+  16 KiB `SO_SNDBUF` a `writev` moves a few tens of kilobytes a pass, so it
+  lands mid-send far more often than on a boundary.
+
+  POSIX only, for the same reason as `SendPerTokenCompletion`.
+  """
+  fun name(): String => "SendDeliveredNotFailedOnHardClose"
+
+  fun ref apply(h: TestHelper) =>
+    h.expect_action("split verified")
+
+    let listener = _TestSendDeliveredListener(h)
+    h.dispose_when_done(listener)
+    h.long_test(30_000_000_000)
+
+actor \nodoc\ _TestSendDeliveredListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestSendDeliveredServer | None) = None
+  var _client: (_TestSendDeliveredClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      ifdef linux then "127.0.0.2" else "localhost" end,
+      "9787",
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSendDeliveredServer =>
+    let s = _TestSendDeliveredServer(fd, _h, this)
+    _server = s
+    s
+
+  fun ref _on_listen_failure() =>
+    _h.fail("listener failed to start")
+
+  fun ref _on_listening() =>
+    _client = _TestSendDeliveredClient(_h, this)
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendDeliveredClient).dispose() end
+    try (_server as _TestSendDeliveredServer).dispose() end
+
+  be unmute_client() =>
+    try (_client as _TestSendDeliveredClient).resume_reading() end
+
+  be client_total(bytes: USize) =>
+    try (_server as _TestSendDeliveredServer).peer_received(bytes) end
+
+actor \nodoc\ _TestSendDeliveredClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  let _listener: _TestSendDeliveredListener
+  var _total_received: USize = 0
+
+  new create(h: TestHelper, listener: _TestSendDeliveredListener) =>
+    _h = h
+    _listener = listener
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(_h.env.root),
+      ifdef linux then "127.0.0.2" else "localhost" end,
+      "9787",
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _tcp_connection.set_so_rcvbuf(4096)
+    _tcp_connection.mute()
+    _tcp_connection.send("ready")
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+
+  be resume_reading() =>
+    _tcp_connection.unmute()
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    _total_received = _total_received + data.size()
+    KeepReading
+
+  fun ref _on_closed() =>
+    // Report only now. The server's close still flushes its send buffer, so
+    // bytes keep arriving after it closes.
+    _listener.client_total(_total_received)
+
+actor \nodoc\ _TestSendDeliveredServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  let _listener: _TestSendDeliveredListener
+  let _lead: USize = 256_000
+  let _chunk: USize = 32_000
+  let _total_chunks: USize = 25
+  var _started: Bool = false
+  var _unmuted_client: Bool = false
+  var _queued: USize = 0
+  var _reported: Bool = false
+  embed _sent_ids: Array[USize] = _sent_ids.create()
+  embed _failed_ids: Array[USize] = _failed_ids.create()
+
+  new create(fd: U32, h: TestHelper, listener: _TestSendDeliveredListener) =>
+    _h = h
+    _listener = listener
+    _tcp_connection = TCPConnection.server(
+      TCPServerAuth(_h.env.root),
+      fd,
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    match MakeBufferSize(5)
+    | let b: BufferSize => _tcp_connection.buffer_until(b)
+    else _Unreachable()
+    end
+
+  fun ref _send_bytes(n: USize) =>
+    let payload = recover val Array[U8].init('x', n) end
+    match _tcp_connection.send(payload)
+    | let _: SendToken =>
+      _queued = _queued + 1
+    | let _: SendError =>
+      _h.fail("send() must be accepted while the connection is writeable")
+    end
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    if _started then return KeepReading end
+    _started = true
+    _tcp_connection.set_so_sndbuf(16384)
+    _send_bytes(_lead)
+    KeepReading
+
+  fun ref _on_unthrottled() =>
+    if _queued <= _total_chunks then
+      _send_bytes(_chunk)
+    end
+
+  fun ref _on_throttled() =>
+    if not _unmuted_client then
+      _unmuted_client = true
+      _listener.unmute_client()
+    end
+    if _queued == (_total_chunks + 1) then
+      _tcp_connection.hard_close()
+    end
+
+  fun ref _on_sent(token: SendToken) =>
+    _sent_ids.push(token.id)
+
+  fun ref _on_send_failed(token: SendToken) =>
+    _failed_ids.push(token.id)
+
+  be peer_received(bytes: USize) =>
+    if _reported then return end
+    _reported = true
+    // Sends complete in order, so send k finishes at cumulative offset o_k. The
+    // peer holding `bytes` means every send with o_k <= bytes reached the OS,
+    // and each of those must have reported _on_sent.
+    var reached_os: USize = 0
+    var offset: USize = 0
+    var k: USize = 0
+    while k < _queued do
+      offset = offset + if k == 0 then _lead else _chunk end
+      if offset <= bytes then
+        reached_os = reached_os + 1
+      end
+      k = k + 1
+    end
+    _h.log("peer=" + bytes.string() + " reached_os=" + reached_os.string()
+      + " on_sent=" + _sent_ids.size().string()
+      + " on_send_failed=" + _failed_ids.size().string())
+    _h.assert_true(_sent_ids.size() >= reached_os,
+      "the peer holds " + bytes.string() + " bytes, so " + reached_os.string()
+        + " sends reached the OS, but only " + _sent_ids.size().string()
+        + " reported _on_sent")
+    _h.complete_action("split verified")
+
+  be dispose() =>
+    _tcp_connection.hard_close()
