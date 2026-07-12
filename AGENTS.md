@@ -467,6 +467,8 @@ API:
 
 Shrink-back happens in `_resize_read_buffer_if_needed()` when `_bytes_in_read_buffer == 0` and `_read_buffer_size > _read_buffer_min`.
 
+`_read_buffer_free_space()` returns the room left in the buffer. Zero means the next read has nowhere to put what it gets, which is the state issue #324 hard closed on; it is package-private so a test can assert the state rather than assume it.
+
 Design: Discussion #212 (implementation plan), Discussion #199 section 11 (design).
 
 ### Read yielding
