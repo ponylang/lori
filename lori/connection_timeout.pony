@@ -49,5 +49,6 @@ type ConnectionTimeout is Constrained[U64, ConnectionTimeoutValidator]
 
 type MakeConnectionTimeout is MakeConstrained[U64, ConnectionTimeoutValidator]
   """
-  Factory for `ConnectionTimeout` values. Returns `(ConnectionTimeout | ValidationFailure)`.
+  Factory for `ConnectionTimeout` values. Returns
+  `(ConnectionTimeout | ValidationFailure)`.
   """

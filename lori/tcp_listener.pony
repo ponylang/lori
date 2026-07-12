@@ -2,6 +2,12 @@ use "collections"
 use net = "net"
 
 class TCPListener
+  """
+  The TCP listener: opens a listening socket, runs the accept loop, and
+  enforces the connection limit. A `TCPListenerActor` owns one and delegates to
+  it. Create it with `TCPListener(auth, host, port, this)`, using
+  `TCPListener.none()` as the field initializer before that.
+  """
   let _host: String
   let _port: String
   let _limit: (MaxSpawn | None)
@@ -13,8 +19,11 @@ class TCPListener
   var _listening: Bool = false
   var _enclosing: (TCPListenerActor ref | None)
 
-  new create(auth: TCPListenAuth, host: String, port: String,
-    enclosing: TCPListenerActor ref, ip_version: IPVersion = DualStack,
+  new create(auth: TCPListenAuth,
+    host: String,
+    port: String,
+    enclosing: TCPListenerActor ref,
+    ip_version: IPVersion = DualStack,
     limit: (MaxSpawn | None) = DefaultMaxSpawn())
   =>
     _host = host
@@ -25,6 +34,10 @@ class TCPListener
     enclosing._finish_initialization()
 
   new none() =>
+    """
+    A placeholder listener for the actor's field before real initialization,
+    replaced by a `create` listener once the actor starts.
+    """
     _host = ""
     _port = ""
     _limit = None

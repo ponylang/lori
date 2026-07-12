@@ -35,7 +35,13 @@ make examples ssl=3.0.x      # build all examples
 make stress-tests ssl=3.0.x  # build stress tests
 make clean                   # clean build artifacts + corral deps
 make config=debug ssl=3.0.x  # debug build
+make lint                    # run pony-lint over the whole repo (no ssl= needed)
 ```
+
+`make lint` runs `pony-lint` (ships with ponyc) over `lori/`, `examples/`, and
+`stress-tests/`. It needs no `ssl=`. CI runs it on every PR via the `pony-lint`
+workflow, and again in the Linux nightly-breakage workflow so a new ponyc lint
+rule shows up there rather than on an unrelated PR.
 
 **SSL version is required** for all build/test targets. This machine has OpenSSL 3.x, so use `ssl=3.0.x`.
 
@@ -57,7 +63,8 @@ lori/
   tcp_connection_actor.pony -- TCPConnectionActor trait (actor wrapper)
   tcp_listener.pony         -- TCPListener class (accept loop, connection limits, ip_version)
   tcp_listener_actor.pony   -- TCPListenerActor trait (actor wrapper)
-  lifecycle_event_receiver.pony -- Client/ServerLifecycleEventReceiver traits
+  client_lifecycle_event_receiver.pony -- ClientLifecycleEventReceiver trait and EitherLifecycleEventReceiver alias
+  server_lifecycle_event_receiver.pony -- ServerLifecycleEventReceiver trait
   send_token.pony           -- SendToken class, SendError primitives and type alias
   _pending_writes.pony      -- _PendingWrites: the write queue (buffers + offset + total)
   timer_token.pony          -- TimerToken class, SetTimerError primitives and type alias
@@ -78,10 +85,10 @@ lori/
   auth.pony                 -- Auth primitives (NetAuth, TCPAuth, TCPListenAuth, etc.)
   pony_tcp.pony             -- FFI wrappers for pony_os_* TCP functions
   pony_asio.pony            -- FFI wrappers for pony_asio_event_* functions
-  ossocket.pony             -- _OSSocket: getsockopt/setsockopt wrappers
-  ossocketopt.pony          -- OSSockOpt: socket option constants (large, generated)
+  _os_socket.pony           -- _OSSocket: getsockopt/setsockopt wrappers
+  os_sock_opt.pony          -- OSSockOpt: socket option constants (large, generated)
   _connection_state.pony    -- _ConnectionState trait and lifecycle state classes (including _SSLHandshaking, _TLSUpgrading)
-  _panics.pony              -- _Unreachable primitive for impossible states
+  _unreachable.pony         -- _Unreachable primitive for impossible states
   socket_result.pony        -- SocketResult primitives + decoder for pony_os_* return values (mirrors ponyc internal type)
   _test.pony                -- Test runner (Main only)
   _test_connection.pony     -- Connection basics, ping-pong, buffer_until, listener tests

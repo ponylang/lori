@@ -24,11 +24,12 @@ actor \nodoc\ _TestIdleTimeoutListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "7897",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "7897",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -52,13 +53,14 @@ actor \nodoc\ _TestIdleTimeoutClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "7897",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "7897",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -70,11 +72,12 @@ actor \nodoc\ _TestIdleTimeoutServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -114,11 +117,12 @@ actor \nodoc\ _TestIdleTimeoutResetListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "7898",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "7898",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -144,13 +148,14 @@ actor \nodoc\ _TestIdleTimeoutResetClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "7898",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "7898",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -163,10 +168,11 @@ actor \nodoc\ _TestIdleTimeoutResetClient
   fun ref _schedule_next_send() =>
     if _sends_remaining > 0 then
       let client: _TestIdleTimeoutResetClient tag = this
-      let timer = Timer(
-        _TestIdleTimeoutResetTimerNotify(client),
-        2_000_000_000,
-        0)
+      let timer =
+        Timer(
+          _TestIdleTimeoutResetTimerNotify(client),
+          2_000_000_000,
+          0)
       _timers(consume timer)
     end
 
@@ -187,11 +193,12 @@ actor \nodoc\ _TestIdleTimeoutResetServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -210,7 +217,8 @@ actor \nodoc\ _TestIdleTimeoutResetServer
     KeepReading
 
   fun ref _on_idle_timeout() =>
-    _h.assert_true(_received_count == 4,
+    _h.assert_true(
+      _received_count == 4,
       "idle timeout fired before all data received")
     _h.complete_action("idle timeout fired")
 
@@ -246,11 +254,12 @@ actor \nodoc\ _TestIdleTimeoutDisableListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "7899",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "7899",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -274,13 +283,14 @@ actor \nodoc\ _TestIdleTimeoutDisableClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "7899",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "7899",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -293,11 +303,12 @@ actor \nodoc\ _TestIdleTimeoutDisableServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -311,10 +322,11 @@ actor \nodoc\ _TestIdleTimeoutDisableServer
     // Watchdog: complete the test after 10 seconds. If _on_idle_timeout
     // fires before then, the test fails.
     let server: _TestIdleTimeoutDisableServer tag = this
-    let timer = Timer(
-      _TestIdleTimeoutDisableWatchdog(server),
-      10_000_000_000,
-      0)
+    let timer =
+      Timer(
+        _TestIdleTimeoutDisableWatchdog(server),
+        10_000_000_000,
+        0)
     _timers(consume timer)
 
   fun ref _on_idle_timeout() =>
@@ -373,11 +385,12 @@ actor \nodoc\ _TestSSLIdleTimeoutListener is TCPListenerActor
   new create(sslctx: SSLContext val, h: TestHelper) =>
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9743",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9743",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -401,14 +414,15 @@ actor \nodoc\ _TestSSLIdleTimeoutClient
 
   new create(sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(_h.env.root),
-      sslctx,
-      "localhost",
-      "9743",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(_h.env.root),
+        sslctx,
+        "localhost",
+        "9743",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -420,12 +434,13 @@ actor \nodoc\ _TestSSLIdleTimeoutServer
 
   new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -472,11 +487,12 @@ actor \nodoc\ _TestSSLIdleTimeoutNotArmedListener is TCPListenerActor
   new create(sslctx: SSLContext val, h: TestHelper) =>
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9744",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9744",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -500,17 +516,18 @@ actor \nodoc\ _TestSSLIdleTimeoutNotArmedClient
 
   new create(sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    match (MakeIdleTimeout(1_000), MakeConnectionTimeout(5_000))
+    match \exhaustive\ (MakeIdleTimeout(1_000), MakeConnectionTimeout(5_000))
     | (let it: IdleTimeout, let ct: ConnectionTimeout) =>
-      _tcp_connection = TCPConnection.ssl_client(
-        TCPConnectAuth(_h.env.root),
-        sslctx,
-        "localhost",
-        "9744",
-        "",
-        this,
-        this
-        where connection_timeout = ct)
+      _tcp_connection =
+        TCPConnection.ssl_client(
+          TCPConnectAuth(_h.env.root),
+          sslctx,
+          "localhost",
+          "9744",
+          "",
+          this,
+          this
+          where connection_timeout = ct)
       _tcp_connection.idle_timeout(it)
     | (let _: ValidationFailure, _) =>
       _h.fail("MakeIdleTimeout(1_000) should succeed")
@@ -548,11 +565,12 @@ actor \nodoc\ _TestSSLIdleTimeoutNotArmedServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -593,11 +611,12 @@ actor \nodoc\ _TestSSLIdleTimeoutDeferredArmListener is TCPListenerActor
   new create(sslctx: SSLContext val, h: TestHelper) =>
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9745",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9745",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -621,14 +640,15 @@ actor \nodoc\ _TestSSLIdleTimeoutDeferredArmClient
 
   new create(sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(_h.env.root),
-      sslctx,
-      "localhost",
-      "9745",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(_h.env.root),
+        sslctx,
+        "localhost",
+        "9745",
+        "",
+        this,
+        this)
     // Configure idle timeout before the handshake completes.
     // idle_timeout() defers arming; _ssl_poll arms at SSLReady.
     match MakeIdleTimeout(5_000)
@@ -649,12 +669,13 @@ actor \nodoc\ _TestSSLIdleTimeoutDeferredArmServer
 
   new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -684,11 +705,12 @@ actor \nodoc\ _TestIdleTimeoutRearmsListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9784",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9784",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -715,13 +737,14 @@ actor \nodoc\ _TestIdleTimeoutRearmsClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "9784",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "9784",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -734,17 +757,18 @@ actor \nodoc\ _TestIdleTimeoutRearmsServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _on_started() =>
-    match MakeIdleTimeout(1_000)
+    match \exhaustive\ MakeIdleTimeout(1_000)
     | let t: IdleTimeout =>
       _tcp_connection.idle_timeout(t)
     | let _: ValidationFailure =>
@@ -787,11 +811,12 @@ actor \nodoc\ _TestIdleTimeoutNoRearmListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9785",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9785",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -818,13 +843,14 @@ actor \nodoc\ _TestIdleTimeoutNoRearmClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "9785",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "9785",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -843,17 +869,18 @@ actor \nodoc\ _TestIdleTimeoutNoRearmServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _on_started() =>
-    match MakeIdleTimeout(1_000)
+    match \exhaustive\ MakeIdleTimeout(1_000)
     | let t: IdleTimeout =>
       _tcp_connection.idle_timeout(t)
     | let _: ValidationFailure =>
@@ -866,10 +893,11 @@ actor \nodoc\ _TestIdleTimeoutNoRearmServer
     if _fires == 1 then
       _tcp_connection.close()
       let server: _TestIdleTimeoutNoRearmServer tag = this
-      let timer = Timer(
-        _TestIdleTimeoutNoRearmWatchdog(server),
-        5_000_000_000,
-        0)
+      let timer =
+        Timer(
+          _TestIdleTimeoutNoRearmWatchdog(server),
+          5_000_000_000,
+          0)
       _timers(consume timer)
     else
       _h.fail("idle timer re-armed during _Closing")
@@ -946,11 +974,12 @@ actor \nodoc\ _TestIdleTimeoutTLSUpgradeListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -980,19 +1009,20 @@ actor \nodoc\ _TestIdleTimeoutTLSUpgradeClient
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _sslctx = sslctx
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(h.env.root),
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(h.env.root),
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _on_connected() =>
-    match MakeIdleTimeout(1_000)
+    match \exhaustive\ MakeIdleTimeout(1_000)
     | let t: IdleTimeout =>
       _tcp_connection.idle_timeout(t)
     | let _: ValidationFailure =>
@@ -1000,7 +1030,7 @@ actor \nodoc\ _TestIdleTimeoutTLSUpgradeClient
       _h.complete(false)
     end
     // The server never answers, so this parks in _TLSUpgrading.
-    match _tcp_connection.start_tls(_sslctx, "localhost")
+    match \exhaustive\ _tcp_connection.start_tls(_sslctx, "localhost")
     | None => None
     | let _: StartTLSError =>
       _h.fail("start_tls should have succeeded")

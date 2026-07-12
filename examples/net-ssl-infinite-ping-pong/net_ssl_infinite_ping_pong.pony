@@ -40,6 +40,10 @@ actor Main
     Listener(listen_auth, connect_auth, sslctx, env.out)
 
 actor  Listener is TCPListenerActor
+  """
+  Listens on the example's port, creating an SSL server for each accepted
+  connection and starting the SSL client once listening.
+  """
   var _tcp_listener: TCPListener = TCPListener.none()
   let _out: OutStream
   let _connect_auth: TCPConnectAuth
@@ -70,10 +74,15 @@ actor  Listener is TCPListenerActor
     _out.print("Unable to open listener")
 
 actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  """
+  Replies with Pong over SSL for each message it receives.
+  """
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
-  new create(auth: TCPServerAuth, sslctx: SSLContext val, fd: U32,
+  new create(auth: TCPServerAuth,
+    sslctx: SSLContext val,
+    fd: U32,
     out: OutStream)
   =>
     _out = out
@@ -91,6 +100,9 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
     KeepReading
 
 actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  """
+  Sends Ping over SSL on connect and again for each message it receives.
+  """
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
@@ -102,8 +114,9 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
     out: OutStream)
   =>
     _out = out
-    _tcp_connection = TCPConnection.ssl_client(auth, sslctx, host, port, from,
-      this, this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        auth, sslctx, host, port, from, this, this)
     match MakeBufferSize(4)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -112,9 +125,9 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
     _tcp_connection
 
   fun ref _on_connected() =>
-   _tcp_connection.send("Ping")
+    _tcp_connection.send("Ping")
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
-   _out.print(consume data)
-   _tcp_connection.send("Ping")
+    _out.print(consume data)
+    _tcp_connection.send("Ping")
     KeepReading

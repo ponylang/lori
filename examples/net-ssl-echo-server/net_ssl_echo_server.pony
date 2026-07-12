@@ -40,6 +40,10 @@ actor Main
     let echo = EchoServer(auth, sslctx, "", "7669", env.out)
 
 actor EchoServer is TCPListenerActor
+  """
+  Listens on the example's port and creates an SSL echoer for each accepted
+  connection.
+  """
   var _tcp_listener: TCPListener = TCPListener.none()
   let _out: OutStream
   let _server_auth: TCPServerAuth
@@ -73,10 +77,15 @@ actor EchoServer is TCPListenerActor
     _out.print("Echo server started.")
 
 actor Echoer is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  """
+  Echoes back over SSL whatever it receives.
+  """
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
-  new create(auth: TCPServerAuth, sslctx: SSLContext val, fd: U32,
+  new create(auth: TCPServerAuth,
+    sslctx: SSLContext val,
+    fd: U32,
     out: OutStream)
   =>
     _out = out

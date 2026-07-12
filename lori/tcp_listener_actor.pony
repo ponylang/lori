@@ -1,4 +1,11 @@
 trait tag TCPListenerActor is AsioEventNotify
+  """
+  The actor trait a listener actor implements. Provide `_listener()` returning
+  the `TCPListener` the actor owns; the behaviors here deliver ASIO events to
+  it. Implement `_on_accept` to build a connection actor for each accepted
+  socket, and the listen lifecycle callbacks (`_on_listening`,
+  `_on_listen_failure`, `_on_closed`) as needed.
+  """
   fun ref _listener(): TCPListener
 
   fun ref _on_accept(fd: U32): TCPConnectionActor ?

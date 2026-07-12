@@ -266,9 +266,10 @@ authentication errors from protocol errors) followed by `_on_closed()`.
 ## Idle Timeout
 
 `idle_timeout()` sets a per-connection timer that fires when no data is sent
-or received for the configured duration. Idle timeout is disabled by default. The duration is an
-[`IdleTimeout`](/lori/lori-IdleTimeout/) value — a constrained type that
-guarantees a millisecond value in the range 1 to 18,446,744,073,709. Pass `None` to disable:
+or received for the configured duration. Idle timeout is disabled by default.
+The duration is an [`IdleTimeout`](/lori/lori-IdleTimeout/) value — a
+constrained type that guarantees a millisecond value in the range 1 to
+18,446,744,073,709. Pass `None` to disable:
 
 ```pony
 fun ref _on_started() =>
@@ -301,7 +302,11 @@ detection.
 
 ## Connection Timeout
 
-Client connections can hang indefinitely when SYN packets are black-holed or an SSL handshake stalls. The `connection_timeout` constructor parameter bounds the connect-to-ready phase — TCP Happy Eyeballs and (for SSL connections) the TLS handshake. If the timeout fires before `_on_connected`, the connection fails with [`ConnectionFailedTimeout`](/lori/lori-ConnectionFailedTimeout/).
+Client connections can hang indefinitely when SYN packets are black-holed or
+an SSL handshake stalls. The `connection_timeout` constructor parameter bounds
+the connect-to-ready phase — TCP Happy Eyeballs and (for SSL connections) the
+TLS handshake. If the timeout fires before `_on_connected`, the connection
+fails with [`ConnectionFailedTimeout`](/lori/lori-ConnectionFailedTimeout/).
 
 ```pony
 match MakeConnectionTimeout(5_000)
@@ -311,9 +316,15 @@ match MakeConnectionTimeout(5_000)
 end
 ```
 
-Connection timeout is disabled by default (`None`). The duration is a [`ConnectionTimeout`](/lori/lori-ConnectionTimeout/) value — a constrained type with the same range as `IdleTimeout` (1 to 18,446,744,073,709 milliseconds). The timer is a one-shot: it either fires and fails the connection, or is cancelled when the connection becomes ready.
+Connection timeout is disabled by default (`None`). The duration is a
+[`ConnectionTimeout`](/lori/lori-ConnectionTimeout/) value — a constrained type
+with the same range as `IdleTimeout` (1 to 18,446,744,073,709 milliseconds).
+The timer is a one-shot: it either fires and fails the connection, or is
+cancelled when the connection becomes ready.
 
-The timer is armed after `PonyTCP.connect` returns, so it does not cover DNS resolution time. If DNS itself blocks (common with unresponsive nameservers), the total wait will exceed the configured timeout by the DNS resolution time.
+The timer is armed after `PonyTCP.connect` returns, so it does not cover DNS
+resolution time. If DNS itself blocks (common with unresponsive nameservers),
+the total wait will exceed the configured timeout by the DNS resolution time.
 
 ```pony
 fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
@@ -463,8 +474,8 @@ minimum returns
 [`BufferSizeAboveMinimum`](/lori/lori-BufferSizeAboveMinimum/) — raise the
 minimum first, then set buffer_until. Resizing below the current buffer_until
 returns
-[`ReadBufferResizeBelowBufferSize`](/lori/lori-ReadBufferResizeBelowBufferSize/).
-Resizing below the amount of unprocessed data in the buffer returns
+[`ReadBufferResizeBelowBufferSize`](/lori/lori-ReadBufferResizeBelowBufferSize/)
+and resizing below the amount of unprocessed data in the buffer returns
 [`ReadBufferResizeBelowUsed`](/lori/lori-ReadBufferResizeBelowUsed/).
 
 When the buffer is empty and larger than the minimum, it automatically shrinks
@@ -502,7 +513,9 @@ fun ref _on_started() =>
 All setters return `U32` — 0 on success, or a non-zero errno on failure.
 Getters return `(U32, U32)` — (errno, value).
 
-**General-purpose access** is available via `getsockopt`/`setsockopt` and their `_u32` variants for any option in [`OSSockOpt`](/lori/lori-OSSockOpt/). For commonly-tuned options, prefer the dedicated methods above.
+**General-purpose access** is available via `getsockopt`/`setsockopt` and their
+`_u32` variants for any option in [`OSSockOpt`](/lori/lori-OSSockOpt/). For
+commonly-tuned options, prefer the dedicated methods above.
 
 ```pony
 fun ref _on_started() =>

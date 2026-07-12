@@ -27,11 +27,12 @@ actor \nodoc\ _TestSendTokenListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "7891",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "7891",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -57,13 +58,14 @@ actor \nodoc\ _TestSendTokenClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "7891",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "7891",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -94,11 +96,12 @@ actor \nodoc\ _TestSendTokenServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -127,11 +130,12 @@ actor \nodoc\ _TestSendAfterCloseListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "7892",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "7892",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -156,13 +160,14 @@ actor \nodoc\ _TestSendAfterCloseClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "7892",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "7892",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -188,11 +193,12 @@ actor \nodoc\ _TestSendAfterCloseServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -222,11 +228,12 @@ actor \nodoc\ _TestSendvListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "7893",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "7893",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -252,13 +259,14 @@ actor \nodoc\ _TestSendvClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "7893",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "7893",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -290,11 +298,12 @@ actor \nodoc\ _TestSendvServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
     match MakeBufferSize(13)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -332,11 +341,12 @@ actor \nodoc\ _TestSendvEmptyListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "7894",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "7894",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -362,13 +372,14 @@ actor \nodoc\ _TestSendvEmptyClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "7894",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "7894",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -417,11 +428,12 @@ actor \nodoc\ _TestSendvMixedEmptyListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "7895",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "7895",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -446,13 +458,14 @@ actor \nodoc\ _TestSendvMixedEmptyClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "7895",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "7895",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -469,11 +482,12 @@ actor \nodoc\ _TestSendvMixedEmptyServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
     match MakeBufferSize(10)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -523,11 +537,12 @@ actor \nodoc\ _TestSendPerTokenListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      ifdef linux then "127.0.0.2" else "localhost" end,
-      "7910",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "7910",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -557,13 +572,14 @@ actor \nodoc\ _TestSendPerTokenClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      ifdef linux then "127.0.0.2" else "localhost" end,
-      "7910",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "7910",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -600,11 +616,12 @@ actor \nodoc\ _TestSendPerTokenServer
   new create(fd: U32, h: TestHelper, listener: _TestSendPerTokenListener) =>
     _h = h
     _listener = listener
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -617,7 +634,7 @@ actor \nodoc\ _TestSendPerTokenServer
     end
 
   fun ref _record_send(r: (SendToken | SendError)) =>
-    match r
+    match \exhaustive\ r
     | let t: SendToken => _returned.push(t.id)
     | let _: SendError => _h.fail("send() returned an error while flooding")
     end
@@ -654,12 +671,16 @@ actor \nodoc\ _TestSendPerTokenServer
     end
 
   fun ref _on_sent(token: SendToken) =>
-    _h.assert_eq[USize](_expected_next, token.id,
+    _h.assert_eq[USize](
+      _expected_next,
+      token.id,
       "_on_sent fired out of order or with a gap")
     _expected_next = _expected_next + 1
     _completed.push(token.id)
     if _completed.size() == _total_sends then
-      _h.assert_eq[USize](_returned.size(), _completed.size(),
+      _h.assert_eq[USize](
+        _returned.size(),
+        _completed.size(),
         "every returned token must fire _on_sent exactly once")
       _tcp_connection.close()
       _h.complete(true)
@@ -715,11 +736,12 @@ actor \nodoc\ _TestSendSSLLargeSingleSendListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -749,21 +771,23 @@ actor \nodoc\ _TestSendSSLLargeSingleSendClient
 
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(h.env.root),
-      sslctx,
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(h.env.root),
+        sslctx,
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _on_connected() =>
     _tcp_connection.set_so_rcvbuf(4096)
-    match _tcp_connection.send(recover val Array[U8].init('x', _expected) end)
+    match \exhaustive\ _tcp_connection.send(
+      recover val Array[U8].init('x', _expected) end)
     | let _: SendToken => None
     | let _: SendError =>
       _h.fail("client send failed")
@@ -796,12 +820,13 @@ actor \nodoc\ _TestSendSSLLargeSingleSendServer
 
   new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -810,7 +835,7 @@ actor \nodoc\ _TestSendSSLLargeSingleSendServer
     _tcp_connection.set_so_rcvbuf(4096)
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
-    match _tcp_connection.send(consume data)
+    match \exhaustive\ _tcp_connection.send(consume data)
     | let _: SendToken => None
     | let _: SendError => _h.fail("server echo failed")
     end
@@ -852,11 +877,12 @@ actor \nodoc\ _TestSendMidFlightDropListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      ifdef linux then "127.0.0.2" else "localhost" end,
-      "7912",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "7912",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -886,13 +912,14 @@ actor \nodoc\ _TestSendMidFlightDropClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      ifdef linux then "127.0.0.2" else "localhost" end,
-      "7912",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "7912",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -926,16 +953,18 @@ actor \nodoc\ _TestSendMidFlightDropServer
   embed _sent_ids: Array[USize] = _sent_ids.create()
   embed _failed_ids: Array[USize] = _failed_ids.create()
 
-  new create(fd: U32, h: TestHelper,
+  new create(fd: U32,
+    h: TestHelper,
     listener: _TestSendMidFlightDropListener)
   =>
     _h = h
     _listener = listener
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -947,7 +976,7 @@ actor \nodoc\ _TestSendMidFlightDropServer
     end
 
   fun ref _record_send(r: (SendToken | SendError)) =>
-    match r
+    match \exhaustive\ r
     | let t: SendToken => _returned.push(t.id)
     | let _: SendError => _h.fail("send() returned an error while flooding")
     end
@@ -1007,12 +1036,15 @@ actor \nodoc\ _TestSendMidFlightDropServer
       for f in _failed_ids.values() do
         if f == id then count = count + 1 end
       end
-      _h.assert_eq[USize](1, count,
+      _h.assert_eq[USize](
+        1,
+        count,
         "each token must fire exactly one terminal callback")
     end
 
     // Both undelivered sends must fail (not just the last one).
-    _h.assert_true(_failed_ids.size() >= 2,
+    _h.assert_true(
+      _failed_ids.size() >= 2,
       "every accepted-but-undelivered send must fire _on_send_failed")
 
     // Clean prefix/suffix: all _on_sent ids precede all _on_send_failed ids.
@@ -1024,13 +1056,15 @@ actor \nodoc\ _TestSendMidFlightDropServer
     for f in _failed_ids.values() do
       if f < min_failed then min_failed = f end
     end
-    _h.assert_true(max_sent < min_failed,
+    _h.assert_true(
+      max_sent < min_failed,
       "_on_sent ids must all precede _on_send_failed ids")
 
     // _on_send_failed must also fire in send order (ascending token id).
     var prev_failed: USize = 0
     for f in _failed_ids.values() do
-      _h.assert_true(f > prev_failed,
+      _h.assert_true(
+        f > prev_failed,
         "_on_send_failed must fire in ascending (send) order")
       prev_failed = f
     end
@@ -1090,11 +1124,12 @@ actor \nodoc\ _TestSendSSLPerTokenListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -1124,14 +1159,15 @@ actor \nodoc\ _TestSendSSLPerTokenClient
 
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(_h.env.root),
-      sslctx,
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(_h.env.root),
+        sslctx,
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1164,23 +1200,26 @@ actor \nodoc\ _TestSendSSLPerTokenServer
   embed _completed: Array[USize] = _completed.create()
   var _expected_next: USize = 1
 
-  new create(sslctx: SSLContext val, fd: U32, h: TestHelper,
+  new create(sslctx: SSLContext val,
+    fd: U32,
+    h: TestHelper,
     listener: _TestSendSSLPerTokenListener)
   =>
     _h = h
     _listener = listener
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _record_send(r: (SendToken | SendError)) =>
-    match r
+    match \exhaustive\ r
     | let t: SendToken => _returned.push(t.id)
     | let _: SendError => _h.fail("send() returned an error while flooding")
     end
@@ -1211,12 +1250,16 @@ actor \nodoc\ _TestSendSSLPerTokenServer
     end
 
   fun ref _on_sent(token: SendToken) =>
-    _h.assert_eq[USize](_expected_next, token.id,
+    _h.assert_eq[USize](
+      _expected_next,
+      token.id,
       "_on_sent fired out of order or with a gap")
     _expected_next = _expected_next + 1
     _completed.push(token.id)
     if _completed.size() == _total_sends then
-      _h.assert_eq[USize](_returned.size(), _completed.size(),
+      _h.assert_eq[USize](
+        _returned.size(),
+        _completed.size(),
         "every returned token must fire _on_sent exactly once")
       _tcp_connection.close()
       _h.complete(true)
@@ -1279,11 +1322,12 @@ actor \nodoc\ _TestSendSSLMidFlightDropListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -1313,14 +1357,15 @@ actor \nodoc\ _TestSendSSLMidFlightDropClient
 
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(_h.env.root),
-      sslctx,
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(_h.env.root),
+        sslctx,
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1354,23 +1399,26 @@ actor \nodoc\ _TestSendSSLMidFlightDropServer
   embed _sent_ids: Array[USize] = _sent_ids.create()
   embed _failed_ids: Array[USize] = _failed_ids.create()
 
-  new create(sslctx: SSLContext val, fd: U32, h: TestHelper,
+  new create(sslctx: SSLContext val,
+    fd: U32,
+    h: TestHelper,
     listener: _TestSendSSLMidFlightDropListener)
   =>
     _h = h
     _listener = listener
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _record_send(r: (SendToken | SendError)) =>
-    match r
+    match \exhaustive\ r
     | let t: SendToken => _returned.push(t.id)
     | let _: SendError => _h.fail("send() returned an error while flooding")
     end
@@ -1428,12 +1476,15 @@ actor \nodoc\ _TestSendSSLMidFlightDropServer
       for f in _failed_ids.values() do
         if f == id then count = count + 1 end
       end
-      _h.assert_eq[USize](1, count,
+      _h.assert_eq[USize](
+        1,
+        count,
         "each token must fire exactly one terminal callback")
     end
 
     // Both undelivered sends must fail (not just the last one).
-    _h.assert_true(_failed_ids.size() >= 2,
+    _h.assert_true(
+      _failed_ids.size() >= 2,
       "every accepted-but-undelivered send must fire _on_send_failed")
 
     // Clean prefix/suffix: all _on_sent ids precede all _on_send_failed ids.
@@ -1445,13 +1496,15 @@ actor \nodoc\ _TestSendSSLMidFlightDropServer
     for f in _failed_ids.values() do
       if f < min_failed then min_failed = f end
     end
-    _h.assert_true(max_sent < min_failed,
+    _h.assert_true(
+      max_sent < min_failed,
       "_on_sent ids must all precede _on_send_failed ids")
 
     // _on_send_failed must also fire in send order (ascending token id).
     var prev_failed: USize = 0
     for f in _failed_ids.values() do
-      _h.assert_true(f > prev_failed,
+      _h.assert_true(
+        f > prev_failed,
         "_on_send_failed must fire in ascending (send) order")
       prev_failed = f
     end
@@ -1501,11 +1554,12 @@ actor \nodoc\ _TestSendGracefulCloseListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      ifdef linux then "127.0.0.2" else "localhost" end,
-      "7915",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "7915",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -1539,13 +1593,14 @@ actor \nodoc\ _TestSendGracefulCloseClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      ifdef linux then "127.0.0.2" else "localhost" end,
-      "7915",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "7915",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1581,16 +1636,18 @@ actor \nodoc\ _TestSendGracefulCloseServer
   embed _returned: Array[USize] = _returned.create()
   embed _sent_ids: Array[USize] = _sent_ids.create()
 
-  new create(fd: U32, h: TestHelper,
+  new create(fd: U32,
+    h: TestHelper,
     listener: _TestSendGracefulCloseListener)
   =>
     _h = h
     _listener = listener
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1602,7 +1659,7 @@ actor \nodoc\ _TestSendGracefulCloseServer
     end
 
   fun ref _record_send(r: (SendToken | SendError)) =>
-    match r
+    match \exhaustive\ r
     | let t: SendToken => _returned.push(t.id)
     | let _: SendError => _h.fail("send() returned an error while flooding")
     end
@@ -1647,7 +1704,9 @@ actor \nodoc\ _TestSendGracefulCloseServer
         for s in _sent_ids.values() do
           if s == id then count = count + 1 end
         end
-        _h.assert_eq[USize](1, count,
+        _h.assert_eq[USize](
+          1,
+          count,
           "each token must fire _on_sent exactly once")
       end
       _h.complete_action("server delivered all pending")
@@ -1712,11 +1771,12 @@ actor \nodoc\ _TestSendSSLGracefulCloseListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -1750,14 +1810,15 @@ actor \nodoc\ _TestSendSSLGracefulCloseClient
 
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(_h.env.root),
-      sslctx,
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(_h.env.root),
+        sslctx,
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1793,23 +1854,26 @@ actor \nodoc\ _TestSendSSLGracefulCloseServer
   embed _returned: Array[USize] = _returned.create()
   embed _sent_ids: Array[USize] = _sent_ids.create()
 
-  new create(sslctx: SSLContext val, fd: U32, h: TestHelper,
+  new create(sslctx: SSLContext val,
+    fd: U32,
+    h: TestHelper,
     listener: _TestSendSSLGracefulCloseListener)
   =>
     _h = h
     _listener = listener
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _record_send(r: (SendToken | SendError)) =>
-    match r
+    match \exhaustive\ r
     | let t: SendToken => _returned.push(t.id)
     | let _: SendError => _h.fail("send() returned an error while flooding")
     end
@@ -1853,7 +1917,9 @@ actor \nodoc\ _TestSendSSLGracefulCloseServer
         for s in _sent_ids.values() do
           if s == id then count = count + 1 end
         end
-        _h.assert_eq[USize](1, count,
+        _h.assert_eq[USize](
+          1,
+          count,
           "each token must fire _on_sent exactly once")
       end
       _h.complete_action("server delivered all pending")
@@ -1902,11 +1968,12 @@ actor \nodoc\ _TestSendCloseFromThrottledListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      ifdef linux then "127.0.0.2" else "localhost" end,
-      "9781",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "9781",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -1939,13 +2006,14 @@ actor \nodoc\ _TestSendCloseFromThrottledClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      ifdef linux then "127.0.0.2" else "localhost" end,
-      "9781",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "9781",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -1978,16 +2046,18 @@ actor \nodoc\ _TestSendCloseFromThrottledServer
   var _unmuted_client: Bool = false
   var _token: (SendToken | None) = None
 
-  new create(fd: U32, h: TestHelper,
+  new create(fd: U32,
+    h: TestHelper,
     listener: _TestSendCloseFromThrottledListener)
   =>
     _h = h
     _listener = listener
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2003,7 +2073,7 @@ actor \nodoc\ _TestSendCloseFromThrottledServer
     _started = true
     _tcp_connection.set_so_sndbuf(16384)
     let payload = recover val Array[U8].init('x', 256_000) end
-    match _tcp_connection.send(payload)
+    match \exhaustive\ _tcp_connection.send(payload)
     | let t: SendToken =>
       _token = t
       _h.complete_action("send accepted")
@@ -2071,11 +2141,12 @@ actor \nodoc\ _TestSendHardCloseFromThrottledListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      ifdef linux then "127.0.0.2" else "localhost" end,
-      "9782",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "9782",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -2102,13 +2173,14 @@ actor \nodoc\ _TestSendHardCloseFromThrottledClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      ifdef linux then "127.0.0.2" else "localhost" end,
-      "9782",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "9782",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2131,11 +2203,12 @@ actor \nodoc\ _TestSendHardCloseFromThrottledServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2151,11 +2224,12 @@ actor \nodoc\ _TestSendHardCloseFromThrottledServer
     _started = true
     _tcp_connection.set_so_sndbuf(16384)
     let payload = recover val Array[U8].init('x', 256_000) end
-    match _tcp_connection.send(payload)
+    match \exhaustive\ _tcp_connection.send(payload)
     | let t: SendToken =>
       _token = t
       // hard_close() fired _on_closed synchronously from inside this send().
-      _h.assert_true(_closed,
+      _h.assert_true(
+        _closed,
         "_on_closed must fire before send() hands back the token")
       _h.complete_action("send accepted")
     | let _: SendError =>
@@ -2217,8 +2291,9 @@ class \nodoc\ iso _TestSendSSLHardCloseFromThrottled is UnitTest
     h.expect_action("token failed")
     h.expect_action("server closed")
 
-    let listener = _TestSendSSLHardCloseFromThrottledListener(
-      port, consume sslctx, h)
+    let listener =
+      _TestSendSSLHardCloseFromThrottledListener(
+        port, consume sslctx, h)
     h.dispose_when_done(listener)
     h.long_test(30_000_000_000)
 
@@ -2234,11 +2309,12 @@ actor \nodoc\ _TestSendSSLHardCloseFromThrottledListener is TCPListenerActor
     _port = port
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -2265,14 +2341,15 @@ actor \nodoc\ _TestSendSSLHardCloseFromThrottledClient
 
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_client(
-      TCPConnectAuth(_h.env.root),
-      sslctx,
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_client(
+        TCPConnectAuth(_h.env.root),
+        sslctx,
+        "localhost",
+        port,
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2295,12 +2372,13 @@ actor \nodoc\ _TestSendSSLHardCloseFromThrottledServer
 
   new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2316,11 +2394,12 @@ actor \nodoc\ _TestSendSSLHardCloseFromThrottledServer
     _started = true
     _tcp_connection.set_so_sndbuf(16384)
     let payload = recover val Array[U8].init('x', 256_000) end
-    match _tcp_connection.send(payload)
+    match \exhaustive\ _tcp_connection.send(payload)
     | let t: SendToken =>
       _token = t
       // hard_close() fired _on_closed synchronously from inside this send().
-      _h.assert_true(_closed,
+      _h.assert_true(
+        _closed,
         "_on_closed must fire before send() hands back the token")
       _h.complete_action("send accepted")
     | let _: SendError =>
@@ -2346,7 +2425,6 @@ actor \nodoc\ _TestSendSSLHardCloseFromThrottledServer
     else
       _h.fail("_on_send_failed fired with an unexpected token")
     end
-
 
 class \nodoc\ iso _TestSendDeliveredNotFailedOnHardClose is UnitTest
   """
@@ -2391,11 +2469,12 @@ actor \nodoc\ _TestSendDeliveredListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      ifdef linux then "127.0.0.2" else "localhost" end,
-      "9787",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "9787",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -2431,13 +2510,14 @@ actor \nodoc\ _TestSendDeliveredClient
   new create(h: TestHelper, listener: _TestSendDeliveredListener) =>
     _h = h
     _listener = listener
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      ifdef linux then "127.0.0.2" else "localhost" end,
-      "9787",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "9787",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2480,11 +2560,12 @@ actor \nodoc\ _TestSendDeliveredServer
   new create(fd: U32, h: TestHelper, listener: _TestSendDeliveredListener) =>
     _h = h
     _listener = listener
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -2497,7 +2578,7 @@ actor \nodoc\ _TestSendDeliveredServer
 
   fun ref _send_bytes(n: USize) =>
     let payload = recover val Array[U8].init('x', n) end
-    match _tcp_connection.send(payload)
+    match \exhaustive\ _tcp_connection.send(payload)
     | let _: SendToken =>
       _queued = _queued + 1
     | let _: SendError =>
@@ -2550,7 +2631,8 @@ actor \nodoc\ _TestSendDeliveredServer
     _h.log("peer=" + bytes.string() + " reached_os=" + reached_os.string()
       + " on_sent=" + _sent_ids.size().string()
       + " on_send_failed=" + _failed_ids.size().string())
-    _h.assert_true(_sent_ids.size() >= reached_os,
+    _h.assert_true(
+      _sent_ids.size() >= reached_os,
       "the peer holds " + bytes.string() + " bytes, so " + reached_os.string()
         + " sends reached the OS, but only " + _sent_ids.size().string()
         + " reported _on_sent")

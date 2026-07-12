@@ -20,6 +20,10 @@ actor Main
     Listener(TCPListenAuth(env.root), TCPConnectAuth(env.root), env.out)
 
 actor Listener is TCPListenerActor
+  """
+  Listens on the example's port, creating a framed echo server for each accepted
+  connection and launching the framed client once listening.
+  """
   var _tcp_listener: TCPListener = TCPListener.none()
   let _out: OutStream
   let _connect_auth: TCPConnectAuth
@@ -86,14 +90,14 @@ actor FramedServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
       _out.print("Server: echoing \"" + String.from_array(payload) + "\"")
 
       // Echo back with same framing: header + payload in one writev syscall
-      let header = recover val
-        let h = Array[U8](4)
-        h.push((len >> 24).u8())
-        h.push((len >> 16).u8())
-        h.push((len >> 8).u8())
-        h.push(len.u8())
-        h
-      end
+      let header =
+        recover val
+          Array[U8](4)
+            .> push((len >> 24).u8())
+            .> push((len >> 16).u8())
+            .> push((len >> 8).u8())
+            .> push(len.u8())
+        end
       _tcp_connection.send(recover val [as ByteSeq: header; payload] end)
 
       _reading_header = true
@@ -117,17 +121,19 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
   var _reading_header: Bool = true
   var _messages_received: USize = 0
 
-  new create(auth: TCPConnectAuth, host: String, port: String,
+  new create(auth: TCPConnectAuth,
+    host: String,
+    port: String,
     out: OutStream)
   =>
     _out = out
-    _messages = recover val
-      let m = Array[String](3)
-      m.push("Hello")
-      m.push("Framing!")
-      m.push("Length-prefixed protocols are neat")
-      m
-    end
+    _messages =
+      recover val
+        Array[String](3)
+          .> push("Hello")
+          .> push("Framing!")
+          .> push("Length-prefixed protocols are neat")
+      end
     _tcp_connection = TCPConnection.client(auth, host, port, "", this, this)
 
   fun ref _connection(): TCPConnection =>
@@ -149,14 +155,14 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
     header and payload in a single writev syscall.
     """
     let len = msg.size()
-    let header = recover val
-      let h = Array[U8](4)
-      h.push((len >> 24).u8())
-      h.push((len >> 16).u8())
-      h.push((len >> 8).u8())
-      h.push(len.u8())
-      h
-    end
+    let header =
+      recover val
+        Array[U8](4)
+          .> push((len >> 24).u8())
+          .> push((len >> 16).u8())
+          .> push((len >> 8).u8())
+          .> push(len.u8())
+      end
     _tcp_connection.send(recover val [as ByteSeq: header; msg] end)
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>

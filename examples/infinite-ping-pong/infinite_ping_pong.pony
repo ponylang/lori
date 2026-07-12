@@ -20,6 +20,9 @@ actor Main
     Listener(listen_auth, connect_auth, env.out)
 
 actor  Listener is TCPListenerActor
+  """
+  Listens on the example's port and starts the client once listening.
+  """
   var _tcp_listener: TCPListener = TCPListener.none()
   let _out: OutStream
   let _connect_auth: TCPConnectAuth
@@ -47,6 +50,9 @@ actor  Listener is TCPListenerActor
     _out.print("Unable to open listener")
 
 actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  """
+  Receives each message and replies with Pong.
+  """
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
@@ -66,6 +72,9 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
     KeepReading
 
 actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  """
+  Sends Ping when connected and sends Ping again for each reply received.
+  """
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _out: OutStream
 
@@ -85,9 +94,9 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
     _tcp_connection
 
   fun ref _on_connected() =>
-   _tcp_connection.send("Ping")
+    _tcp_connection.send("Ping")
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
-   _out.print(consume data)
-   _tcp_connection.send("Ping")
+    _out.print(consume data)
+    _tcp_connection.send("Ping")
     KeepReading

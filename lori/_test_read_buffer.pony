@@ -19,8 +19,9 @@ actor \nodoc\ _TestReadBufferConstructorSizeListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(h.env.root), "127.0.0.1", "7700", this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(h.env.root), "127.0.0.1", "7700", this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -30,8 +31,8 @@ actor \nodoc\ _TestReadBufferConstructorSizeListener is TCPListenerActor
 
   fun ref _on_listening() =>
     // Connect a client just to trigger _on_accept
-    _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
-      "127.0.0.1", "7700")
+    _TestReadBufferTriggerClient(
+      TCPConnectAuth(_h.env.root), "127.0.0.1", "7700")
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open listener")
@@ -44,11 +45,12 @@ actor \nodoc\ _TestReadBufferConstructorSizeServer is
   new create(fd: U32, h: TestHelper) =>
     _h = h
     // Use a custom buffer size of 512
-    match MakeReadBufferSize(512)
+    match \exhaustive\ MakeReadBufferSize(512)
     | let rbs: ReadBufferSize =>
-      _tcp_connection = TCPConnection.server(
-        TCPServerAuth(h.env.root), fd, this, this
-        where read_buffer_size = rbs)
+      _tcp_connection =
+        TCPConnection.server(
+          TCPServerAuth(h.env.root), fd, this, this
+          where read_buffer_size = rbs)
     | let _: ValidationFailure =>
       _h.fail("MakeReadBufferSize(512) should succeed")
     end
@@ -58,16 +60,16 @@ actor \nodoc\ _TestReadBufferConstructorSizeServer is
 
   fun ref _on_started() =>
     // set_read_buffer_minimum to 256 should succeed (lowering the minimum)
-    match MakeReadBufferSize(256)
+    match \exhaustive\ MakeReadBufferSize(256)
     | let rbs: ReadBufferSize =>
-      match _tcp_connection.set_read_buffer_minimum(rbs)
+      match \exhaustive\ _tcp_connection.set_read_buffer_minimum(rbs)
       | ReadBufferResized => None
       | ReadBufferResizeBelowBufferSize =>
         _h.fail("set_read_buffer_minimum(256) should succeed")
       end
 
       // resize_read_buffer to 256 should succeed since minimum is now 256
-      match _tcp_connection.resize_read_buffer(rbs)
+      match \exhaustive\ _tcp_connection.resize_read_buffer(rbs)
       | ReadBufferResized => None
       | let _: ReadBufferResizeBelowBufferSize =>
         _h.fail("resize_read_buffer(256) should succeed")
@@ -99,8 +101,9 @@ actor \nodoc\ _TestSetReadBufferMinSuccessListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(h.env.root), "127.0.0.1", "7701", this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(h.env.root), "127.0.0.1", "7701", this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -109,8 +112,8 @@ actor \nodoc\ _TestSetReadBufferMinSuccessListener is TCPListenerActor
     _TestSetReadBufferMinSuccessServer(fd, _h)
 
   fun ref _on_listening() =>
-    _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
-      "127.0.0.1", "7701")
+    _TestReadBufferTriggerClient(
+      TCPConnectAuth(_h.env.root), "127.0.0.1", "7701")
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open listener")
@@ -122,11 +125,12 @@ actor \nodoc\ _TestSetReadBufferMinSuccessServer is
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    match MakeReadBufferSize(256)
+    match \exhaustive\ MakeReadBufferSize(256)
     | let rbs: ReadBufferSize =>
-      _tcp_connection = TCPConnection.server(
-        TCPServerAuth(h.env.root), fd, this, this
-        where read_buffer_size = rbs)
+      _tcp_connection =
+        TCPConnection.server(
+          TCPServerAuth(h.env.root), fd, this, this
+          where read_buffer_size = rbs)
     | let _: ValidationFailure =>
       _h.fail("MakeReadBufferSize(256) should succeed")
     end
@@ -136,9 +140,9 @@ actor \nodoc\ _TestSetReadBufferMinSuccessServer is
 
   fun ref _on_started() =>
     // Setting minimum to 512 should succeed and grow the buffer
-    match MakeReadBufferSize(512)
+    match \exhaustive\ MakeReadBufferSize(512)
     | let rbs: ReadBufferSize =>
-      match _tcp_connection.set_read_buffer_minimum(rbs)
+      match \exhaustive\ _tcp_connection.set_read_buffer_minimum(rbs)
       | ReadBufferResized => None
       | ReadBufferResizeBelowBufferSize =>
         _h.fail("set_read_buffer_minimum(512) should succeed")
@@ -148,9 +152,9 @@ actor \nodoc\ _TestSetReadBufferMinSuccessServer is
     end
 
     // Setting minimum back to 128 should succeed (lowering is always ok)
-    match MakeReadBufferSize(128)
+    match \exhaustive\ MakeReadBufferSize(128)
     | let rbs: ReadBufferSize =>
-      match _tcp_connection.set_read_buffer_minimum(rbs)
+      match \exhaustive\ _tcp_connection.set_read_buffer_minimum(rbs)
       | ReadBufferResized => None
       | ReadBufferResizeBelowBufferSize =>
         _h.fail("set_read_buffer_minimum(128) should succeed")
@@ -180,8 +184,9 @@ actor \nodoc\ _TestSetReadBufferMinBelowBufferSizeListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(h.env.root), "127.0.0.1", "7702", this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(h.env.root), "127.0.0.1", "7702", this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -190,8 +195,8 @@ actor \nodoc\ _TestSetReadBufferMinBelowBufferSizeListener is TCPListenerActor
     _TestSetReadBufferMinBelowBufferSizeServer(fd, _h)
 
   fun ref _on_listening() =>
-    _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
-      "127.0.0.1", "7702")
+    _TestReadBufferTriggerClient(
+      TCPConnectAuth(_h.env.root), "127.0.0.1", "7702")
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open listener")
@@ -203,8 +208,9 @@ actor \nodoc\ _TestSetReadBufferMinBelowBufferSizeServer is
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(h.env.root), fd, this, this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(h.env.root), fd, this, this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -216,9 +222,9 @@ actor \nodoc\ _TestSetReadBufferMinBelowBufferSizeServer is
     end
 
     // Setting minimum below buffer_until should fail
-    match MakeReadBufferSize(50)
+    match \exhaustive\ MakeReadBufferSize(50)
     | let rbs: ReadBufferSize =>
-      match _tcp_connection.set_read_buffer_minimum(rbs)
+      match \exhaustive\ _tcp_connection.set_read_buffer_minimum(rbs)
       | ReadBufferResized =>
         _h.fail(
           "set_read_buffer_minimum(50) should fail when buffer_until is 100")
@@ -229,13 +235,14 @@ actor \nodoc\ _TestSetReadBufferMinBelowBufferSizeServer is
     end
 
     // Setting minimum at buffer_until should succeed
-    match MakeReadBufferSize(100)
+    match \exhaustive\ MakeReadBufferSize(100)
     | let rbs: ReadBufferSize =>
-      match _tcp_connection.set_read_buffer_minimum(rbs)
+      match \exhaustive\ _tcp_connection.set_read_buffer_minimum(rbs)
       | ReadBufferResized => None
       | ReadBufferResizeBelowBufferSize =>
         _h.fail(
-          "set_read_buffer_minimum(100) should succeed when buffer_until is 100")
+          "set_read_buffer_minimum(100) should succeed when buffer_until is 100"
+          )
       end
     | let _: ValidationFailure =>
       _h.fail("MakeReadBufferSize(100) should succeed")
@@ -261,8 +268,9 @@ actor \nodoc\ _TestResizeReadBufferSuccessListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(h.env.root), "127.0.0.1", "7703", this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(h.env.root), "127.0.0.1", "7703", this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -271,8 +279,8 @@ actor \nodoc\ _TestResizeReadBufferSuccessListener is TCPListenerActor
     _TestResizeReadBufferSuccessServer(fd, _h)
 
   fun ref _on_listening() =>
-    _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
-      "127.0.0.1", "7703")
+    _TestReadBufferTriggerClient(
+      TCPConnectAuth(_h.env.root), "127.0.0.1", "7703")
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open listener")
@@ -284,11 +292,12 @@ actor \nodoc\ _TestResizeReadBufferSuccessServer is
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    match MakeReadBufferSize(1024)
+    match \exhaustive\ MakeReadBufferSize(1024)
     | let rbs: ReadBufferSize =>
-      _tcp_connection = TCPConnection.server(
-        TCPServerAuth(h.env.root), fd, this, this
-        where read_buffer_size = rbs)
+      _tcp_connection =
+        TCPConnection.server(
+          TCPServerAuth(h.env.root), fd, this, this
+          where read_buffer_size = rbs)
     | let _: ValidationFailure =>
       _h.fail("MakeReadBufferSize(1024) should succeed")
     end
@@ -298,9 +307,9 @@ actor \nodoc\ _TestResizeReadBufferSuccessServer is
 
   fun ref _on_started() =>
     // Resize to larger
-    match MakeReadBufferSize(4096)
+    match \exhaustive\ MakeReadBufferSize(4096)
     | let rbs: ReadBufferSize =>
-      match _tcp_connection.resize_read_buffer(rbs)
+      match \exhaustive\ _tcp_connection.resize_read_buffer(rbs)
       | ReadBufferResized => None
       | let _: ReadBufferResizeBelowBufferSize =>
         _h.fail("resize_read_buffer(4096) should succeed")
@@ -312,9 +321,9 @@ actor \nodoc\ _TestResizeReadBufferSuccessServer is
     end
 
     // Resize to smaller (also lowers minimum)
-    match MakeReadBufferSize(512)
+    match \exhaustive\ MakeReadBufferSize(512)
     | let rbs: ReadBufferSize =>
-      match _tcp_connection.resize_read_buffer(rbs)
+      match \exhaustive\ _tcp_connection.resize_read_buffer(rbs)
       | ReadBufferResized => None
       | let _: ReadBufferResizeBelowBufferSize =>
         _h.fail("resize_read_buffer(512) should succeed")
@@ -346,8 +355,9 @@ actor \nodoc\ _TestResizeReadBufferBelowBufferSizeListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(h.env.root), "127.0.0.1", "7704", this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(h.env.root), "127.0.0.1", "7704", this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -356,8 +366,8 @@ actor \nodoc\ _TestResizeReadBufferBelowBufferSizeListener is TCPListenerActor
     _TestResizeReadBufferBelowBufferSizeServer(fd, _h)
 
   fun ref _on_listening() =>
-    _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
-      "127.0.0.1", "7704")
+    _TestReadBufferTriggerClient(
+      TCPConnectAuth(_h.env.root), "127.0.0.1", "7704")
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open listener")
@@ -369,8 +379,9 @@ actor \nodoc\ _TestResizeReadBufferBelowBufferSizeServer is
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(h.env.root), fd, this, this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(h.env.root), fd, this, this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -382,16 +393,16 @@ actor \nodoc\ _TestResizeReadBufferBelowBufferSizeServer is
     end
 
     // Resize below buffer_until should fail
-    match MakeReadBufferSize(100)
+    match \exhaustive\ MakeReadBufferSize(100)
     | let rbs: ReadBufferSize =>
-      match _tcp_connection.resize_read_buffer(rbs)
+      match \exhaustive\ _tcp_connection.resize_read_buffer(rbs)
       | ReadBufferResized =>
         _h.fail("resize_read_buffer(100) should fail when buffer_until is 200")
       | let _: ReadBufferResizeBelowBufferSize => None
       | let _: ReadBufferResizeBelowUsed =>
         _h.fail(
-          "should be ReadBufferResizeBelowBufferSize, not ReadBufferResizeBelowUsed"
-          )
+          "should be ReadBufferResizeBelowBufferSize, "
+          + "not ReadBufferResizeBelowUsed")
       end
     | let _: ValidationFailure =>
       _h.fail("MakeReadBufferSize(100) should succeed")
@@ -403,8 +414,8 @@ actor \nodoc\ _TestResizeReadBufferBelowBufferSizeServer is
 class \nodoc\ iso _TestResizeReadBufferBelowMinLowersMin is UnitTest
   """
   Test that resize_read_buffer() below the current minimum lowers the minimum.
-  Verified by subsequently setting buffer_until to the old minimum (which would fail
-  if the minimum hadn't been lowered).
+  Verified by subsequently setting buffer_until to the old minimum (which would
+  fail if the minimum hadn't been lowered).
   """
   fun name(): String => "ResizeReadBufferBelowMinLowersMin"
 
@@ -419,8 +430,9 @@ actor \nodoc\ _TestResizeReadBufferBelowMinListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(h.env.root), "127.0.0.1", "7705", this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(h.env.root), "127.0.0.1", "7705", this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -429,8 +441,8 @@ actor \nodoc\ _TestResizeReadBufferBelowMinListener is TCPListenerActor
     _TestResizeReadBufferBelowMinServer(fd, _h)
 
   fun ref _on_listening() =>
-    _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
-      "127.0.0.1", "7705")
+    _TestReadBufferTriggerClient(
+      TCPConnectAuth(_h.env.root), "127.0.0.1", "7705")
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open listener")
@@ -443,11 +455,12 @@ actor \nodoc\ _TestResizeReadBufferBelowMinServer is
   new create(fd: U32, h: TestHelper) =>
     _h = h
     // Start with buffer size 1024 (min is also 1024)
-    match MakeReadBufferSize(1024)
+    match \exhaustive\ MakeReadBufferSize(1024)
     | let rbs: ReadBufferSize =>
-      _tcp_connection = TCPConnection.server(
-        TCPServerAuth(h.env.root), fd, this, this
-        where read_buffer_size = rbs)
+      _tcp_connection =
+        TCPConnection.server(
+          TCPServerAuth(h.env.root), fd, this, this
+          where read_buffer_size = rbs)
     | let _: ValidationFailure =>
       _h.fail("MakeReadBufferSize(1024) should succeed")
     end
@@ -457,9 +470,9 @@ actor \nodoc\ _TestResizeReadBufferBelowMinServer is
 
   fun ref _on_started() =>
     // Resize to 256 — this should lower the minimum from 1024 to 256
-    match MakeReadBufferSize(256)
+    match \exhaustive\ MakeReadBufferSize(256)
     | let rbs: ReadBufferSize =>
-      match _tcp_connection.resize_read_buffer(rbs)
+      match \exhaustive\ _tcp_connection.resize_read_buffer(rbs)
       | ReadBufferResized => None
       | let _: ReadBufferResizeBelowBufferSize =>
         _h.fail("resize_read_buffer(256) should succeed")
@@ -473,7 +486,7 @@ actor \nodoc\ _TestResizeReadBufferBelowMinServer is
     // Now buffer_until(512) should fail because minimum was lowered to 256
     match MakeBufferSize(512)
     | let e: BufferSize =>
-      match _tcp_connection.buffer_until(e)
+      match \exhaustive\ _tcp_connection.buffer_until(e)
       | BufferUntilSet =>
         _h.fail("buffer_until(512) should fail when minimum is 256")
       | BufferSizeAboveMinimum => None
@@ -483,7 +496,7 @@ actor \nodoc\ _TestResizeReadBufferBelowMinServer is
     // buffer_until(256) should succeed (at the new minimum)
     match MakeBufferSize(256)
     | let e: BufferSize =>
-      match _tcp_connection.buffer_until(e)
+      match \exhaustive\ _tcp_connection.buffer_until(e)
       | BufferUntilSet => None
       | BufferSizeAboveMinimum =>
         _h.fail("buffer_until(256) should succeed when minimum is 256")
@@ -495,7 +508,8 @@ actor \nodoc\ _TestResizeReadBufferBelowMinServer is
 
 class \nodoc\ iso _TestBufferSizeAboveMinimum is UnitTest
   """
-  Test that buffer_until() fails when the requested value exceeds the buffer minimum.
+  Test that buffer_until() fails when the requested value exceeds the buffer
+  minimum.
   """
   fun name(): String => "BufferSizeAboveMinimum"
 
@@ -510,8 +524,9 @@ actor \nodoc\ _TestBufferSizeAboveMinListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(h.env.root), "127.0.0.1", "7706", this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(h.env.root), "127.0.0.1", "7706", this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -520,8 +535,8 @@ actor \nodoc\ _TestBufferSizeAboveMinListener is TCPListenerActor
     _TestBufferSizeAboveMinServer(fd, _h)
 
   fun ref _on_listening() =>
-    _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
-      "127.0.0.1", "7706")
+    _TestReadBufferTriggerClient(
+      TCPConnectAuth(_h.env.root), "127.0.0.1", "7706")
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open listener")
@@ -534,11 +549,12 @@ actor \nodoc\ _TestBufferSizeAboveMinServer is
   new create(fd: U32, h: TestHelper) =>
     _h = h
     // Start with buffer size 128 (min is also 128)
-    match MakeReadBufferSize(128)
+    match \exhaustive\ MakeReadBufferSize(128)
     | let rbs: ReadBufferSize =>
-      _tcp_connection = TCPConnection.server(
-        TCPServerAuth(h.env.root), fd, this, this
-        where read_buffer_size = rbs)
+      _tcp_connection =
+        TCPConnection.server(
+          TCPServerAuth(h.env.root), fd, this, this
+          where read_buffer_size = rbs)
     | let _: ValidationFailure =>
       _h.fail("MakeReadBufferSize(128) should succeed")
     end
@@ -550,7 +566,7 @@ actor \nodoc\ _TestBufferSizeAboveMinServer is
     // buffer_until(256) should fail because minimum is 128
     match MakeBufferSize(256)
     | let e: BufferSize =>
-      match _tcp_connection.buffer_until(e)
+      match \exhaustive\ _tcp_connection.buffer_until(e)
       | BufferUntilSet =>
         _h.fail("buffer_until(256) should fail when minimum is 128")
       | BufferSizeAboveMinimum => None
@@ -578,8 +594,9 @@ actor \nodoc\ _TestBufferSizeAtMinListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(h.env.root), "127.0.0.1", "7707", this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(h.env.root), "127.0.0.1", "7707", this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -588,8 +605,8 @@ actor \nodoc\ _TestBufferSizeAtMinListener is TCPListenerActor
     _TestBufferSizeAtMinServer(fd, _h)
 
   fun ref _on_listening() =>
-    _TestReadBufferTriggerClient(TCPConnectAuth(_h.env.root),
-      "127.0.0.1", "7707")
+    _TestReadBufferTriggerClient(
+      TCPConnectAuth(_h.env.root), "127.0.0.1", "7707")
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open listener")
@@ -601,11 +618,12 @@ actor \nodoc\ _TestBufferSizeAtMinServer is
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    match MakeReadBufferSize(256)
+    match \exhaustive\ MakeReadBufferSize(256)
     | let rbs: ReadBufferSize =>
-      _tcp_connection = TCPConnection.server(
-        TCPServerAuth(h.env.root), fd, this, this
-        where read_buffer_size = rbs)
+      _tcp_connection =
+        TCPConnection.server(
+          TCPServerAuth(h.env.root), fd, this, this
+          where read_buffer_size = rbs)
     | let _: ValidationFailure =>
       _h.fail("MakeReadBufferSize(256) should succeed")
     end
@@ -617,7 +635,7 @@ actor \nodoc\ _TestBufferSizeAtMinServer is
     // buffer_until(256) should succeed (equals minimum)
     match MakeBufferSize(256)
     | let e: BufferSize =>
-      match _tcp_connection.buffer_until(e)
+      match \exhaustive\ _tcp_connection.buffer_until(e)
       | BufferUntilSet => None
       | BufferSizeAboveMinimum =>
         _h.fail("buffer_until(256) should succeed when minimum is 256")

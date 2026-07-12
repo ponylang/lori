@@ -16,7 +16,8 @@ class \nodoc\ iso _TestIP4PingPong is UnitTest
 
     h.long_test(5_000_000_000)
 
-actor \nodoc\ _TestIP4Pinger is (TCPConnectionActor & ClientLifecycleEventReceiver)
+actor \nodoc\ _TestIP4Pinger
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   var _pings_to_send: I32
   let _h: TestHelper
@@ -28,13 +29,14 @@ actor \nodoc\ _TestIP4Pinger is (TCPConnectionActor & ClientLifecycleEventReceiv
     _pings_to_send = pings_to_send
     _h = h
 
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(h.env.root),
-      "127.0.0.1",
-      port,
-      "",
-      this,
-      this where ip_version = IP4)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(h.env.root),
+        "127.0.0.1",
+        port,
+        "",
+        this,
+        this where ip_version = IP4)
     match MakeBufferSize(4)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -59,7 +61,8 @@ actor \nodoc\ _TestIP4Pinger is (TCPConnectionActor & ClientLifecycleEventReceiv
     end
     KeepReading
 
-actor \nodoc\ _TestIP4Ponger is (TCPConnectionActor & ServerLifecycleEventReceiver)
+actor \nodoc\ _TestIP4Ponger
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   var _pings_to_receive: I32
   let _h: TestHelper
@@ -71,11 +74,12 @@ actor \nodoc\ _TestIP4Ponger is (TCPConnectionActor & ServerLifecycleEventReceiv
     _pings_to_receive = pings_to_receive
     _h = h
 
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
     match MakeBufferSize(4)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -108,11 +112,12 @@ actor \nodoc\ _TestIP4PongerListener is TCPListenerActor
     _port = port
     _pings_to_receive = pings_to_receive
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "127.0.0.1",
-      _port,
-      this where ip_version = IP4)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "127.0.0.1",
+        _port,
+        this where ip_version = IP4)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -146,7 +151,8 @@ class \nodoc\ iso _TestIP6PingPong is UnitTest
 
     h.long_test(5_000_000_000)
 
-actor \nodoc\ _TestIP6Pinger is (TCPConnectionActor & ClientLifecycleEventReceiver)
+actor \nodoc\ _TestIP6Pinger
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   var _pings_to_send: I32
   let _h: TestHelper
@@ -158,13 +164,14 @@ actor \nodoc\ _TestIP6Pinger is (TCPConnectionActor & ClientLifecycleEventReceiv
     _pings_to_send = pings_to_send
     _h = h
 
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(h.env.root),
-      "::1",
-      port,
-      "",
-      this,
-      this where ip_version = IP6)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(h.env.root),
+        "::1",
+        port,
+        "",
+        this,
+        this where ip_version = IP6)
     match MakeBufferSize(4)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -189,7 +196,8 @@ actor \nodoc\ _TestIP6Pinger is (TCPConnectionActor & ClientLifecycleEventReceiv
     end
     KeepReading
 
-actor \nodoc\ _TestIP6Ponger is (TCPConnectionActor & ServerLifecycleEventReceiver)
+actor \nodoc\ _TestIP6Ponger
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   var _pings_to_receive: I32
   let _h: TestHelper
@@ -201,11 +209,12 @@ actor \nodoc\ _TestIP6Ponger is (TCPConnectionActor & ServerLifecycleEventReceiv
     _pings_to_receive = pings_to_receive
     _h = h
 
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
     match MakeBufferSize(4)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -238,11 +247,12 @@ actor \nodoc\ _TestIP6PongerListener is TCPListenerActor
     _port = port
     _pings_to_receive = pings_to_receive
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "::1",
-      _port,
-      this where ip_version = IP6)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "::1",
+        _port,
+        this where ip_version = IP6)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener

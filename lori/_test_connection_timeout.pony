@@ -24,16 +24,17 @@ actor \nodoc\ _TestConnectionTimeoutFiresClient
 
   new create(h: TestHelper) =>
     _h = h
-    match MakeConnectionTimeout(2_000)
+    match \exhaustive\ MakeConnectionTimeout(2_000)
     | let ct: ConnectionTimeout =>
-      _tcp_connection = TCPConnection.client(
-        TCPConnectAuth(_h.env.root),
-        "192.0.2.1",
-        "9737",
-        "",
-        this,
-        this
-        where connection_timeout = ct)
+      _tcp_connection =
+        TCPConnection.client(
+          TCPConnectAuth(_h.env.root),
+          "192.0.2.1",
+          "9737",
+          "",
+          this,
+          this
+          where connection_timeout = ct)
     | let _: ValidationFailure =>
       _h.fail("MakeConnectionTimeout(2_000) should succeed")
     end
@@ -75,11 +76,12 @@ actor \nodoc\ _TestConnectionTimeoutCancelListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9738",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9738",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -103,16 +105,17 @@ actor \nodoc\ _TestConnectionTimeoutCancelClient
 
   new create(h: TestHelper) =>
     _h = h
-    match MakeConnectionTimeout(30_000)
+    match \exhaustive\ MakeConnectionTimeout(30_000)
     | let ct: ConnectionTimeout =>
-      _tcp_connection = TCPConnection.client(
-        TCPConnectAuth(_h.env.root),
-        "localhost",
-        "9738",
-        "",
-        this,
-        this
-        where connection_timeout = ct)
+      _tcp_connection =
+        TCPConnection.client(
+          TCPConnectAuth(_h.env.root),
+          "localhost",
+          "9738",
+          "",
+          this,
+          this
+          where connection_timeout = ct)
     | let _: ValidationFailure =>
       _h.fail("MakeConnectionTimeout(30_000) should succeed")
     end
@@ -134,11 +137,12 @@ actor \nodoc\ _TestConnectionTimeoutCancelServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -163,8 +167,9 @@ class \nodoc\ iso _TestSSLConnectionTimeoutFires is UnitTest
           .> set_server_verify(false)
       end
 
-    let listener = _TestSSLConnectionTimeoutFiresListener(
-      consume sslctx, h)
+    let listener =
+      _TestSSLConnectionTimeoutFiresListener(
+        consume sslctx, h)
     h.dispose_when_done(listener)
 
     h.long_test(15_000_000_000)
@@ -178,11 +183,12 @@ actor \nodoc\ _TestSSLConnectionTimeoutFiresListener is TCPListenerActor
   new create(sslctx: SSLContext val, h: TestHelper) =>
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9739",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9739",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -206,17 +212,18 @@ actor \nodoc\ _TestSSLConnectionTimeoutFiresClient
 
   new create(sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    match MakeConnectionTimeout(2_000)
+    match \exhaustive\ MakeConnectionTimeout(2_000)
     | let ct: ConnectionTimeout =>
-      _tcp_connection = TCPConnection.ssl_client(
-        TCPConnectAuth(_h.env.root),
-        sslctx,
-        "localhost",
-        "9739",
-        "",
-        this,
-        this
-        where connection_timeout = ct)
+      _tcp_connection =
+        TCPConnection.ssl_client(
+          TCPConnectAuth(_h.env.root),
+          sslctx,
+          "localhost",
+          "9739",
+          "",
+          this,
+          this
+          where connection_timeout = ct)
     | let _: ValidationFailure =>
       _h.fail("MakeConnectionTimeout(2_000) should succeed")
     end
@@ -247,11 +254,12 @@ actor \nodoc\ _TestSSLConnectionTimeoutFiresServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -278,8 +286,9 @@ class \nodoc\ iso _TestSSLConnectionTimeoutCancelledOnConnect is UnitTest
           .> set_server_verify(false)
       end
 
-    let listener = _TestSSLConnectionTimeoutCancelListener(
-      consume sslctx, h)
+    let listener =
+      _TestSSLConnectionTimeoutCancelListener(
+        consume sslctx, h)
     h.dispose_when_done(listener)
 
     h.long_test(15_000_000_000)
@@ -293,11 +302,12 @@ actor \nodoc\ _TestSSLConnectionTimeoutCancelListener is TCPListenerActor
   new create(sslctx: SSLContext val, h: TestHelper) =>
     _sslctx = sslctx
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9740",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9740",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -321,17 +331,18 @@ actor \nodoc\ _TestSSLConnectionTimeoutCancelClient
 
   new create(sslctx: SSLContext val, h: TestHelper) =>
     _h = h
-    match MakeConnectionTimeout(30_000)
+    match \exhaustive\ MakeConnectionTimeout(30_000)
     | let ct: ConnectionTimeout =>
-      _tcp_connection = TCPConnection.ssl_client(
-        TCPConnectAuth(_h.env.root),
-        sslctx,
-        "localhost",
-        "9740",
-        "",
-        this,
-        this
-        where connection_timeout = ct)
+      _tcp_connection =
+        TCPConnection.ssl_client(
+          TCPConnectAuth(_h.env.root),
+          sslctx,
+          "localhost",
+          "9740",
+          "",
+          this,
+          this
+          where connection_timeout = ct)
     | let _: ValidationFailure =>
       _h.fail("MakeConnectionTimeout(30_000) should succeed")
     end
@@ -353,12 +364,13 @@ actor \nodoc\ _TestSSLConnectionTimeoutCancelSSLServer
 
   new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.ssl_server(
-      TCPServerAuth(_h.env.root),
-      sslctx,
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -366,7 +378,8 @@ actor \nodoc\ _TestSSLConnectionTimeoutCancelSSLServer
 class \nodoc\ iso _TestCloseWhileConnectingWithTimeout is UnitTest
   """
   Test that close() during the connecting phase with a connect timeout armed
-  cancels the timer and reports ConnectionFailedTCP, not ConnectionFailedTimeout.
+  cancels the timer and reports ConnectionFailedTCP, not
+  ConnectionFailedTimeout.
   """
   fun name(): String => "CloseWhileConnectingWithTimeout"
 
@@ -383,16 +396,17 @@ actor \nodoc\ _TestCloseWhileConnectingWithTimeoutClient
 
   new create(h: TestHelper) =>
     _h = h
-    match MakeConnectionTimeout(30_000)
+    match \exhaustive\ MakeConnectionTimeout(30_000)
     | let ct: ConnectionTimeout =>
-      _tcp_connection = TCPConnection.client(
-        TCPConnectAuth(_h.env.root),
-        "localhost",
-        "9741",
-        "",
-        this,
-        this
-        where connection_timeout = ct)
+      _tcp_connection =
+        TCPConnection.client(
+          TCPConnectAuth(_h.env.root),
+          "localhost",
+          "9741",
+          "",
+          this,
+          this
+          where connection_timeout = ct)
     | let _: ValidationFailure =>
       _h.fail("MakeConnectionTimeout(30_000) should succeed")
     end
@@ -423,11 +437,12 @@ actor \nodoc\ _TestCloseWhileConnectingWithTimeoutListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9741",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9741",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -467,16 +482,17 @@ actor \nodoc\ _TestHardCloseWhileConnectingWithTimeoutClient
 
   new create(h: TestHelper) =>
     _h = h
-    match MakeConnectionTimeout(30_000)
+    match \exhaustive\ MakeConnectionTimeout(30_000)
     | let ct: ConnectionTimeout =>
-      _tcp_connection = TCPConnection.client(
-        TCPConnectAuth(_h.env.root),
-        "localhost",
-        "9742",
-        "",
-        this,
-        this
-        where connection_timeout = ct)
+      _tcp_connection =
+        TCPConnection.client(
+          TCPConnectAuth(_h.env.root),
+          "localhost",
+          "9742",
+          "",
+          this,
+          this
+          where connection_timeout = ct)
     | let _: ValidationFailure =>
       _h.fail("MakeConnectionTimeout(30_000) should succeed")
     end
@@ -508,11 +524,12 @@ actor \nodoc\ _TestHardCloseWhileConnectingWithTimeoutListener
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9742",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9742",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener

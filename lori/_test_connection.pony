@@ -13,20 +13,22 @@ class \nodoc\ iso _TestOutgoingFails is UnitTest
 
     h.long_test(5_000_000_000)
 
-actor \nodoc\ _TestOutgoingFailure is (TCPConnectionActor & ClientLifecycleEventReceiver)
+actor \nodoc\ _TestOutgoingFailure
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _h: TestHelper
 
   new create(h: TestHelper) =>
     _h = h
     let host = ifdef linux then "127.0.0.2" else "localhost" end
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      host,
-      "3245",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        host,
+        "3245",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -65,13 +67,14 @@ actor \nodoc\ _TestPinger is (TCPConnectionActor & ClientLifecycleEventReceiver)
     _pings_to_send = pings_to_send
     _h = h
 
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(h.env.root),
-      "localhost",
-      port,
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(h.env.root),
+        "localhost",
+        port,
+        "",
+        this,
+        this)
     match MakeBufferSize(4)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -108,11 +111,12 @@ actor \nodoc\ _TestPonger is (TCPConnectionActor & ServerLifecycleEventReceiver)
     _pings_to_receive = pings_to_receive
     _h = h
 
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
     match MakeBufferSize(4)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -145,11 +149,12 @@ actor \nodoc\ _TestPongerListener is TCPListenerActor
     _port = port
     _pings_to_receive = pings_to_receive
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      _port,
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -182,19 +187,21 @@ class \nodoc\ iso _TestBasicBufferUntil is UnitTest
 
     h.long_test(5_000_000_000)
 
-actor \nodoc\ _TestBasicBufferUntilClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
+actor \nodoc\ _TestBasicBufferUntilClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _h: TestHelper
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "9728",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "9728",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -214,11 +221,12 @@ actor \nodoc\ _TestBasicBufferUntilListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9728",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9728",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -231,23 +239,25 @@ actor \nodoc\ _TestBasicBufferUntilListener is TCPListenerActor
 
   fun ref _on_listening() =>
     _h.complete_action("server listening")
-    _client =_TestBasicBufferUntilClient(_h)
+    _client = _TestBasicBufferUntilClient(_h)
 
   fun ref _on_listen_failure() =>
     _h.fail("Unable to open _TestBasicBufferUntilListener")
 
-actor \nodoc\ _TestBasicBufferUntilServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
+actor \nodoc\ _TestBasicBufferUntilServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
   let _h: TestHelper
   var _tcp_connection: TCPConnection = TCPConnection.none()
   var _received_count: U8 = 0
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
     match MakeBufferSize(4)
     | let e: BufferSize => _tcp_connection.buffer_until(e)
     end
@@ -294,11 +304,12 @@ actor \nodoc\ _TestCanListenListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "5786",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "5786",
+        this)
 
   fun ref _on_accept(fd: U32): _TestDoNothingServerActor =>
     _h.fail("_on_accept shouldn't be called")
@@ -315,15 +326,17 @@ actor \nodoc\ _TestCanListenListener is TCPListenerActor
   fun ref _listener(): TCPListener =>
     _tcp_listener
 
-actor \nodoc\ _TestDoNothingServerActor is (TCPConnectionActor & ServerLifecycleEventReceiver)
+actor \nodoc\ _TestDoNothingServerActor
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
 
   new create(fd: U32, h: TestHelper) =>
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -347,11 +360,12 @@ actor \nodoc\ _TestListenerLocalAddressListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "0",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "0",
+        this)
 
   fun ref _on_accept(fd: U32): _TestDoNothingServerActor =>
     _h.fail("_on_accept shouldn't be called")
@@ -407,11 +421,12 @@ actor \nodoc\ _TestHardCloseDuringReceiveListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "7920",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "7920",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -439,20 +454,21 @@ actor \nodoc\ _TestHardCloseDuringReceiveClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "7920",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "7920",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _on_connected() =>
     // Give the server data so its `_on_received` fires.
-    match _tcp_connection.send("ping")
+    match \exhaustive\ _tcp_connection.send("ping")
     | let _: SendToken => None
     | let _: SendError =>
       _h.fail("client send() failed")
@@ -467,11 +483,12 @@ actor \nodoc\ _TestHardCloseDuringReceiveServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -524,11 +541,12 @@ actor \nodoc\ _TestHardCloseAfterFramedReceiveListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "7921",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "7921",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -555,20 +573,21 @@ actor \nodoc\ _TestHardCloseAfterFramedReceiveClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "7921",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "7921",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
   fun ref _on_connected() =>
     // Two 4-byte frames in a single send, so both land in one server read.
-    match _tcp_connection.send("AAAABBBB")
+    match \exhaustive\ _tcp_connection.send("AAAABBBB")
     | let _: SendToken => None
     | let _: SendError =>
       _h.fail("client send() failed")
@@ -583,11 +602,12 @@ actor \nodoc\ _TestHardCloseAfterFramedReceiveServer
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.server(
-      TCPServerAuth(_h.env.root),
-      fd,
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
     match MakeBufferSize(4)
     | let b: BufferSize => _tcp_connection.buffer_until(b)
     end

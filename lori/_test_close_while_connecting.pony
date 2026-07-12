@@ -22,13 +22,14 @@ actor \nodoc\ _TestHardCloseWhileConnectingClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "9735",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "9735",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -50,11 +51,12 @@ actor \nodoc\ _TestHardCloseWhileConnectingListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9735",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9735",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener
@@ -93,13 +95,14 @@ actor \nodoc\ _TestCloseWhileConnectingClient
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_connection = TCPConnection.client(
-      TCPConnectAuth(_h.env.root),
-      "localhost",
-      "9736",
-      "",
-      this,
-      this)
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "9736",
+        "",
+        this,
+        this)
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
@@ -121,11 +124,12 @@ actor \nodoc\ _TestCloseWhileConnectingListener is TCPListenerActor
 
   new create(h: TestHelper) =>
     _h = h
-    _tcp_listener = TCPListener(
-      TCPListenAuth(_h.env.root),
-      "localhost",
-      "9736",
-      this)
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "9736",
+        this)
 
   fun ref _listener(): TCPListener =>
     _tcp_listener

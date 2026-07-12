@@ -7,6 +7,7 @@ CLEAN_DEPENDENCIES_WITH := corral clean
 PONYC ?= ponyc
 COMPILE_WITH := corral run -- $(PONYC)
 BUILD_DOCS_WITH := corral run -- pony-doc
+LINT_WITH := corral run -- pony-lint
 
 BUILD_DIR ?= build/$(config)
 SRC_DIR ?= $(PACKAGE)
@@ -37,7 +38,7 @@ ifeq ($(static),true)
 	LINKER += --static
 endif
 
-ifeq (,$(filter $(MAKECMDGOALS),clean docs realclean TAGS))
+ifeq (,$(filter $(MAKECMDGOALS),clean docs lint realclean TAGS))
   ifeq ($(ssl), 4.0.x)
           SSL = -Dopenssl_4.0.x
   else ifeq ($(ssl), 3.0.x)
@@ -101,6 +102,9 @@ $(docs_dir): $(SOURCE_FILES) dependencies
 
 docs: $(docs_dir)
 
+lint: dependencies
+	$(LINT_WITH) .
+
 dependencies: corral.json
 	$(GET_DEPENDENCIES_WITH)
 
@@ -112,4 +116,4 @@ all: ci
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-.PHONY: all clean realclean TAGS test test-one
+.PHONY: all clean lint realclean TAGS test test-one

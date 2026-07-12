@@ -38,7 +38,7 @@ primitive DefaultReadBufferSize
   (16KB).
   """
   fun apply(): ReadBufferSize =>
-    match MakeReadBufferSize(16384)
+    match \exhaustive\ MakeReadBufferSize(16384)
     | let r: ReadBufferSize => r
     | let _: ValidationFailure =>
       // Known unreachable: 16384 is always valid.

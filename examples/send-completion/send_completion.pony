@@ -25,12 +25,16 @@ actor Main
     Listener(TCPListenAuth(env.root), TCPConnectAuth(env.root), env.out)
 
 actor Listener is TCPListenerActor
+  """
+  Listens on the example's port and starts the sender once listening.
+  """
   var _tcp_listener: TCPListener = TCPListener.none()
   let _out: OutStream
   let _connect_auth: TCPConnectAuth
   let _server_auth: TCPServerAuth
 
-  new create(listen_auth: TCPListenAuth, connect_auth: TCPConnectAuth,
+  new create(listen_auth: TCPListenAuth,
+    connect_auth: TCPConnectAuth,
     out: OutStream)
   =>
     _connect_auth = connect_auth
@@ -82,13 +86,16 @@ actor Sender is (TCPConnectionActor & ClientLifecycleEventReceiver)
   // Sends still waiting for _on_sent, keyed by token id.
   let _outstanding: Map[USize, String] = _outstanding.create()
 
-  new create(auth: TCPConnectAuth, host: String, port: String,
+  new create(auth: TCPConnectAuth,
+    host: String,
+    port: String,
     out: OutStream)
   =>
     _out = out
-    _messages = recover val
-      ["login"; "subscribe"; "query"; "heartbeat"; "logout"]
-    end
+    _messages =
+      recover val
+        ["login"; "subscribe"; "query"; "heartbeat"; "logout"]
+      end
     _tcp_connection = TCPConnection.client(auth, host, port, "", this, this)
 
   fun ref _connection(): TCPConnection =>
@@ -98,7 +105,7 @@ actor Sender is (TCPConnectionActor & ClientLifecycleEventReceiver)
     _out.print("Sender: connected, sending " + _messages.size().string()
       + " messages")
     for msg in _messages.values() do
-      match _tcp_connection.send(msg)
+      match \exhaustive\ _tcp_connection.send(msg)
       | let token: SendToken =>
         _outstanding(token.id) = msg
         _out.print("  sent '" + msg + "' (token " + token.id.string()

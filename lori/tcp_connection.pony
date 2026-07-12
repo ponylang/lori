@@ -3,6 +3,15 @@ use "collections"
 use "ssl/net"
 
 class TCPConnection
+  """
+  The TCP connection: all connection state and I/O, including SSL. A
+  `TCPConnectionActor` owns one and delegates to it.
+
+  Create it with one of the four constructors -- `client`, `server`,
+  `ssl_client`, `ssl_server` -- using `TCPConnection.none()` as the field
+  initializer before that. An open plaintext connection can be upgraded to TLS
+  with `start_tls`. See the package documentation for the full lifecycle.
+  """
   var _state: _ConnectionState ref = _ConnectionNone
   var _shutdown: Bool = false
   var _shutdown_peer: Bool = false
@@ -12,11 +21,11 @@ class TCPConnection
   var _muted: Bool = false
   // Happy Eyeballs
   var _inflight_connections: U32 = 0
-
   var _fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
   var _spawned_by: (TCPListenerActor | None) = None
-  let _lifecycle_event_receiver: (ClientLifecycleEventReceiver ref | ServerLifecycleEventReceiver ref | None)
+  let _lifecycle_event_receiver:
+    (ClientLifecycleEventReceiver ref | ServerLifecycleEventReceiver ref | None)
   let _enclosing: (TCPConnectionActor ref | None)
   embed _pending: _PendingWrites = _PendingWrites
   var _read_buffer: Array[U8] iso = recover Array[U8] end
@@ -24,7 +33,6 @@ class TCPConnection
   var _read_buffer_size: USize = 16384
   var _read_buffer_min: USize = 16384
   var _buffer_until: (BufferSize | Streaming) = Streaming
-
   // Send token tracking. _pending_tokens is a FIFO of (completion offset,
   // token): each accepted send records the cumulative byte offset -- into the
   // wire-byte stream `_pending` drains (ciphertext for SSL, plaintext
@@ -35,27 +43,22 @@ class TCPConnection
   embed _pending_tokens: List[(USize, SendToken)] = _pending_tokens.create()
   var _cumulative_enqueued: USize = 0
   var _cumulative_sent: USize = 0
-
   // Built-in SSL support
   var _ssl: _TLSState = _NoTLS
   // Set when PonyTCP.connect returned > 0, meaning at least one TCP
   // connection attempt was made. Used by the failure callback to distinguish
   // DNS failure (no attempts) from TCP failure (all attempts failed).
   var _had_inflight: Bool = false
-
   // Per-connection idle timeout via ASIO timer
   var _timer_event: AsioEventID = AsioEvent.none()
   var _idle_timeout_nsec: U64 = 0
-
   // Per-connection connect timeout via ASIO timer (one-shot)
   var _connect_timer_event: AsioEventID = AsioEvent.none()
   var _connect_timeout_nsec: U64 = 0
-
   // Per-connection user timer via ASIO timer (one-shot, no I/O reset)
   var _user_timer_event: AsioEventID = AsioEvent.none()
   var _next_timer_id: USize = 0
   var _user_timer_token: (TimerToken | None) = None
-
   // client startup state
   var _host: String = ""
   var _port: String = ""
@@ -99,6 +102,9 @@ class TCPConnection
     ler: ServerLifecycleEventReceiver ref,
     read_buffer_size: ReadBufferSize = DefaultReadBufferSize())
   =>
+    """
+    Create a server-side plaintext connection from an accepted socket `fd'`.
+    """
     _fd = fd'
     _lifecycle_event_receiver = ler
     _enclosing = enclosing
@@ -194,7 +200,9 @@ class TCPConnection
     Returns 0 on success, or a non-zero errno on failure. Only meaningful
     on a connected socket — returns non-zero if the connection is not open.
     """
-    setsockopt_u32(OSSockOpt.ipproto_tcp(), OSSockOpt.tcp_nodelay(),
+    setsockopt_u32(
+      OSSockOpt.ipproto_tcp(),
+      OSSockOpt.tcp_nodelay(),
       if state then 1 else 0 end)
 
   fun get_so_rcvbuf(): (U32, U32) =>
@@ -239,8 +247,10 @@ class TCPConnection
     """
     setsockopt_u32(OSSockOpt.sol_socket(), OSSockOpt.so_sndbuf(), bufsize)
 
-  fun getsockopt(level: I32, option_name: I32,
-    option_max_size: USize = 4): (U32, Array[U8] iso^)
+  fun getsockopt(level: I32,
+    option_name: I32,
+    option_max_size: USize = 4)
+    : (U32, Array[U8] iso^)
   =>
     """
     General interface to `getsockopt(2)` for accessing any socket option.
@@ -441,14 +451,15 @@ class TCPConnection
     _read_buffer_size = size
 
     let old_buffer = _read_buffer = recover Array[U8] end
-    _read_buffer = recover iso
-      let a = Array[U8](size)
-      a.undefined(size)
-      if _bytes_in_read_buffer > 0 then
-        (consume old_buffer).copy_to(a, 0, 0, _bytes_in_read_buffer)
+    _read_buffer =
+      recover iso
+        let a = Array[U8](size)
+        a.undefined(size)
+        if _bytes_in_read_buffer > 0 then
+          (consume old_buffer).copy_to(a, 0, 0, _bytes_in_read_buffer)
+        end
+        a
       end
-      a
-    end
 
     ReadBufferResized
 
@@ -584,16 +595,17 @@ class TCPConnection
       // `_had_inflight` is state, not a cause: it records whether any TCP
       // attempt ever started, which is what separates a DNS failure from a
       // TCP one. No caller knows it.
-      let reason = match cause
-      | _ConnectTimerFailed => ConnectionFailedTimerError
-      | _ConnectTimedOut => ConnectionFailedTimeout
-      else
-        if _had_inflight then
-          ConnectionFailedTCP
+      let reason =
+        match cause
+        | _ConnectTimerFailed => ConnectionFailedTimerError
+        | _ConnectTimedOut => ConnectionFailedTimeout
         else
-          ConnectionFailedDNS
+          if _had_inflight then
+            ConnectionFailedTCP
+          else
+            ConnectionFailedDNS
+          end
         end
-      end
       c._on_connection_failure(reason)
     end
     _cancel_idle_timer()
@@ -711,11 +723,12 @@ class TCPConnection
     | let s: EitherLifecycleEventReceiver ref =>
       match \exhaustive\ s
       | let c: ClientLifecycleEventReceiver ref =>
-        let reason = match cause
-        | _ConnectTimerFailed => ConnectionFailedTimerError
-        | _ConnectTimedOut => ConnectionFailedTimeout
-        else ConnectionFailedSSL
-        end
+        let reason =
+          match cause
+          | _ConnectTimerFailed => ConnectionFailedTimerError
+          | _ConnectTimedOut => ConnectionFailedTimeout
+          else ConnectionFailedSSL
+          end
         c._on_connection_failure(reason)
       | let srv: ServerLifecycleEventReceiver ref =>
         srv._on_start_failure(StartFailedSSL)
@@ -735,10 +748,11 @@ class TCPConnection
     _state = _Closed
     _hard_close_cleanup()
 
-    let reason = match cause
-    | _TLSAuthFailure => TLSAuthFailed
-    else TLSGeneralError
-    end
+    let reason =
+      match cause
+      | _TLSAuthFailure => TLSAuthFailed
+      else TLSGeneralError
+      end
 
     match \exhaustive\ _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
@@ -791,8 +805,10 @@ class TCPConnection
   fun _do_keepalive(secs: U32) =>
     PonyTCP.keepalive(_fd, secs)
 
-  fun _do_getsockopt(level: I32, option_name: I32,
-    option_max_size: USize): (U32, Array[U8] iso^)
+  fun _do_getsockopt(level: I32,
+    option_name: I32,
+    option_max_size: USize)
+    : (U32, Array[U8] iso^)
   =>
     _OSSocket.getsockopt(_fd, level, option_name, option_max_size)
 
@@ -821,19 +837,20 @@ class TCPConnection
       return StartTLSNotReady
     end
 
-    let ssl = try
-      match \exhaustive\ _lifecycle_event_receiver
-      | let _: ClientLifecycleEventReceiver ref =>
-        ssl_ctx.client(host)?
-      | let _: ServerLifecycleEventReceiver ref =>
-        ssl_ctx.server()?
-      | None =>
-        _Unreachable()
+    let ssl =
+      try
+        match \exhaustive\ _lifecycle_event_receiver
+        | let _: ClientLifecycleEventReceiver ref =>
+          ssl_ctx.client(host)?
+        | let _: ServerLifecycleEventReceiver ref =>
+          ssl_ctx.server()?
+        | None =>
+          _Unreachable()
+          return StartTLSSessionFailed
+        end
+      else
         return StartTLSSessionFailed
       end
-    else
-      return StartTLSSessionFailed
-    end
 
     _ssl = _TLS(consume ssl)
     _state = _TLSUpgrading
@@ -973,8 +990,8 @@ class TCPConnection
         let bytes_to_send: USize = _pending.prefix_total(num_to_send)
 
         // writev syscall — three-state result with bytes-sent count
-        match \exhaustive\ PonyTCP.writev(_event, _pending.buffers(),
-          0, num_to_send, _pending.first_offset())?
+        match \exhaustive\ PonyTCP.writev(
+          _event, _pending.buffers(), 0, num_to_send, _pending.first_offset())?
         | (SocketResultOk, let len: USize) =>
           if len > 0 then
             wrote_bytes = true
@@ -1083,10 +1100,11 @@ class TCPConnection
         return None
       end
 
-      let bytes_to_consume = match \exhaustive\ _buffer_until
-      | let e: BufferSize => e()
-      | Streaming => _bytes_in_read_buffer
-      end
+      let bytes_to_consume =
+        match \exhaustive\ _buffer_until
+        | let e: BufferSize => e()
+        | Streaming => _bytes_in_read_buffer
+        end
 
       let x = _read_buffer = recover Array[U8] end
       (let data', _read_buffer) = (consume x).chop(bytes_to_consume)
@@ -1111,16 +1129,18 @@ class TCPConnection
     """
     _resize_read_buffer_if_needed()
 
-    let bytes_read = match \exhaustive\ _state.receive(_event,
-      _read_buffer.cpointer(_bytes_in_read_buffer),
-      _read_buffer.size() - _bytes_in_read_buffer)
-    | (SocketResultOk, let n: USize) => n
-    | (SocketResultRetry, _) =>
-      _set_unreadable()
-      PonyAsio.resubscribe_read(_event)
-      return None
-    | (SocketResultError, _) => error
-    end
+    let bytes_read =
+      match \exhaustive\ _state.receive(
+        _event,
+        _read_buffer.cpointer(_bytes_in_read_buffer),
+        _read_buffer.size() - _bytes_in_read_buffer)
+      | (SocketResultOk, let n: USize) => n
+      | (SocketResultRetry, _) =>
+        _set_unreadable()
+        PonyAsio.resubscribe_read(_event)
+        return None
+      | (SocketResultError, _) => error
+      end
 
     _bytes_in_read_buffer = _bytes_in_read_buffer + bytes_read
 
@@ -1223,21 +1243,21 @@ class TCPConnection
     Resize the read buffer if it's smaller than the buffer-until threshold, or
     shrink it back to the minimum when empty and oversized.
     """
-    let needs_grow = match \exhaustive\ _tcp_buffer_until()
-    | let e: BufferSize => _read_buffer.size() <= e()
-    | Streaming => _read_buffer.size() == 0
-    end
+    let needs_grow =
+      match \exhaustive\ _tcp_buffer_until()
+      | let e: BufferSize => _read_buffer.size() <= e()
+      | Streaming => _read_buffer.size() == 0
+      end
     if needs_grow then
       _read_buffer.undefined(_read_buffer_size)
     elseif (_bytes_in_read_buffer == 0)
       and (_read_buffer_size > _read_buffer_min)
     then
       _read_buffer_size = _read_buffer_min
-      _read_buffer = recover iso
-        let a = Array[U8](_read_buffer_size)
-        a.undefined(_read_buffer_size)
-        a
-      end
+      _read_buffer =
+        recover iso
+          Array[U8](_read_buffer_size) .> undefined(_read_buffer_size)
+        end
     end
 
   fun ref _queue_read() =>
@@ -1482,7 +1502,7 @@ class TCPConnection
     _user_timer_token = None
     PonyAsio.unsubscribe(_user_timer_event)
     _user_timer_event = AsioEvent.none()
-    match (token, _lifecycle_event_receiver)
+    match \exhaustive\ (token, _lifecycle_event_receiver)
     | (let t: TimerToken, let s: EitherLifecycleEventReceiver ref) =>
       s._on_timer(t)
     | (None, _) =>
@@ -1864,8 +1884,10 @@ class TCPConnection
     | let e: TCPConnectionActor ref =>
       _state = _ClientConnecting
 
-      _inflight_connections = PonyTCP.connect(e, _host, _port, _from,
-        AsioEvent.read_write_oneshot() where ip_version = _ip_version)
+      _inflight_connections =
+        PonyTCP.connect(
+          e, _host, _port, _from, AsioEvent.read_write_oneshot()
+          where ip_version = _ip_version)
       _had_inflight = _inflight_connections > 0
       if _had_inflight then
         _arm_connect_timer()

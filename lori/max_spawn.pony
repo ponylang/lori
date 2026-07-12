@@ -36,7 +36,7 @@ primitive DefaultMaxSpawn
   Returns a `MaxSpawn` with the default connection limit of 100,000.
   """
   fun apply(): MaxSpawn =>
-    match MakeMaxSpawn(100_000)
+    match \exhaustive\ MakeMaxSpawn(100_000)
     | let m: MaxSpawn => m
     | let _: ValidationFailure =>
       // Known unreachable: 100,000 is always valid.

@@ -41,13 +41,17 @@ use @pony_os_writev_max[I32]()
 use net = "net"
 
 primitive PonyTCP
+  """
+  Wrappers for the runtime's `pony_os_*` TCP functions -- connect, listen,
+  accept, receive, writev, keepalive, and socket teardown.
+  """
   fun listen(the_actor: AsioEventNotify,
     host: String,
     port: String,
     ip_version: IPVersion = DualStack)
     : AsioEventID
   =>
-    match ip_version
+    match \exhaustive\ ip_version
     | IP4 =>
       @pony_os_listen_tcp4(the_actor, host.cstring(), port.cstring())
     | IP6 =>
@@ -70,21 +74,24 @@ primitive PonyTCP
     ip_version: IPVersion = DualStack)
     : U32
   =>
-    match ip_version
+    match \exhaustive\ ip_version
     | IP4 =>
-      @pony_os_connect_tcp4(the_actor,
+      @pony_os_connect_tcp4(
+        the_actor,
         host.cstring(),
         port.cstring(),
         from.cstring(),
         asio_flags)
     | IP6 =>
-      @pony_os_connect_tcp6(the_actor,
+      @pony_os_connect_tcp6(
+        the_actor,
         host.cstring(),
         port.cstring(),
         from.cstring(),
         asio_flags)
     | DualStack =>
-      @pony_os_connect_tcp(the_actor,
+      @pony_os_connect_tcp(
+        the_actor,
         host.cstring(),
         port.cstring(),
         from.cstring(),
@@ -110,8 +117,8 @@ primitive PonyTCP
     means an unrecoverable error or peer close.
     """
     var count: USize = 0
-    let result = SocketResultDecoder(
-      @pony_os_recv(event, buffer, size, addressof count))
+    let result =
+      SocketResultDecoder(@pony_os_recv(event, buffer, size, addressof count))
     (result, count)
 
   fun shutdown(fd: U32) =>
@@ -120,9 +127,12 @@ primitive PonyTCP
   fun sockname(fd: U32, ip: net.NetAddress ref): Bool =>
     @pony_os_sockname(fd, ip)
 
-  fun writev(event: AsioEventID, data: Array[ByteSeq] box,
-    from: USize, count: USize,
-    first_buffer_byte_offset: USize = 0): (SocketResult, USize) ?
+  fun writev(event: AsioEventID,
+    data: Array[ByteSeq] box,
+    from: USize,
+    count: USize,
+    first_buffer_byte_offset: USize = 0)
+    : (SocketResult, USize) ?
   =>
     """
     Send `count` buffers from `data` starting at index `from` via writev.
@@ -149,9 +159,10 @@ primitive PonyTCP
       end
       i = i + 1
     end
-    let result = SocketResultDecoder(
-      @pony_os_writev(event, iov.cpointer(), count.i32(),
-        addressof bytes_sent))
+    let result =
+      SocketResultDecoder(
+        @pony_os_writev(
+          event, iov.cpointer(), count.i32(), addressof bytes_sent))
     (result, bytes_sent)
 
   fun writev_max(): I32 =>

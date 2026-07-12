@@ -1,5 +1,7 @@
 primitive ReadBufferResized
-  """A successful read buffer operation."""
+  """
+  A successful read buffer operation.
+  """
 
 primitive ReadBufferResizeBelowBufferSize
   """
@@ -15,15 +17,19 @@ primitive ReadBufferResizeBelowUsed
   """
 
 type ReadBufferResizeResult is
-  (ReadBufferResized | ReadBufferResizeBelowBufferSize | ReadBufferResizeBelowUsed)
+  ( ReadBufferResized
+  | ReadBufferResizeBelowBufferSize
+  | ReadBufferResizeBelowUsed )
 
 primitive BufferUntilSet
-  """A successful buffer_until operation."""
+  """
+  A successful buffer_until operation.
+  """
 
 primitive BufferSizeAboveMinimum
   """
-  The requested `BufferSize` value exceeds the current read buffer minimum. Raise
-  the buffer minimum first, then set buffer_until.
+  The requested `BufferSize` value exceeds the current read buffer minimum.
+  Raise the buffer minimum first, then set buffer_until.
   """
 
 type BufferUntilResult is
