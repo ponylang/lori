@@ -1861,3 +1861,489 @@ actor \nodoc\ _TestSendSSLGracefulCloseServer
 
   fun ref _on_send_failed(token: SendToken) =>
     _h.fail("graceful close must flush queued writes, not fail them")
+
+class \nodoc\ iso _TestSendCloseFromThrottled is UnitTest
+  """
+  A `send()` writes to the socket before it returns. A partial write applies
+  backpressure and runs `_on_throttled` right there, inside the `send()` call,
+  so an application that closes from `_on_throttled` closes the connection from
+  inside a `send()` that has already put bytes on the wire.
+
+  That send is accepted: `send()` returns a token, and because a graceful close
+  flushes what is queued, the token fires `_on_sent` once `_Closing` drains.
+
+  The close lands in the middle of `_do_send`, after it has queued the bytes. A
+  `_do_send` that only recorded the send once the flush was over would find the
+  connection closing by then and report the send rejected -- while every byte of
+  the payload still reached the peer, unreported.
+
+  The server unmutes the client from `_on_throttled`. Without that the client
+  never reads, the drain never finishes, and the test times out rather than
+  asserting anything.
+
+  POSIX only, for the same reason as `SendPerTokenCompletion`.
+  """
+  fun name(): String => "SendCloseFromThrottled"
+
+  fun ref apply(h: TestHelper) =>
+    h.expect_action("send accepted")
+    h.expect_action("token sent")
+    h.expect_action("client received all bytes")
+
+    let listener = _TestSendCloseFromThrottledListener(h)
+    h.dispose_when_done(listener)
+    h.long_test(30_000_000_000)
+
+actor \nodoc\ _TestSendCloseFromThrottledListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestSendCloseFromThrottledServer | None) = None
+  var _client: (_TestSendCloseFromThrottledClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      ifdef linux then "127.0.0.2" else "localhost" end,
+      "9781",
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSendCloseFromThrottledServer =>
+    let s = _TestSendCloseFromThrottledServer(fd, _h, this)
+    _server = s
+    s
+
+  fun ref _on_listen_failure() =>
+    _h.fail("listener failed to start")
+
+  fun ref _on_listening() =>
+    _client = _TestSendCloseFromThrottledClient(_h)
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendCloseFromThrottledClient).dispose() end
+    try (_server as _TestSendCloseFromThrottledServer).dispose() end
+
+  be unmute_client() =>
+    try (_client as _TestSendCloseFromThrottledClient).resume_reading() end
+
+actor \nodoc\ _TestSendCloseFromThrottledClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  let _expected: USize = 256_000
+  var _total_received: USize = 0
+  var _signalled: Bool = false
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(_h.env.root),
+      ifdef linux then "127.0.0.2" else "localhost" end,
+      "9781",
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _tcp_connection.set_so_rcvbuf(4096)
+    _tcp_connection.mute()
+    _tcp_connection.send("ready")
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+
+  be resume_reading() =>
+    _tcp_connection.unmute()
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    _total_received = _total_received + data.size()
+    if (not _signalled) and (_total_received >= _expected) then
+      _signalled = true
+      _h.complete_action("client received all bytes")
+    end
+    KeepReading
+
+actor \nodoc\ _TestSendCloseFromThrottledServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  let _listener: _TestSendCloseFromThrottledListener
+  var _started: Bool = false
+  var _unmuted_client: Bool = false
+  var _token: (SendToken | None) = None
+
+  new create(fd: U32, h: TestHelper,
+    listener: _TestSendCloseFromThrottledListener)
+  =>
+    _h = h
+    _listener = listener
+    _tcp_connection = TCPConnection.server(
+      TCPServerAuth(_h.env.root),
+      fd,
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    match MakeBufferSize(5)
+    | let b: BufferSize => _tcp_connection.buffer_until(b)
+    else _Unreachable()
+    end
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    if _started then return KeepReading end
+    _started = true
+    _tcp_connection.set_so_sndbuf(16384)
+    let payload = recover val Array[U8].init('x', 256_000) end
+    match _tcp_connection.send(payload)
+    | let t: SendToken =>
+      _token = t
+      _h.complete_action("send accepted")
+    | let _: SendError =>
+      _h.fail("send() must be accepted: its bytes reach the peer")
+    end
+    KeepReading
+
+  fun ref _on_throttled() =>
+    if not _unmuted_client then
+      _unmuted_client = true
+      _listener.unmute_client()
+    end
+    _tcp_connection.close()
+
+  fun ref _on_sent(token: SendToken) =>
+    match _token
+    | let t: SendToken if token == t =>
+      _h.complete_action("token sent")
+    else
+      _h.fail("_on_sent fired with an unexpected token")
+    end
+
+  fun ref _on_send_failed(token: SendToken) =>
+    _h.fail("a graceful close flushes queued writes, so this send must not " +
+      "fail")
+
+class \nodoc\ iso _TestSendHardCloseFromThrottled is UnitTest
+  """
+  The hard-close twin of `SendCloseFromThrottled`.
+
+  `_on_throttled` runs inside the `send()` that hit backpressure, on a
+  connection whose first partial write has already put a prefix of the payload
+  on the wire. Here the application calls `hard_close()`, which drops the queued
+  remainder. The send is still accepted -- `send()` returns a token -- and the
+  token fires `_on_send_failed`, because the send never finished reaching the
+  OS. An application told the send was rejected outright would retry it on a new
+  connection, and the peer that already got the prefix would see it twice.
+
+  This is the negative case, and it is why `SendCloseFromThrottled` is not
+  enough on its own. That test asserts a token comes back and reaches
+  `_on_sent`, which a `_do_send` that reported every send as delivered would
+  satisfy too. This one drives the same setup to the opposite outcome, so a
+  `_do_send` that mints a token without tracking whether its bytes reached the
+  OS fails one of the two.
+
+  POSIX only, for the same reason as `SendPerTokenCompletion`.
+  """
+  fun name(): String => "SendHardCloseFromThrottled"
+
+  fun ref apply(h: TestHelper) =>
+    h.expect_action("send accepted")
+    h.expect_action("token failed")
+    h.expect_action("server closed")
+
+    let listener = _TestSendHardCloseFromThrottledListener(h)
+    h.dispose_when_done(listener)
+    h.long_test(30_000_000_000)
+
+actor \nodoc\ _TestSendHardCloseFromThrottledListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestSendHardCloseFromThrottledServer | None) = None
+  var _client: (_TestSendHardCloseFromThrottledClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      ifdef linux then "127.0.0.2" else "localhost" end,
+      "9782",
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSendHardCloseFromThrottledServer =>
+    let s = _TestSendHardCloseFromThrottledServer(fd, _h)
+    _server = s
+    s
+
+  fun ref _on_listen_failure() =>
+    _h.fail("listener failed to start")
+
+  fun ref _on_listening() =>
+    _client = _TestSendHardCloseFromThrottledClient(_h)
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendHardCloseFromThrottledClient).dispose() end
+    try (_server as _TestSendHardCloseFromThrottledServer).dispose() end
+
+actor \nodoc\ _TestSendHardCloseFromThrottledClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.client(
+      TCPConnectAuth(_h.env.root),
+      ifdef linux then "127.0.0.2" else "localhost" end,
+      "9782",
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _tcp_connection.set_so_rcvbuf(4096)
+    _tcp_connection.mute()
+    _tcp_connection.send("ready")
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+
+actor \nodoc\ _TestSendHardCloseFromThrottledServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _started: Bool = false
+  var _closed: Bool = false
+  var _token: (SendToken | None) = None
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.server(
+      TCPServerAuth(_h.env.root),
+      fd,
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    match MakeBufferSize(5)
+    | let b: BufferSize => _tcp_connection.buffer_until(b)
+    else _Unreachable()
+    end
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    if _started then return KeepReading end
+    _started = true
+    _tcp_connection.set_so_sndbuf(16384)
+    let payload = recover val Array[U8].init('x', 256_000) end
+    match _tcp_connection.send(payload)
+    | let t: SendToken =>
+      _token = t
+      // hard_close() fired _on_closed synchronously from inside this send().
+      _h.assert_true(_closed,
+        "_on_closed must fire before send() hands back the token")
+      _h.complete_action("send accepted")
+    | let _: SendError =>
+      _h.fail("send() must be accepted: a prefix of its bytes reaches the peer")
+    end
+    KeepReading
+
+  fun ref _on_throttled() =>
+    _tcp_connection.hard_close()
+
+  fun ref _on_closed() =>
+    _closed = true
+    _h.complete_action("server closed")
+
+  fun ref _on_sent(token: SendToken) =>
+    _h.fail("a hard close drops the queued remainder, so this send must not " +
+      "report as sent")
+
+  fun ref _on_send_failed(token: SendToken) =>
+    match _token
+    | let t: SendToken if token == t =>
+      _h.complete_action("token failed")
+    else
+      _h.fail("_on_send_failed fired with an unexpected token")
+    end
+
+class \nodoc\ iso _TestSendSSLHardCloseFromThrottled is UnitTest
+  """
+  The SSL analogue of `SendHardCloseFromThrottled`. The application calls
+  `hard_close()` from the `_on_throttled` that runs inside its own `send()`.
+  `send()` returns a token and the token fires `_on_send_failed`.
+
+  The SSL path is not a relabel of the plaintext one. `_do_send` encrypts the
+  payload into the SSL session and enqueues the ciphertext before it mints the
+  token, so the token's completion offset is over ciphertext bytes, not the
+  application's. This checks that a send accounted in ciphertext still gets its
+  one callback when a hard close inside the flush discards the queue.
+
+  POSIX only, for the same reason as `SendSSLPerTokenCompletion`.
+  """
+  fun name(): String => "SendSSLHardCloseFromThrottled"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9783"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("send accepted")
+    h.expect_action("token failed")
+    h.expect_action("server closed")
+
+    let listener = _TestSendSSLHardCloseFromThrottledListener(
+      port, consume sslctx, h)
+    h.dispose_when_done(listener)
+    h.long_test(30_000_000_000)
+
+actor \nodoc\ _TestSendSSLHardCloseFromThrottledListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestSendSSLHardCloseFromThrottledServer | None) = None
+  var _client: (_TestSendSSLHardCloseFromThrottledClient | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener = TCPListener(
+      TCPListenAuth(_h.env.root),
+      "localhost",
+      _port,
+      this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSendSSLHardCloseFromThrottledServer =>
+    let s = _TestSendSSLHardCloseFromThrottledServer(_sslctx, fd, _h)
+    _server = s
+    s
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendSSLHardCloseFromThrottledClient).dispose() end
+    try (_server as _TestSendSSLHardCloseFromThrottledServer).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestSendSSLHardCloseFromThrottledClient(_port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSendSSLHardCloseFromThrottledListener")
+
+actor \nodoc\ _TestSendSSLHardCloseFromThrottledClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_client(
+      TCPConnectAuth(_h.env.root),
+      sslctx,
+      "localhost",
+      port,
+      "",
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _tcp_connection.set_so_rcvbuf(4096)
+    _tcp_connection.mute()
+    _tcp_connection.send("ready")
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+
+actor \nodoc\ _TestSendSSLHardCloseFromThrottledServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _started: Bool = false
+  var _closed: Bool = false
+  var _token: (SendToken | None) = None
+
+  new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection = TCPConnection.ssl_server(
+      TCPServerAuth(h.env.root),
+      sslctx,
+      fd,
+      this,
+      this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    match MakeBufferSize(5)
+    | let b: BufferSize => _tcp_connection.buffer_until(b)
+    else _Unreachable()
+    end
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    if _started then return KeepReading end
+    _started = true
+    _tcp_connection.set_so_sndbuf(16384)
+    let payload = recover val Array[U8].init('x', 256_000) end
+    match _tcp_connection.send(payload)
+    | let t: SendToken =>
+      _token = t
+      // hard_close() fired _on_closed synchronously from inside this send().
+      _h.assert_true(_closed,
+        "_on_closed must fire before send() hands back the token")
+      _h.complete_action("send accepted")
+    | let _: SendError =>
+      _h.fail("send() must be accepted: a prefix of its bytes reaches the peer")
+    end
+    KeepReading
+
+  fun ref _on_throttled() =>
+    _tcp_connection.hard_close()
+
+  fun ref _on_closed() =>
+    _closed = true
+    _h.complete_action("server closed")
+
+  fun ref _on_sent(token: SendToken) =>
+    _h.fail("a hard close drops the queued remainder, so this send must not " +
+      "report as sent")
+
+  fun ref _on_send_failed(token: SendToken) =>
+    match _token
+    | let t: SendToken if token == t =>
+      _h.complete_action("token failed")
+    else
+      _h.fail("_on_send_failed fired with an unexpected token")
+    end
+

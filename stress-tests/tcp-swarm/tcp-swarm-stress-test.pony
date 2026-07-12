@@ -606,12 +606,12 @@ actor SwarmClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
     end
 
   fun ref _pump() =>
-    // Hand the connection one message at a time while it is writeable. is_writeable()
-    // true guarantees send() accepts the buffer (returns a SendToken), so the return
-    // is safe to discard. A message that hits backpressure mid-flush is still
-    // accepted (lori queues the remainder); the NEXT is_writeable() check then fails
-    // and we resume from
-    // _on_unthrottled.
+    // Hand the connection one message at a time while it is writeable. On a
+    // plaintext connection, is_writeable() true means send() accepts the buffer
+    // and returns a SendToken, so the return is safe to discard. A message that
+    // hits backpressure mid-flush is still accepted -- lori queues the
+    // remainder -- and the NEXT is_writeable() check then fails, so we resume
+    // from _on_unthrottled.
     if _closing then
       return
     end
