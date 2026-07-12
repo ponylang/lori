@@ -892,35 +892,13 @@ class TCPConnection
       end
     end
 
-    // This send's bytes finish at the current cumulative-enqueued offset.
-    // Flush; that fires any earlier sends this drain completed.
-    let offset = _cumulative_enqueued
-    _send_pending_writes()
-
-    // A flush that hits a write error hard-closes. Return the error -- the send
-    // never took hold, no callback.
-    if not is_open() then
-      return SendErrorNotConnected
-    end
-
-    // Mint the token only now, so a send that failed above never burns an id.
+    // Queue the token before the flush. The flush can end the connection, and a
+    // token already on `_pending_tokens` gets its callback either way.
     _next_token_id = _next_token_id + 1
     let token = SendToken._create(_next_token_id)
+    _pending_tokens.push((_cumulative_enqueued, token))
 
-    // Fire now if this send fully drained during the flush; otherwise track
-    // it so `_on_sent` fires when the queue drains past its offset.
-    // `_has_pending_writes` (not the offset) decides, because a full drain
-    // resets the counters.
-    if not _has_pending_writes() then
-      match \exhaustive\ _enclosing
-      | let e: TCPConnectionActor ref =>
-        e._notify_sent(token)
-      | None =>
-        _Unreachable()
-      end
-    else
-      _pending_tokens.push((offset, token))
-    end
+    _send_pending_writes()
 
     token
 
