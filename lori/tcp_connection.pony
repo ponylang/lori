@@ -14,7 +14,6 @@ class TCPConnection
   """
   var _state: _ConnectionState ref = _ConnectionNone
   var _shutdown: Bool = false
-  var _shutdown_peer: Bool = false
   var _throttled: Bool = false
   var _readable: Bool = false
   var _writeable: Bool = false
@@ -587,8 +586,6 @@ class TCPConnection
     timers.
     """
     _state = _Closed
-    _shutdown = true
-    _shutdown_peer = true
     _dispose_tls()
     match _lifecycle_event_receiver
     | let c: ClientLifecycleEventReceiver ref =>
@@ -615,9 +612,9 @@ class TCPConnection
   fun ref _hard_close_cleanup() =>
     """
     Common teardown for hard-closing an established connection. Handles
-    shutdown flags, send_failed for every pending token, clearing pending
-    buffers, cancelling all timers, unsubscribing the event, releasing the fd
-    (see `_close_event_fd` — closed here on POSIX, deferred to the unsubscribe
+    send_failed for every pending token, clearing pending buffers, cancelling
+    all timers, unsubscribing the event, releasing the fd (see
+    `_close_event_fd` — closed here on POSIX, deferred to the unsubscribe
     REMOVE on Windows), and disposing SSL. Order is load-bearing: timer cancel
     before event unsubscribe, SSL dispose after the fd is released.
 
@@ -625,9 +622,6 @@ class TCPConnection
     before calling this, so the `_on_send_failed` this fires (and any re-entrant
     call the application makes from it) sees a closed connection.
     """
-    _shutdown = true
-    _shutdown_peer = true
-
     // Fire _on_send_failed for every accepted-but-undelivered send before
     // clearing the pending buffer. Deferred via _notify_send_failed so each
     // arrives in a subsequent turn, after _on_closed.
@@ -929,20 +923,19 @@ class TCPConnection
     sends the queued writes before the write side is shut. `hard_close()` is the
     non-graceful path and still drops queued writes.
     """
+    // Guard the fd the way `_read` does: this can run right after an I/O event
+    // hard-closed the connection and released the fd, and we must not
+    // `shutdown()` a released one.
+    if not _state.is_live() then
+      return
+    end
+
     if not _shutdown
       and (_inflight_connections == 0)
       and not _has_pending_writes()
     then
       _shutdown = true
       PonyTCP.shutdown(_fd)
-    end
-
-  fun ref _check_shutdown_complete() =>
-    """
-    If both sides have shut down, perform a hard close.
-    """
-    if _shutdown and _shutdown_peer then
-      hard_close()
     end
 
   fun ref _enqueue(data: ByteSeq) =>
@@ -1773,13 +1766,6 @@ class TCPConnection
     // before `event is _event`. The else branch checks disposable first
     // (stale timer disposables, straggler disposables), otherwise dispatches
     // to foreign_event for Happy Eyeballs stragglers.
-    //
-    // Timer branches (connect, idle, user) don't call
-    // `_check_shutdown_complete` after their dispatches. Timer callbacks
-    // can transition state (e.g. `close()` → `_Closing`) but cannot set
-    // `_shutdown_peer` (that requires a zero-byte socket read), so the
-    // graceful-shutdown check would be a no-op. Only `own_event` dispatches
-    // (below) can trigger both flags.
     if event is _connect_timer_event then
       if AsioEvent.errored(flags) then
         _fire_connect_timer_error()
@@ -1800,12 +1786,6 @@ class TCPConnection
       end
     elseif event is _event then
       _state.own_event(this, flags)
-      // A callback during own_event (e.g., a zero-byte read in _read() →
-      // close()) can transition to _Closing and set _shutdown/_shutdown_peer,
-      // but _Open.own_event() won't check for shutdown completion. This ensures
-      // the check runs after every own-event dispatch, regardless of which
-      // state handled it.
-      _check_shutdown_complete()
       if AsioEvent.disposable(flags) then
         PonyAsio.destroy(event)
         _event = AsioEvent.none()

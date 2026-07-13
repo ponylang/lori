@@ -498,7 +498,6 @@ class _Closing is _ConnectionState
 
     // Inflight drained — can now send FIN
     conn._initiate_shutdown()
-    conn._check_shutdown_complete()
 
   fun ref send(conn: TCPConnection ref,
     data: (ByteSeq | ByteSeqIter)): (SendToken | SendError)
