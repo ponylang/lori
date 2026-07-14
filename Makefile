@@ -70,7 +70,7 @@ test: unit-tests
 ci: unit-tests examples stress-tests
 
 unit-tests: $(tests_binary)
-	$^ --exclude=integration --sequential
+	$^ --exclude=integration --sequential --shuffle
 
 test-one: $(tests_binary)
 	$^ --only="$(t)"
