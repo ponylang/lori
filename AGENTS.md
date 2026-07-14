@@ -83,7 +83,7 @@ Designs that were tried, or are tempting, and why lori does not use them — the
 
 ## Platform differences
 
-POSIX and Windows share one readiness-based I/O path: one-shot readiness events (epoll/kqueue; `ProcessSocketNotifications` on Windows), resubscribe, then a synchronous `PonyTCP.receive`/`writev`. Windows needs ponyc 0.66.0 or later, the release that removed IOCP; the floor is Windows 11 / Windows Server 2022. Two rules stay platform-specific — the `writev` batch size (`PonyTCP.writev_max()`) and closing a subscribed fd (`_close_event_fd()`, POSIX-only) — both documented at those functions.
+POSIX and Windows share one readiness-based I/O path: one-shot readiness events (epoll/kqueue; `ProcessSocketNotifications` on Windows), resubscribe, then a synchronous `PonyTCP.receive`/`sendv`. Windows uses this path because ponyc removed IOCP; the floor is Windows 11 / Windows Server 2022. Two rules stay platform-specific — the vectored-send batch size (`PonyTCP.writev_max()`) and closing a subscribed fd (`_close_event_fd()`, POSIX-only) — both documented at those functions.
 
 ## Conventions
 

@@ -29,13 +29,13 @@ use @pony_os_recv[U8](event: AsioEventID,
   buffer: Pointer[U8] tag,
   size: USize,
   count_out: Pointer[USize])
-use @pony_os_socket_close[None](fd: U32)
-use @pony_os_socket_shutdown[None](fd: U32)
-use @pony_os_sockname[Bool](fd: U32, ip: net.NetAddress ref)
-use @pony_os_writev[U8](ev: AsioEventID,
+use @pony_os_sendv[U8](ev: AsioEventID,
   iov: Pointer[(Pointer[U8] tag, USize)] tag,
   iovcnt: I32,
   count_out: Pointer[USize])
+use @pony_os_socket_close[None](fd: U32)
+use @pony_os_socket_shutdown[None](fd: U32)
+use @pony_os_sockname[Bool](fd: U32, ip: net.NetAddress ref)
 use @pony_os_writev_max[I32]()
 
 use net = "net"
@@ -43,7 +43,7 @@ use net = "net"
 primitive PonyTCP
   """
   Wrappers for the runtime's `pony_os_*` TCP functions -- connect, listen,
-  accept, receive, writev, keepalive, and socket teardown.
+  accept, receive, sendv, keepalive, and socket teardown.
   """
   fun listen(the_actor: AsioEventNotify,
     host: String,
@@ -127,7 +127,7 @@ primitive PonyTCP
   fun sockname(fd: U32, ip: net.NetAddress ref): Bool =>
     @pony_os_sockname(fd, ip)
 
-  fun writev(event: AsioEventID,
+  fun sendv(event: AsioEventID,
     data: Array[ByteSeq] box,
     from: USize,
     count: USize,
@@ -135,7 +135,8 @@ primitive PonyTCP
     : (SocketResult, USize) ?
   =>
     """
-    Send `count` buffers from `data` starting at index `from` via writev.
+    Send `count` buffers from `data` starting at index `from` via
+    `pony_os_sendv`.
     Builds the IOV array of `(pointer, size)` entries internally; the runtime
     turns it into `iovec` (POSIX) or `WSABUF` (Windows) as needed.
 
@@ -161,13 +162,13 @@ primitive PonyTCP
     end
     let result =
       SocketResultDecoder(
-        @pony_os_writev(
+        @pony_os_sendv(
           event, iov.cpointer(), count.i32(), addressof bytes_sent))
     (result, bytes_sent)
 
   fun writev_max(): I32 =>
     """
-    Maximum number of `(pointer, size)` entries a single writev call may
+    Maximum number of `(pointer, size)` entries a single `sendv` call may
     carry. `IOV_MAX` on POSIX, 1 on Windows.
     """
     @pony_os_writev_max()

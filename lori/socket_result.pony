@@ -1,7 +1,7 @@
 primitive SocketResultOk
   """
-  The socket operation completed. For send/writev, the runtime accepted some
-  bytes; for recv, bytes were read into the supplied buffer. The accompanying
+  The socket operation completed. For a send, the runtime accepted some
+  bytes; for a recv, bytes were read into the supplied buffer. The accompanying
   count is the number of bytes handled. The operation is synchronous and
   non-blocking on every platform (the Windows backend uses readiness
   notifications, not overlapped IOCP), so the count is always the bytes
@@ -32,9 +32,9 @@ type SocketResult is
 
 primitive SocketResultDecoder
   """
-  Decodes the `U8` returned by the five `pony_os_*` socket runtime functions
-  (`pony_os_writev`, `pony_os_send`, `pony_os_recv`, `pony_os_sendto`,
-  `pony_os_recvfrom`) into a `SocketResult` union.
+  Decodes the `U8` returned by the six `pony_os_*` socket runtime functions
+  (`pony_os_writev`, `pony_os_sendv`, `pony_os_send`, `pony_os_recv`,
+  `pony_os_sendto`, `pony_os_recvfrom`) into a `SocketResult` union.
 
   This is the Pony-side dual of `pony_socket_result_t` defined in
   `src/libponyrt/lang/socket.h` of ponyc. The integer values produced by
