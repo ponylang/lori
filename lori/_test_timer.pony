@@ -9,10 +9,17 @@ class \nodoc\ iso _TestTimerFires is UnitTest
   Test that a one-shot timer fires with the correct token. Server sets a
   2-second timer in _on_started and verifies _on_timer delivers the matching
   token.
+
+  Connect, server start, and timer firing are tracked as separate actions so
+  that on a timeout PonyTest prints which stage did not complete.
   """
   fun name(): String => "TimerFires"
 
   fun apply(h: TestHelper) =>
+    h.expect_action("client connected")
+    h.expect_action("server started")
+    h.expect_action("timer fired")
+
     let listener = _TestTimerFiresListener(h)
     h.dispose_when_done(listener)
 
@@ -66,6 +73,9 @@ actor \nodoc\ _TestTimerFiresClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connected() =>
+    _h.complete_action("client connected")
+
 actor \nodoc\ _TestTimerFiresServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
@@ -88,7 +98,9 @@ actor \nodoc\ _TestTimerFiresServer
     match \exhaustive\ MakeTimerDuration(2_000)
     | let d: TimerDuration =>
       match \exhaustive\ _tcp_connection.set_timer(d)
-      | let t: TimerToken => _expected_token = t
+      | let t: TimerToken =>
+        _expected_token = t
+        _h.complete_action("server started")
       | let _: SetTimerError =>
         _h.fail("set_timer returned error")
         _h.complete(false)
@@ -102,7 +114,7 @@ actor \nodoc\ _TestTimerFiresServer
     match _expected_token
     | let t: TimerToken =>
       _h.assert_true(t == token, "token should match")
-      _h.complete(true)
+      _h.complete_action("timer fired")
     else
       _h.fail("_on_timer fired without expected token")
       _h.complete(false)
