@@ -53,6 +53,10 @@ Socket option tuning with dedicated convenience methods (`set_nodelay()`, `set_s
 
 Configurable read buffer sizing with two phases. A server starts with a small 128-byte buffer for a control phase, then switches to an 8192-byte buffer for bulk transfer after receiving a command. Demonstrates `set_read_buffer_minimum()` and `resize_read_buffer()` for tuning buffer allocation at runtime, and the `read_buffer_size` constructor parameter for setting the initial size.
 
+## [legacy-echo-server](legacy-echo-server/)
+
+The echo server written against the Legacy stdlib-net compatibility API (`LegacyTCPListener`, `LegacyTCPListenNotify`, `LegacyTCPConnectionNotify`) instead of lori's native traits. Application logic lives in notifier objects, matching the shape of a Pony standard library `net` package server. Shows the programming model that eases moving existing `net` code onto lori.
+
 ## [net-ssl-echo-server](net-ssl-echo-server/)
 
 SSL version of the echo server. Demonstrates how to set up an `SSLContext` and use `TCPConnection.ssl_server` — the only change from the plain echo server is the constructor call and SSL context setup.
