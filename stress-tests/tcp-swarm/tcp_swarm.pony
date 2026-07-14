@@ -3,7 +3,7 @@ Swarm TCP stress engine for lori.
 
 A closed, count-driven TCP workload for stressing lori's TCP stack. Every
 behaviour is a CLI flag set by the orchestrator (orchestrate_tcp.py); the engine
-draws nothing on its own -- its `_Config` defaults exist only for hand-running.
+draws nothing on its own -- its flag defaults exist only for hand-running.
 A fixed number of client connections is churned through a listener at a bounded
 concurrency; each client sends a stamped payload, the server echoes it, and the
 client verifies the echo byte-for-byte before closing.
@@ -69,7 +69,8 @@ of full verification -- a connect failure, a short echo, or a byte mismatch --
 prints FAIL and forces a non-zero exit.
 """
 use "../../lori"
-use "collections"
+use "cli"
+use "constrained_types"
 use "time"
 
 use @printf[I32](fmt: Pointer[U8] tag, ...)
@@ -79,37 +80,99 @@ use @pony_os_stdout[Pointer[U8]]()
 use @pony_os_stderr[Pointer[U8]]()
 use @exit[None](status: I32)
 
-primitive _Flags
+primitive _Flag
   """
-  Parse `--key value` pairs (and bare `--key` as "true") from the program args.
+  The command-line flag names, in one place. `_SwarmSpec` (which declares them)
+  and `_MakeConfig` (which reads them) both name flags through here, so a
+  mistyped name is a compile error rather than a silently ignored option or a
+  value that reads back as zero.
+  """
+  fun host(): String => "host"
+  fun port(): String => "port"
+  fun connections(): String => "connections"
+  fun concurrency(): String => "concurrency"
+  fun payload_size(): String => "payload-size"
+  fun messages(): String => "messages"
+  fun close(): String => "close"
+  fun write_shape(): String => "write-shape"
+  fun writev_chunks(): String => "writev-chunks"
+  fun read_buffer_size(): String => "read-buffer-size"
+  fun expect(): String => "expect"
+  fun yield_after_reading(): String => "yield-after-reading"
+
+primitive _SwarmSpec
+  """
+  The command-line schema: every workload flag, its type, and its default.
+  `Main` parses `env.args` against this, so a malformed or misspelled flag is
+  a reported error rather than a silent default. The `cli` parser checks types
+  and flag names; `_MakeConfig` checks value domains.
+
   The runtime strips its own `--pony*` flags before main, so only workload flags
-  arrive here; unknown keys are ignored by _Config.
+  reach the parser.
   """
-  fun apply(args: Array[String] box): Map[String, String] val =>
-    let out = recover Map[String, String] end
-    var i: USize = 1
-    while i < args.size() do
-      try
-        let arg = args(i)?
-        if arg.at("--") then
-          let key = arg.substring(2)
-          if ((i + 1) < args.size()) and (not args(i + 1)?.at("--")) then
-            out(consume key) = args(i + 1)?
-            i = i + 2
-          else
-            out(consume key) = "true"
-            i = i + 1
-          end
-        else
-          i = i + 1
-        end
-      else
-        i = i + 1
-      end
-    end
-    consume out
+  fun apply(): CommandSpec ? =>
+    // "localhost", not "127.0.0.1" for the host default: the literal v4 address
+    // makes macOS wall the client at ~16k ephemeral ports mid-run (connections
+    // then fail, which this test treats as failure); "localhost" sidesteps it.
+    CommandSpec.leaf(
+      "tcp-swarm",
+      "Swarm TCP stress engine for lori.",
+      [ OptionSpec.string(
+          _Flag.host(),
+          "listener bind host"
+          where default' = "localhost")
+        OptionSpec.string(
+          _Flag.port(),
+          "listener bind port (0 = ephemeral)"
+          where default' = "0")
+        OptionSpec.u64(
+          _Flag.connections(),
+          "total connections to churn"
+          where default' = 1000)
+        OptionSpec.u64(
+          _Flag.concurrency(),
+          "in-flight connection cap"
+          where default' = 64)
+        OptionSpec.u64(
+          _Flag.payload_size(),
+          "bytes each connection sends"
+          where default' = 64)
+        OptionSpec.u64(
+          _Flag.messages(),
+          "send() calls per connection"
+          where default' = 1)
+        OptionSpec.string(
+          _Flag.close(),
+          "graceful | hard"
+          where default' = "graceful")
+        OptionSpec.string(
+          _Flag.write_shape(),
+          "write | writev"
+          where default' = "write")
+        OptionSpec.u64(
+          _Flag.writev_chunks(),
+          "buffers per vectored send (writev only)"
+          where default' = 4)
+        OptionSpec.u64(
+          _Flag.read_buffer_size(),
+          "per-connection read buffer size"
+          where default' = 16384)
+        OptionSpec.u64(
+          _Flag.expect(),
+          "framed read size (0 = off)"
+          where default' = 0)
+        OptionSpec.u64(
+          _Flag.yield_after_reading(),
+          "yield the read loop after this many bytes"
+          where default' = 16384)
+      ])? .> add_help(where descr' = "print usage and exit")?
 
 class val _Config
+  """
+  The validated workload configuration. Built only by `_MakeConfig`, from a
+  parsed command line whose every value it has already checked -- so the rest of
+  the engine can trust these fields without re-checking.
+  """
   let host: String
   let port: String
   let connections: USize
@@ -122,57 +185,47 @@ class val _Config
   let expect_frame: USize
   let read_buffer_size: USize
   let yield_after_reading: USize
+  // payload_size * messages, checked for overflow by _MakeConfig -- the total
+  // bytes each connection sends and reads back.
+  let target_total: USize
 
-  new val create(m: Map[String, String] val) =>
-    // "localhost", not "127.0.0.1": the literal v4 address makes macOS wall the
-    // client at ~16k ephemeral ports mid-run (connections then fail, which this
-    // test treats as a failure); "localhost" sidesteps it.
-    host = _str(m, "host", "localhost")
-    port = _str(m, "port", "0")
-    connections = _usize(m, "connections", 1000)
-    // Floor concurrency at 1: 0 would spawn nothing yet never finish (a silent
-    // hang the watchdog would catch as a false timeout).
-    concurrency = _usize(m, "concurrency", 64).max(1)
-    payload_size = _usize(m, "payload-size", 64)
-    messages = _usize(m, "messages", 1)
-    close_hard = _str(m, "close", "graceful") == "hard"
-    use_writev = _str(m, "write-shape", "write") == "writev"
-    // How many buffers a single vectored `send` splits its payload into. Above
-    // `PonyTCP.writev_max()` -- IOV_MAX on POSIX, 1 on Windows -- it drives
-    // lori's multi-batch send. Default 4; writev only.
-    writev_chunks = _usize(m, "writev-chunks", 4).max(1)
-    read_buffer_size = _usize(m, "read-buffer-size", 16384)
-    // Clamp expect to the read buffer: buffer_until returns
-    // BufferSizeAboveMinimum when the frame exceeds the read-buffer minimum, so
-    // clamping here keeps the call from failing (the call sites then assert
-    // that with _Unreachable). The orchestrator already draws expect <=
-    // read-buffer; this clamp only makes a directly-run engine safe from that
-    // one error. NOTE: it does NOT save a directly-run engine from a
-    // non-dividing --expect: for framed reads to terminate, payload_size *
-    // messages must be a whole number of frames, or the trailing partial frame
-    // is never delivered and the client hangs. The orchestrator guarantees
-    // divisibility by drawing only power-of-two sizes; a hand-run engine must
-    // arrange it itself.
-    expect_frame = _usize(m, "expect", 0).min(read_buffer_size)
-    yield_after_reading = _usize(m, "yield-after-reading", 16384)
-
-  fun tag _str(m: Map[String, String] val, key: String, default: String)
-    : String
+  new val _create(
+    host': String,
+    port': String,
+    connections': USize,
+    concurrency': USize,
+    payload_size': USize,
+    messages': USize,
+    close_hard': Bool,
+    use_writev': Bool,
+    writev_chunks': USize,
+    expect_frame': USize,
+    read_buffer_size': USize,
+    yield_after_reading': USize,
+    target_total': USize)
   =>
-    try m(key)? else default end
-
-  fun tag _usize(m: Map[String, String] val, key: String, default: USize)
-    : USize
-  =>
-    try m(key)?.usize()? else default end
+    """
+    Private -- `_MakeConfig`, which validates the values, is the only caller.
+    """
+    host = host'
+    port = port'
+    connections = connections'
+    concurrency = concurrency'
+    payload_size = payload_size'
+    messages = messages'
+    close_hard = close_hard'
+    use_writev = use_writev'
+    writev_chunks = writev_chunks'
+    expect_frame = expect_frame'
+    read_buffer_size = read_buffer_size'
+    yield_after_reading = yield_after_reading'
+    target_total = target_total'
 
   fun read_buffer(): ReadBufferSize =>
     """
-    The read buffer size as a validated `ReadBufferSize`. `read_buffer_size` is
-    at least 1 for every orchestrator draw (min drawn value is 128) and for the
-    default, so the validation-failure branch is unreachable in practice; a
-    hand-run engine passing `--read-buffer-size 0` crashes here rather than
-    stalling on a zero-length buffer.
+    The read buffer size as a validated `ReadBufferSize`. `_MakeConfig`
+    guarantees `read_buffer_size >= 1`, so the validation-failure branch is
+    unreachable.
     """
     match MakeReadBufferSize(read_buffer_size)
     | let r: ReadBufferSize => r
@@ -180,6 +233,127 @@ class val _Config
       _Unreachable()
       DefaultReadBufferSize()
     end
+
+primitive _MakeConfig
+  """
+  Reads and validates the workload flags off a parsed `Command`, returning a
+  `_Config` when every value is in range, or a `ValidationFailure` naming the
+  first bad one. Validation lives here, at the construction boundary, because
+  `Main` still holds the `Env` to report the failure -- a `_Config` cannot.
+  """
+  fun apply(cmd: Command box): (_Config | ValidationFailure) =>
+    let connections = cmd.option(_Flag.connections()).u64().usize()
+    if connections < 1 then
+      return recover val
+        ValidationFailure("--connections must be at least 1")
+      end
+    end
+    let concurrency = cmd.option(_Flag.concurrency()).u64().usize()
+    if concurrency < 1 then
+      return recover val
+        ValidationFailure("--concurrency must be at least 1")
+      end
+    end
+    let payload_size = cmd.option(_Flag.payload_size()).u64().usize()
+    if payload_size < 1 then
+      return recover val
+        ValidationFailure("--payload-size must be at least 1")
+      end
+    end
+    let messages = cmd.option(_Flag.messages()).u64().usize()
+    if messages < 1 then
+      return recover val
+        ValidationFailure("--messages must be at least 1")
+      end
+    end
+    // The total bytes each connection sends and reads back. Checked, not
+    // wrapping: an overflowing payload-size * messages would wrap to a smaller
+    // value (a wrap to 0 makes every connection exchange nothing yet "verify").
+    let target_total =
+      try
+        payload_size.mul_partial(messages)?
+      else
+        return recover val
+          ValidationFailure("--payload-size * --messages overflows USize")
+        end
+      end
+    let writev_chunks = cmd.option(_Flag.writev_chunks()).u64().usize()
+    if writev_chunks < 1 then
+      return recover val
+        ValidationFailure("--writev-chunks must be at least 1")
+      end
+    end
+    let read_buffer_size = cmd.option(_Flag.read_buffer_size()).u64().usize()
+    if read_buffer_size < 1 then
+      return recover val
+        ValidationFailure("--read-buffer-size must be at least 1")
+      end
+    end
+
+    let close = cmd.option(_Flag.close()).string()
+    let close_hard =
+      match close
+      | "graceful" => false
+      | "hard" => true
+      else
+        return recover val
+          ValidationFailure(
+            "--close must be 'graceful' or 'hard', got '" + close + "'")
+        end
+      end
+
+    let write_shape = cmd.option(_Flag.write_shape()).string()
+    let use_writev =
+      match write_shape
+      | "write" => false
+      | "writev" => true
+      else
+        return recover val
+          ValidationFailure(
+            "--write-shape must be 'write' or 'writev', got '" + write_shape
+              + "'")
+        end
+      end
+
+    // expect: 0 is framing off. A non-zero frame must fit the read buffer
+    // (buffer_until rejects a frame above the read-buffer minimum) and must
+    // divide the total bytes -- otherwise the trailing partial frame is never
+    // delivered and the client hangs waiting for it.
+    let expect_frame = cmd.option(_Flag.expect()).u64().usize()
+    if expect_frame > 0 then
+      if expect_frame > read_buffer_size then
+        return recover val
+          ValidationFailure(
+            "--expect (" + expect_frame.string() + ") must not exceed "
+              + "--read-buffer-size (" + read_buffer_size.string() + ")")
+        end
+      end
+      if (target_total % expect_frame) != 0 then
+        return recover val
+          ValidationFailure(
+            "--expect (" + expect_frame.string() + ") must divide payload-size "
+              + "* messages (" + target_total.string() + ")")
+        end
+      end
+    end
+
+    let yield_after_reading =
+      cmd.option(_Flag.yield_after_reading()).u64().usize()
+
+    _Config._create(
+      cmd.option(_Flag.host()).string(),
+      cmd.option(_Flag.port()).string(),
+      connections,
+      concurrency,
+      payload_size,
+      messages,
+      close_hard,
+      use_writev,
+      writev_chunks,
+      expect_frame,
+      read_buffer_size,
+      yield_after_reading,
+      target_total)
 
 primitive _Keystream
   """
@@ -518,8 +692,9 @@ actor EchoServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
 
   fun ref _set_framing() =>
     if _config.expect_frame > 0 then
-      // Unreachable branches: expect_frame is clamped to read_buffer_size (the
-      // buffer minimum) and is >= 1 when set, so buffer_until always succeeds.
+      // Unreachable branches: expect_frame is > 0 here (guarded above) and
+      // _MakeConfig validated it <= read_buffer_size (the buffer minimum), so
+      // buffer_until succeeds.
       match MakeBufferSize(_config.expect_frame)
       | let b: BufferSize =>
         match \exhaustive\ _tcp_connection.buffer_until(b)
@@ -601,7 +776,7 @@ actor SwarmClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
     // unrelated streams (splitmix diffuses adjacent seeds), so a byte from
     // another connection fails this connection's check.
     _seed = id.u64()
-    _target_total = config.payload_size * config.messages
+    _target_total = config.target_total
     _tcp_connection =
       TCPConnection.client(
         connect_auth, config.host, port, "", this, this, config.read_buffer())
@@ -717,14 +892,51 @@ actor SwarmClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
 
 actor Main
   """
-  Parses the flags into a `_Config`, stands up the echo listener, and starts the
-  run. All the work happens in the `Spawner` and the per-connection actors.
+  Parses and validates the flags into a `_Config`, stands up the echo listener,
+  and starts the run. A malformed, misspelled, or out-of-range flag is reported
+  here and exits non-zero, rather than running the wrong workload silently. All
+  the work happens in the `Spawner` and the per-connection actors.
   """
   new create(env: Env) =>
     // Guard the echo oracle before doing anything: a degenerate keystream would
     // let the whole swarm pass while catching nothing.
     _KeystreamSelfCheck()
-    let config = _Config(_Flags(env.args))
+
+    let spec =
+      try
+        _SwarmSpec()?
+      else
+        // The spec is hardcoded and valid; a construction error here is a bug.
+        _Unreachable()
+        return
+      end
+
+    // Only env.args, not env.vars: the flags come from the command line, and a
+    // stress test should not have TCP-SWARM_* environment variables silently
+    // override them.
+    let cmd =
+      match \exhaustive\ CommandParser(spec).parse(env.args)
+      | let c: Command => c
+      | let ch: CommandHelp =>
+        ch.print_help(env.out)
+        return
+      | let se: SyntaxError =>
+        env.err.print(se.string())
+        env.exitcode(1)
+        return
+      end
+
+    let config =
+      match \exhaustive\ _MakeConfig(cmd)
+      | let c: _Config => c
+      | let vf: ValidationFailure =>
+        for e in vf.errors().values() do
+          env.err.print(e)
+        end
+        env.exitcode(1)
+        return
+      end
+
     let spawner = Spawner(config, TCPConnectAuth(env.root))
     SwarmListener(spawner, config, TCPListenAuth(env.root))
 
