@@ -602,4 +602,55 @@ them to the actors that need them. The echo server example above shows the
 typical pattern: `Main` creates a `TCPListenAuth`, the listener creates a
 `TCPServerAuth` from it, and each accepted connection receives that
 `TCPServerAuth`.
+
+## Legacy stdlib-net API
+
+[`LegacyTCPClient`](/lori/lori-LegacyTCPClient/),
+[`LegacyTCPListener`](/lori/lori-LegacyTCPListener/), and their notifiers
+recreate the standard library `net` package's API on top of lori, to ease
+moving existing `net` code over. The application logic stays in notifier
+objects, as in the stdlib, rather than in your own actor.
+
+```pony
+use "lori"
+
+actor Main
+  new create(env: Env) =>
+    LegacyTCPListener(TCPListenAuth(env.root), MyListenNotify, "", "8989")
+```
+
+`MyListenNotify` implements
+[`LegacyTCPListenNotify`](/lori/lori-LegacyTCPListenNotify/); its `connected`
+returns a [`LegacyTCPConnectionNotify`](/lori/lori-LegacyTCPConnectionNotify/)
+for each accepted connection. A client is a `LegacyTCPClient`. The
+`legacy-echo-server` example shows the full shape.
+
+Moving `net` code over needs a few mechanical changes:
+
+- The notifier's `conn` parameter is `LegacyTCPConnection` (an interface), not
+  `net.TCPConnection`. Change `is TCPConnectionNotify` to
+  `is LegacyTCPConnectionNotify` and the `conn` parameter types with it.
+- Create a client with `LegacyTCPClient(...)` where the stdlib wrote
+  `TCPConnection(...)`.
+- SSL uses [`LegacySSLConnection`](/lori/lori-LegacySSLConnection/), a notifier
+  decorator matching `ssl/net`'s `SSLConnection`; the ALPN hook is
+  [`LegacyALPNProtocolNotify`](/lori/lori-LegacyALPNProtocolNotify/).
+
+A few behaviors differ from the stdlib:
+
+- A `write` or `writev` made while the connection is under backpressure is
+  dropped, not queued. The stdlib buffers such writes and drains them later;
+  lori's `send` does not queue, so a program that writes without waiting for
+  `unthrottled` loses those bytes. Track `throttled`/`unthrottled` and stop
+  writing while throttled.
+- `yield_after_writing` is accepted by the constructors for source
+  compatibility but has no effect. lori's write path has no mid-drain yield for
+  it to drive, and it changes nothing a peer can observe.
+- `received`'s `times` counts calls since the last yield. The stdlib resets it
+  once per read behavior instead.
+- `dispose()` closes gracefully, as the stdlib does. lori's own `dispose` hard
+  closes to avoid the race in issue #229, so the Legacy connections keep the
+  stdlib's graceful close.
+- `read_buffer_size` is a `USize` as in the stdlib, but 0 is replaced by the
+  default rather than producing a zero-length buffer.
 """

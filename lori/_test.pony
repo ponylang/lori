@@ -114,3 +114,5 @@ actor \nodoc\ Main is TestList
     ifdef posix then test(_TestSendSSLHardCloseFromThrottled) end
     ifdef posix then test(_TestSendDeliveredNotFailedOnHardClose) end
     ifdef posix then test(_TestReadableEventWriteRecovery) end
+
+    _LegacyTests.tests(test)
