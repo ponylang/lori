@@ -411,6 +411,12 @@ is no way to deliver held data without also resuming reads — an application th
 needs it has to `unmute()` and keep processing until it has caught up, taking
 whatever else arrives in the meantime.
 
+While muted, the connection reads nothing off the socket, so a peer's close is
+not detected until `unmute()` resumes reading. A muted connection also holds a
+live I/O resource, and the Pony runtime does not exit while any actor holds one,
+so a program that mutes a connection and leaves it muted never exits. The
+application must end that state: `unmute()` the connection or `close()` it.
+
 ## Read Yielding
 
 Under sustained inbound traffic, a single connection's read loop can monopolize
