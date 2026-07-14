@@ -24,6 +24,7 @@ All notable changes to this project will be documented in this file. This projec
 
 - _on_received now returns what the read loop should do next ([PR #315](https://github.com/ponylang/lori/pull/315))
 - Update ssl dependency to 3.0.0 ([PR #321](https://github.com/ponylang/lori/pull/321))
+- Require ponyc 0.67.0 to fix a possible write hang under load ([PR #338](https://github.com/ponylang/lori/pull/338))
 
 ## [0.16.1] - 2026-06-30
 
