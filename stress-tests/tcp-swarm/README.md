@@ -111,9 +111,14 @@ build/debug/tcp-swarm --connections 1000 --concurrency 64 --payload-size 256 \
 On Linux under WSL, connecting to an *unoccupied* port can hang; here the listener
 occupies the port before any client dials, so the default `localhost` is fine.
 
-When hand-running with `--expect N`, make `payload-size * messages` a whole number of
-`N`-byte frames, or the trailing partial frame is never delivered and the client
-hangs. The orchestrator guarantees this by construction; a hand-run must arrange it.
+When hand-running with `--expect N`, `N` must not exceed `--read-buffer-size`, and
+`payload-size * messages` must be a whole number of `N`-byte frames — otherwise the
+trailing partial frame is never delivered and the client would hang. The engine rejects
+an `--expect` that violates either. The orchestrator satisfies both by construction.
+
+Every flag is checked against a schema and its valid range: an unknown, misspelled, or
+malformed flag, or a value out of range, is reported with a message and a non-zero exit
+rather than silently falling back to a default. `--help` lists the flags.
 
 ## Running the swarm
 
