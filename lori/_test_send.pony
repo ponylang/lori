@@ -2430,7 +2430,7 @@ class \nodoc\ iso _TestSendDeliveredNotFailedOnHardClose is UnitTest
   """
   A hard close from `_on_throttled` must not report a delivered send as failed.
 
-  `_on_throttled` runs inside the write flush, after a partial `writev` has
+  `_on_throttled` runs inside the write flush, after a partial `sendv` has
   accounted its bytes and before the flush reports the sends those bytes
   completed. A `hard_close()` from the callback fails every send still on the
   queue, so a send the flush had just finished gets `_on_send_failed` even
@@ -2447,7 +2447,7 @@ class \nodoc\ iso _TestSendDeliveredNotFailedOnHardClose is UnitTest
 
   A 256,000-byte send opens a backlog deep enough to keep the connection
   throttled, and twenty-five 32,000-byte sends pile up behind it. Against a
-  16 KiB `SO_SNDBUF` a `writev` moves a few tens of kilobytes a pass, so it
+  16 KiB `SO_SNDBUF` a `sendv` moves a few tens of kilobytes a pass, so it
   lands mid-send far more often than on a boundary.
 
   POSIX only, for the same reason as `SendPerTokenCompletion`.

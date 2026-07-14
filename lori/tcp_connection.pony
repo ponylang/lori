@@ -824,7 +824,7 @@ class TCPConnection
       return StartTLSAlreadyTLS
     end
 
-    // writev is synchronous on every platform now — it returns OK with a
+    // sendv is synchronous on every platform now — it returns OK with a
     // byte count, Retry on EWOULDBLOCK, or Error. Any remaining pending
     // bytes mean the write didn't fully drain, so the TLS upgrade must wait.
     if _muted or (_bytes_in_read_buffer > 0) or _has_pending_writes() then
@@ -855,7 +855,7 @@ class TCPConnection
     """
     Send data on this connection. Accepts a single buffer (`ByteSeq`) or
     multiple buffers (`ByteSeqIter`). When multiple buffers are provided,
-    they are sent in a single writev syscall — avoiding both per-buffer
+    they are sent in a single syscall — avoiding both per-buffer
     syscall overhead and the cost of copying into a contiguous buffer.
 
     Returns a `SendToken` on success, or a `SendError` explaining the
@@ -967,7 +967,7 @@ class TCPConnection
 
   fun ref _send_pending_writes() =>
     """
-    Flush pending write data using writev. Synchronous and non-blocking on
+    Flush pending write data using sendv. Synchronous and non-blocking on
     every platform: a partial write or `SocketResultRetry` (the kernel send
     buffer is full) applies backpressure and leaves the rest queued for the
     next writeable event.
@@ -982,8 +982,8 @@ class TCPConnection
           _pending.size().min(writev_batch_size)
         let bytes_to_send: USize = _pending.prefix_total(num_to_send)
 
-        // writev syscall — three-state result with bytes-sent count
-        match \exhaustive\ PonyTCP.writev(
+        // sendv — three-state result with bytes-sent count
+        match \exhaustive\ PonyTCP.sendv(
           _event, _pending.buffers(), 0, num_to_send, _pending.first_offset())?
         | (SocketResultOk, let len: USize) =>
           if len > 0 then
@@ -1000,7 +1000,7 @@ class TCPConnection
         | (SocketResultError, _) => error
         end
       else
-        // writev error or unreachable Array.apply bounds — non-graceful
+        // sendv error or unreachable Array.apply bounds — non-graceful
         // shutdown. Fire _on_sent for sends whose bytes already reached the
         // OS in an earlier batch of this flush first, so hard_close fails only
         // the rest.
@@ -1380,7 +1380,7 @@ class TCPConnection
   fun ref _reset_idle_timer() =>
     """
     Reset the idle timer to the configured duration. Called on I/O activity:
-    a successful `writev` (an application send or a buffered-write drain) or
+    a successful `sendv` (an application send or a buffered-write drain) or
     data received. Only resets an existing timer — does not create one.
     """
     if not _timer_event.is_null() then
@@ -1621,7 +1621,7 @@ class TCPConnection
     """
     Common I/O dispatch logic for socket events. Shared by all states that
     have a connected socket and need to process I/O notifications. Identical
-    on every platform: readiness edges drive synchronous recv/writev.
+    on every platform: readiness edges drive synchronous recv/sendv.
     """
     if AsioEvent.errored(flags) then
       hard_close()

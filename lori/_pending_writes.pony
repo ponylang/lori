@@ -34,7 +34,7 @@ class _PendingWrites
   fun prefix_total(n: USize): USize =>
     """
     Bytes in the first `n` buffers, counting the offset already sent from the
-    first. `n >= size()` is `total()`. The byte count for a capped writev batch.
+    first. `n >= size()` is `total()`. The byte count for a capped sendv batch.
     """
     if n >= _buffers.size() then return _total end
     var sum: USize = 0
@@ -52,7 +52,7 @@ class _PendingWrites
 
   fun buffers(): this->Array[ByteSeq] =>
     """
-    The buffers, for `PonyTCP.writev`. Read together with `first_offset`.
+    The buffers, for `PonyTCP.sendv`. Read together with `first_offset`.
     """
     _buffers
 

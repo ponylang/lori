@@ -1,6 +1,6 @@
 """
 Demonstrates lori's buffer_until() for length-prefixed message framing and
-multi-buffer send() for sending header + payload in a single writev syscall.
+multi-buffer send() for sending header + payload in a single syscall.
 
 A framed client connects to an echo server and exchanges messages using a
 simple protocol: each message is preceded by a 4-byte big-endian length
@@ -89,7 +89,7 @@ actor FramedServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
       let len = payload.size()
       _out.print("Server: echoing \"" + String.from_array(payload) + "\"")
 
-      // Echo back with same framing: header + payload in one writev syscall
+      // Echo back with same framing: header + payload in one syscall
       let header =
         recover val
           Array[U8](4)
@@ -152,7 +152,7 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
   fun ref _send_framed(msg: String) =>
     """
     Send a message with a 4-byte big-endian length prefix, sending both
-    header and payload in a single writev syscall.
+    header and payload in a single syscall.
     """
     let len = msg.size()
     let header =

@@ -158,7 +158,7 @@ calling `send()`.
 
 `send()` accepts both a single buffer (`ByteSeq`) and multiple buffers
 (`ByteSeqIter`). When a protocol sends structured data (e.g. a length header
-followed by a payload), passing multiple buffers sends them in a single writev
+followed by a payload), passing multiple buffers sends them in a single
 syscall — avoiding both the per-buffer syscall overhead of calling `send()`
 multiple times and the cost of copying into a contiguous buffer:
 
@@ -166,7 +166,7 @@ multiple times and the cost of copying into a contiguous buffer:
 // Single buffer
 _tcp_connection.send("Hello, world!")
 
-// Multiple buffers — one writev syscall
+// Multiple buffers — one syscall
 let header: Array[U8] val = _encode_header(payload.size())
 _tcp_connection.send(recover val [as ByteSeq: header; payload] end)
 ```
