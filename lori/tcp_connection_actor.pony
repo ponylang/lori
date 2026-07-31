@@ -2,9 +2,9 @@ trait tag TCPConnectionActor is AsioEventNotify
   """
   The actor trait a connection actor implements. Provide `_connection()`
   returning the `TCPConnection` the actor owns; the behaviors here deliver ASIO
-  events, resumed reads, and send notifications to it. Implement this together
-  with a `ClientLifecycleEventReceiver` or `ServerLifecycleEventReceiver` for
-  the connection callbacks.
+  events, resumed reads, and failed-send notifications to it. Implement this
+  together with a `ClientLifecycleEventReceiver` or
+  `ServerLifecycleEventReceiver` for the connection callbacks.
   """
   fun ref _connection(): TCPConnection
 
@@ -33,12 +33,6 @@ trait tag TCPConnectionActor is AsioEventNotify
     Register the listener as the spawner of this connection
     """
     _connection()._register_spawner(listener)
-
-  be _notify_sent(token: SendToken) =>
-    """
-    Deferred delivery of _on_sent to the lifecycle event receiver.
-    """
-    _connection()._fire_on_sent(token)
 
   be _notify_send_failed(token: SendToken) =>
     """

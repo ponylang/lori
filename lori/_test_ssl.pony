@@ -262,12 +262,14 @@ actor \nodoc\ _TestSSLSendvClient
     _h.complete_action("client connected")
     match \exhaustive\ _tcp_connection.send(
       recover val [as ByteSeq: "SSL "; "Hello"; " World"] end)
-    | let token: SendToken =>
-      _expected_token = token
+    | SendAccepted => None
     | let _: SendError =>
       _h.fail("send() returned an error")
       _h.complete(false)
     end
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    _expected_token = token
 
   fun ref _on_sent(token: SendToken) =>
     match \exhaustive\ _expected_token
@@ -565,7 +567,7 @@ actor \nodoc\ _TestSSLHandshakeFailurePlainClient
 class \nodoc\ iso _TestSSLHandshakeCompleteTransitionsToOpen is UnitTest
   """
   Test that after a successful SSL handshake, the connection is in _Open
-  state: is_open() returns true and send() returns a SendToken.
+  state: is_open() returns true and send() returns SendAccepted.
   """
   fun name(): String => "SSLHandshakeCompleteTransitionsToOpen"
 
@@ -585,7 +587,7 @@ class \nodoc\ iso _TestSSLHandshakeCompleteTransitionsToOpen is UnitTest
       end
 
     h.expect_action("is_open verified")
-    h.expect_action("send returns token")
+    h.expect_action("send accepted")
 
     let listener =
       _TestSSLTransitionToOpenListener(
@@ -652,10 +654,10 @@ actor \nodoc\ _TestSSLTransitionToOpenClient
     _h.complete_action("is_open verified")
 
     match \exhaustive\ _tcp_connection.send("test")
-    | let _: SendToken =>
-      _h.complete_action("send returns token")
+    | SendAccepted =>
+      _h.complete_action("send accepted")
     | let _: SendError =>
-      _h.fail("send() should return SendToken")
+      _h.fail("send() should return SendAccepted")
     end
     _tcp_connection.close()
 

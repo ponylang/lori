@@ -114,7 +114,11 @@ actor Flood is (TCPConnectionActor & ClientLifecycleEventReceiver)
     """
     while _sends_accepted < _total_to_send do
       match \exhaustive\ _tcp_connection.send(_chunk)
-      | let token: SendToken =>
+      | SendAccepted =>
+        // Count after send() returns. _on_sent can fire from inside it, and
+        // on the last chunk _on_sent closes the connection. The count has to
+        // reach _total_to_send before the loop condition is tested again, or
+        // the loop sends on a closed connection.
         _sends_accepted = _sends_accepted + 1
       | SendErrorNotWriteable =>
         // Backpressure active. _on_throttled has already fired.
@@ -138,9 +142,10 @@ actor Flood is (TCPConnectionActor & ClientLifecycleEventReceiver)
 
   be _resume_sends() =>
     """
-    Resume sending in a new behavior turn. Using a behavior ensures we don't
-    nest inside _send_pending_writes, which would interfere with pending
-    token tracking.
+    Resume sending in a new behavior turn. _on_unthrottled runs inside the
+    connection's own event dispatch, ahead of the flush that drains what is
+    already queued, so sending straight from it re-enters the connection
+    mid-dispatch and puts the whole chunk loop in that same turn.
     """
     _send_chunks()
 

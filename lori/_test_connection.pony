@@ -469,7 +469,7 @@ actor \nodoc\ _TestHardCloseDuringReceiveClient
   fun ref _on_connected() =>
     // Give the server data so its `_on_received` fires.
     match \exhaustive\ _tcp_connection.send("ping")
-    | let _: SendToken => None
+    | SendAccepted => None
     | let _: SendError =>
       _h.fail("client send() failed")
       _h.complete(false)
@@ -588,7 +588,7 @@ actor \nodoc\ _TestHardCloseAfterFramedReceiveClient
   fun ref _on_connected() =>
     // Two 4-byte frames in a single send, so both land in one server read.
     match \exhaustive\ _tcp_connection.send("AAAABBBB")
-    | let _: SendToken => None
+    | SendAccepted => None
     | let _: SendError =>
       _h.fail("client send() failed")
       _h.complete(false)

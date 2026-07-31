@@ -611,26 +611,34 @@ class TCPConnection
 
   fun ref _hard_close_cleanup() =>
     """
-    Common teardown for hard-closing an established connection. Handles
-    send_failed for every pending token, clearing pending buffers, cancelling
-    all timers, unsubscribing the event, releasing the fd (see
-    `_close_event_fd` — closed here on POSIX, deferred to the unsubscribe
-    REMOVE on Windows), and disposing SSL. Order is load-bearing: timer cancel
-    before event unsubscribe, SSL dispose after the fd is released.
+    Common teardown for hard-closing an established connection. Gives every
+    pending token its terminal callback, clears pending buffers, cancels all
+    timers, unsubscribes the event, releases the fd (see `_close_event_fd` —
+    closed here on POSIX, deferred to the unsubscribe REMOVE on Windows), and
+    disposes SSL. Order is load-bearing: timer cancel before event
+    unsubscribe, SSL dispose after the fd is released.
 
     Runs with `_state` already `_Closed`: the `_hard_close_*` methods set it
-    before calling this, so the `_on_send_failed` this fires (and any re-entrant
-    call the application makes from it) sees a closed connection.
+    before calling this, so the callbacks this fires (and any re-entrant call
+    the application makes from them) see a closed connection.
     """
-    // Fire _on_send_failed for every accepted-but-undelivered send before
-    // clearing the pending buffer. Deferred via _notify_send_failed so each
-    // arrives in a subsequent turn, after _on_closed.
+    // Split the queue on the same completion test `_fire_completed_sends`
+    // uses. A hard close can land partway through that method's reporting
+    // loop -- it fires `_on_sent` for one token, and the application closes
+    // from it while later tokens whose bytes went out in the same write are
+    // still queued. Those reached the OS, so they are sent, not failed.
+    // `_on_sent` stays a direct call so it still precedes `_on_closed`, which
+    // the `_hard_close_*` methods fire after this returns.
     match _enclosing
     | let e: TCPConnectionActor ref =>
       try
         while _pending_tokens.size() > 0 do
-          (_, let token) = _pending_tokens.shift()?
-          e._notify_send_failed(token)
+          (let offset, let token) = _pending_tokens.shift()?
+          if offset <= _cumulative_sent then
+            _fire_on_sent(token)
+          else
+            e._notify_send_failed(token)
+          end
         end
       else
         // Guarded by size() > 0, so shift() never errors.
@@ -851,24 +859,31 @@ class TCPConnection
     _ssl_flush_sends()
     None
 
-  fun ref send(data: (ByteSeq | ByteSeqIter)): (SendToken | SendError) =>
+  fun ref send(data: (ByteSeq | ByteSeqIter)): SendResult =>
     """
     Send data on this connection. Accepts a single buffer (`ByteSeq`) or
     multiple buffers (`ByteSeqIter`). When multiple buffers are provided,
     they are sent in a single syscall — avoiding both per-buffer
     syscall overhead and the cost of copying into a contiguous buffer.
 
-    Returns a `SendToken` on success, or a `SendError` explaining the
-    failure. On success the token gets exactly one terminal callback in a
-    later behavior turn: `_on_sent(token)` once the data has been handed to
-    the OS (written to the kernel send buffer, not received by the peer), or
-    `_on_send_failed(token)` if the connection is lost or hard-closed before
-    the bytes are written. A graceful `close()` sends what's still queued, so
-    those sends fire `_on_sent`, not `_on_send_failed`.
+    Returns `SendAccepted` on success, or a `SendError` explaining the
+    failure. On success `_on_send_accepted(token, data)` has already fired,
+    from inside this call and before the bytes were written. That token gets
+    exactly one further callback: `_on_sent(token)` once the data has been
+    handed to the OS (written to the kernel send buffer, not received by the
+    peer), or `_on_send_failed(token)` if the connection is lost or
+    hard-closed before the bytes are written. A graceful `close()` sends
+    what's still queued, so those sends fire `_on_sent`, not
+    `_on_send_failed`. Closing the connection from any callback that runs
+    inside this call does not change the return: the send stays accepted.
+
+    Both callbacks can run before this returns, so anything the calling code
+    updates after the call -- a counter, a map, a flag -- is not updated yet
+    when they fire.
     """
     _state.send(this, data)
 
-  fun ref _do_send(data: (ByteSeq | ByteSeqIter)): (SendToken | SendError) =>
+  fun ref _do_send(data: (ByteSeq | ByteSeqIter)): SendResult =>
     // Only reachable from _Open.send() — the handshake states return
     // SendErrorNotConnected directly without calling this method.
     if not _writeable then
@@ -911,9 +926,13 @@ class TCPConnection
     let token = SendToken._create(_next_token_id)
     _pending_tokens.push((_cumulative_enqueued, token))
 
+    // Hand the token over before the flush: the flush fires `_on_sent`, and
+    // the application has to have the token before the callback carrying it.
+    _fire_on_send_accepted(token, data)
+
     _send_pending_writes()
 
-    token
+    SendAccepted
 
   fun ref _initiate_shutdown() =>
     """
@@ -971,6 +990,10 @@ class TCPConnection
     every platform: a partial write or `SocketResultRetry` (the kernel send
     buffer is full) applies backpressure and leaves the rest queued for the
     next writeable event.
+
+    Runs application code: `_on_sent` for each send it completes, and
+    `_on_throttled` when it applies backpressure. Either can close the
+    connection under the caller.
     """
     let writev_batch_size: USize = PonyTCP.writev_max().usize()
     var wrote_bytes: Bool = false
@@ -1019,6 +1042,7 @@ class TCPConnection
 
     if _pending.total() == 0 then
       _release_backpressure()
+      _state.drained(this)
     end
 
   fun ref _fire_completed_sends() =>
@@ -1034,12 +1058,7 @@ class TCPConnection
         (let offset, let token) = _pending_tokens(0)?
         if offset > _cumulative_sent then break end
         _pending_tokens.shift()?
-        match \exhaustive\ _enclosing
-        | let e: TCPConnectionActor ref =>
-          e._notify_sent(token)
-        | None =>
-          _Unreachable()
-        end
+        _fire_on_sent(token)
       end
     else
       // Guarded by size() > 0, so the ? accesses never error.
@@ -1156,9 +1175,12 @@ class TCPConnection
         var total_bytes_read: USize = 0
 
         while _readable do
-          // Every control the application has over reading lives here, once.
           // `_on_received` can mute us or hard_close us, and either takes
           // effect before the next message is taken or the socket is touched.
+          // The `_ssl_flush_sends()` below writes protocol output, which
+          // carries no send token, so `_on_throttled` is the callback it can
+          // run. That can do the same, so both controls are re-checked after
+          // it.
           //
           // `is_live()` is about the socket: `_fill()` must not read an fd
           // a `hard_close()` has released. The SSL session guards itself — a
@@ -1192,8 +1214,10 @@ class TCPConnection
             // peer waiting on the output would otherwise wedge. No-op on a
             // plaintext connection.
             _ssl_flush_sends()
-            if not _state.is_live() then
-              // The flush can hard_close on a write error.
+            if (not _state.is_live()) or _muted then
+              // The flush can hard_close on a write error, and it can raise
+              // backpressure, so `_on_throttled` runs here and the application
+              // can hard_close or mute from it.
               return
             end
 
@@ -1276,11 +1300,15 @@ class TCPConnection
         // being unthrottled doesn't however mean we are writable
         _set_unwriteable()
         PonyAsio.resubscribe_write(_event)
-        // A hard close from `_on_throttled` fails every token still on the
+        // A hard close from the application fails every token still on the
         // queue, so report the sends this flush has completed before the
-        // application runs.
+        // application runs. The `_on_sent` that reports them can itself
+        // `hard_close()`, which clears `_throttled`, so re-check the flag:
+        // `_on_throttled` must not follow an `_on_closed`.
         _fire_completed_sends()
-        s._on_throttled()
+        if _throttled then
+          s._on_throttled()
+        end
       end
     | None =>
       _Unreachable()
@@ -1297,10 +1325,22 @@ class TCPConnection
       _Unreachable()
     end
 
+  fun ref _fire_on_send_accepted(token: SendToken,
+    data: (ByteSeq | ByteSeqIter))
+  =>
+    """
+    Dispatch _on_send_accepted to the lifecycle event receiver.
+    """
+    match \exhaustive\ _lifecycle_event_receiver
+    | let s: EitherLifecycleEventReceiver ref =>
+      s._on_send_accepted(token, data)
+    | None =>
+      _Unreachable()
+    end
+
   fun ref _fire_on_sent(token: SendToken) =>
     """
-    Dispatch _on_sent to the lifecycle event receiver. Called from
-    _notify_sent behavior on TCPConnectionActor.
+    Dispatch _on_sent to the lifecycle event receiver.
     """
     match \exhaustive\ _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
@@ -1560,9 +1600,11 @@ class TCPConnection
     `hard_close()` and dispose it, and there is then nothing to flush and no
     socket to flush it to.
 
-    Can `hard_close()` on a write error. The application write path uses
-    `_ssl_enqueue_sends()` plus `_send_pending_writes()` directly so it can
-    record the send's completion offset between the two.
+    Can `hard_close()` on a write error. The flush also runs `_on_sent` and
+    `_on_throttled`, either of which can `hard_close()` from the application.
+    The application write path uses `_ssl_enqueue_sends()` plus
+    `_send_pending_writes()` directly so it can record the send's completion
+    offset between the two.
     """
     match _ssl
     | let _: _TLS =>

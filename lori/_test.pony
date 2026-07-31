@@ -22,6 +22,14 @@ actor \nodoc\ Main is TestList
     test(_TestSSLMuteCloseDropsHeld)
     test(_TestSendToken)
     test(_TestSendAfterClose)
+    test(_TestSendAcceptedBeforeSent)
+    test(_TestSendCloseFromAccepted)
+    test(_TestSendCloseFromSent)
+    test(_TestSendHardCloseFromAccepted)
+    test(_TestSendHardCloseFromSentKeepsDelivered)
+    test(_TestSendOnSentPrecedesReceived)
+    test(_TestSendReentrantFromSent)
+    test(_TestMuteFromOnSent)
     test(_TestHardCloseDuringReceive)
     test(_TestHardCloseAfterFramedReceive)
     test(_TestSSLHardCloseDuringReceive)
@@ -114,3 +122,5 @@ actor \nodoc\ Main is TestList
     ifdef posix then test(_TestSendSSLHardCloseFromThrottled) end
     ifdef posix then test(_TestSendDeliveredNotFailedOnHardClose) end
     ifdef posix then test(_TestReadableEventWriteRecovery) end
+    ifdef posix then test(_TestSendOnSentPrecedesThrottleAndClose) end
+    ifdef posix then test(_TestSendThrottleSuppressedByHardClose) end

@@ -56,6 +56,12 @@ trait ClientLifecycleEventReceiver
   fun ref _on_throttled() =>
     """
     Called when we start experiencing backpressure.
+
+    The sends that completed in the write that hit backpressure are reported
+    first, so their `_on_sent` arrives before this. A `hard_close()` from one
+    of those callbacks means this one never fires at all: `_on_closed` has
+    arrived and the connection is no longer throttled. A graceful `close()`
+    leaves the queued writes to drain, so this still fires.
     """
     None
 
@@ -65,30 +71,59 @@ trait ClientLifecycleEventReceiver
     """
     None
 
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    """
+    Called once for each `send()` the connection accepts, from inside that
+    `send()` and before the bytes are written. `token` identifies the send and
+    comes back exactly once more, to `_on_sent` or `_on_send_failed`. `data`
+    is what was passed to `send()`.
+
+    A refused `send()` does not fire this. It returns a `SendError` instead.
+
+    Closing the connection from here does not un-accept the send: `send()`
+    still returns `SendAccepted`, and a hard close gives the token to
+    `_on_send_failed`.
+
+    Sending from here queues the second send behind the first before either is
+    written. Nothing is written between one level of that nesting and the next,
+    so unlike the nesting `_on_sent` allows, it has no point at which the
+    socket can refuse and stop it. The flush at the innermost level can also
+    deliver `_on_sent` for the token this call is still delivering.
+    """
+    None
+
   fun ref _on_sent(token: SendToken) =>
     """
-    Called when the bytes from a successful `send()` have been handed to the
+    Called when the bytes from an accepted `send()` have been handed to the
     OS: written to the kernel send buffer, not necessarily received by the
-    peer. The token matches the one returned by that `send()` call, and this
-    callback fires exactly once for it.
+    peer. The token matches the one `_on_send_accepted` delivered for that
+    send, and this callback fires exactly once for it. Callbacks arrive in
+    send order.
 
-    Always fires in a subsequent behavior turn, never synchronously during
-    `send()`, so the caller has the `SendToken` return value before the
-    callback arrives. Callbacks arrive in send order. If a send's bytes reach
-    the OS just as the connection closes, its `_on_sent` can arrive after
-    `_on_closed`.
+    Fires during the write that hands the bytes over, which can be the write
+    inside the `send()` call that queued them. So anything the calling code
+    updates after that `send()` -- a counter, a map, a flag -- is not updated
+    yet when this fires.
+
+    Calling `send()` from here nests on the stack: an application that sends
+    its next message on each completion recurses for as long as the sends keep
+    draining, and a peer that keeps up sets no bound on the depth. Send from a
+    behavior instead to break the nesting.
+
+    A `hard_close()` from here suppresses the `_on_throttled` that backpressure
+    was about to deliver.
     """
     None
 
   fun ref _on_send_failed(token: SendToken) =>
     """
-    Called when the bytes from a successful `send()` could not be handed to
+    Called when the bytes from an accepted `send()` could not be handed to
     the OS because the connection was lost or hard-closed first. The token
-    matches the one returned by that `send()` call, and this callback fires
-    exactly once for it. A graceful `close()` sends what's still queued, so only
-    a hard close or a lost connection fires this. On a hard close, the sends
-    that reached the OS fire `_on_sent` and the rest fire this, so the split
-    shows how far your data got.
+    matches the one `_on_send_accepted` delivered for that send, and this
+    callback fires exactly once for it. A graceful `close()` sends what's still
+    queued, so only a hard close or a lost connection fires this. On a hard
+    close, the sends that reached the OS fire `_on_sent` and the rest fire
+    this, so the split shows how far your data got.
 
     Always fires in a subsequent behavior turn, never synchronously during
     `hard_close()`. Always arrives after `_on_closed`, which fires

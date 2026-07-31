@@ -392,8 +392,9 @@ actor \nodoc\ _TestStartTLSPreconditionsListener is TCPListenerActor
 class \nodoc\ iso _TestStartTLSSendDuringUpgrade is UnitTest
   """
   Test that send() returns SendErrorNotConnected during a TLS upgrade
-  handshake (state: _TLSUpgrading). After start_tls() succeeds, the
-  connection is in _TLSUpgrading where sends_allowed() = false.
+  handshake (state: _TLSUpgrading), and that the refused send fires no
+  `_on_send_accepted`. After start_tls() succeeds, the connection is in
+  _TLSUpgrading where sends_allowed() = false.
   """
   fun name(): String => "StartTLSSendDuringUpgrade"
 
@@ -426,6 +427,7 @@ actor \nodoc\ _TestStartTLSSendDuringUpgradeClient
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _sslctx: SSLContext val
   let _h: TestHelper
+  var _accepted_count: USize = 0
 
   new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
     _sslctx = sslctx
@@ -450,15 +452,22 @@ actor \nodoc\ _TestStartTLSSendDuringUpgradeClient
       // Now in _TLSUpgrading — send() should fail
       match \exhaustive\ _tcp_connection.send("should fail")
       | SendErrorNotConnected =>
+        _h.assert_eq[USize](
+          0,
+          _accepted_count,
+          "a refused send must not fire _on_send_accepted")
         _h.complete_action("send blocked during upgrade")
-      | let _: SendToken =>
-        _h.fail("send() should not return SendToken during TLS upgrade")
+      | SendAccepted =>
+        _h.fail("send() should not be accepted during TLS upgrade")
       | let _: SendError =>
         _h.fail("Expected SendErrorNotConnected, got other SendError")
       end
     | let _: StartTLSError =>
       _h.fail("start_tls should have succeeded")
     end
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    _accepted_count = _accepted_count + 1
 
 actor \nodoc\ _TestStartTLSSendDuringUpgradeListener is TCPListenerActor
   let _port: String

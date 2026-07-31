@@ -4,7 +4,7 @@ A TCP networking library for Pony. Lori separates connection logic from actor sc
 
 Key features:
 
-- Fallible sends — `send()` returns `(SendToken | SendError)` instead of silently dropping data, so the application always knows whether data was accepted
+- Fallible sends — `send()` returns `(SendAccepted | SendError)` instead of silently dropping data, so the application always knows whether data was accepted
 - Built-in SSL — switch from plain TCP to SSL by changing a single constructor call
 - Connection limits — cap the number of concurrent connections a listener will accept
 - Backpressure notifications — `_on_throttled` / `_on_unthrottled` callbacks let the application respond to socket pressure

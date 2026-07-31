@@ -21,9 +21,16 @@ trait _ConnectionState
 
   fun ref send(conn: TCPConnection ref,
     data: (ByteSeq | ByteSeqIter))
-    : (SendToken | SendError)
+    : SendResult
     """
     Send data, or return why it can't be sent in this state.
+    """
+
+  fun ref drained(conn: TCPConnection ref)
+    """
+    The pending write queue is empty. A state that defers work until then
+    does it here, and re-checks anything it depends on: an application
+    callback can run between the queue emptying and this call.
     """
 
   fun ref close(conn: TCPConnection ref)
@@ -162,10 +169,13 @@ class _ConnectionNone is _ConnectionState
     conn._close_event_fd(PonyAsio.event_fd(event))
 
   fun ref send(conn: TCPConnection ref,
-    data: (ByteSeq | ByteSeqIter)): (SendToken | SendError)
+    data: (ByteSeq | ByteSeqIter)): SendResult
   =>
     _Unreachable()
     SendErrorNotConnected
+
+  fun ref drained(conn: TCPConnection ref) =>
+    _Unreachable()
 
   fun ref close(conn: TCPConnection ref) =>
     _Unreachable()
@@ -284,9 +294,12 @@ class _ClientConnecting is _ConnectionState
     end
 
   fun ref send(conn: TCPConnection ref,
-    data: (ByteSeq | ByteSeqIter)): (SendToken | SendError)
+    data: (ByteSeq | ByteSeqIter)): SendResult
   =>
     SendErrorNotConnected
+
+  fun ref drained(conn: TCPConnection ref) =>
+    _Unreachable()
 
   fun ref close(conn: TCPConnection ref) =>
     conn._set_state(_UnconnectedClosing)
@@ -388,9 +401,11 @@ class _Open is _ConnectionState
     conn._straggler_cleanup(event)
 
   fun ref send(conn: TCPConnection ref,
-    data: (ByteSeq | ByteSeqIter)): (SendToken | SendError)
+    data: (ByteSeq | ByteSeqIter)): SendResult
   =>
     conn._do_send(data)
+
+  fun ref drained(conn: TCPConnection ref) => None
 
   fun ref close(conn: TCPConnection ref) =>
     conn._set_state(_Closing)
@@ -475,10 +490,9 @@ class _Open is _ConnectionState
 
 class _Closing is _ConnectionState
   fun ref own_event(conn: TCPConnection ref, flags: U32) =>
+    // No trailing `_initiate_shutdown()`: the FIN waits on the write queue
+    // emptying, and `drained` is where that becomes true.
     conn._dispatch_io_event(flags)
-    // A writeable event may have drained the last queued write; if so, send the
-    // FIN that close() deferred.
-    conn._initiate_shutdown()
 
   fun ref foreign_event(conn: TCPConnection ref,
     event: AsioEventID,
@@ -500,9 +514,12 @@ class _Closing is _ConnectionState
     conn._initiate_shutdown()
 
   fun ref send(conn: TCPConnection ref,
-    data: (ByteSeq | ByteSeqIter)): (SendToken | SendError)
+    data: (ByteSeq | ByteSeqIter)): SendResult
   =>
     SendErrorNotConnected
+
+  fun ref drained(conn: TCPConnection ref) =>
+    conn._initiate_shutdown()
 
   fun ref close(conn: TCPConnection ref) =>
     None
@@ -611,9 +628,12 @@ class _UnconnectedClosing is _ConnectionState
     end
 
   fun ref send(conn: TCPConnection ref,
-    data: (ByteSeq | ByteSeqIter)): (SendToken | SendError)
+    data: (ByteSeq | ByteSeqIter)): SendResult
   =>
     SendErrorNotConnected
+
+  fun ref drained(conn: TCPConnection ref) =>
+    _Unreachable()
 
   fun ref close(conn: TCPConnection ref) =>
     None
@@ -713,9 +733,11 @@ class _Closed is _ConnectionState
     conn._straggler_cleanup(event)
 
   fun ref send(conn: TCPConnection ref,
-    data: (ByteSeq | ByteSeqIter)): (SendToken | SendError)
+    data: (ByteSeq | ByteSeqIter)): SendResult
   =>
     SendErrorNotConnected
+
+  fun ref drained(conn: TCPConnection ref) => None
 
   fun ref close(conn: TCPConnection ref) =>
     None
@@ -822,9 +844,11 @@ class _SSLHandshaking is _ConnectionState
     conn._straggler_cleanup(event)
 
   fun ref send(conn: TCPConnection ref,
-    data: (ByteSeq | ByteSeqIter)): (SendToken | SendError)
+    data: (ByteSeq | ByteSeqIter)): SendResult
   =>
     SendErrorNotConnected
+
+  fun ref drained(conn: TCPConnection ref) => None
 
   fun ref close(conn: TCPConnection ref) =>
     // Can't drain gracefully during handshake — nothing to FIN.
@@ -939,9 +963,11 @@ class _TLSUpgrading is _ConnectionState
     conn._straggler_cleanup(event)
 
   fun ref send(conn: TCPConnection ref,
-    data: (ByteSeq | ByteSeqIter)): (SendToken | SendError)
+    data: (ByteSeq | ByteSeqIter)): SendResult
   =>
     SendErrorNotConnected
+
+  fun ref drained(conn: TCPConnection ref) => None
 
   fun ref close(conn: TCPConnection ref) =>
     // Can't send FIN during TLS handshake.

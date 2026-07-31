@@ -127,12 +127,12 @@ indicating the failure stage). Servers get `_on_started` (ready for data) and
 ## Sending Data
 
 Unlike many networking libraries, `send()` is fallible. It returns
-`(SendToken | SendError)` rather than silently dropping data:
+`(SendAccepted | SendError)` rather than silently dropping data:
 
 ```pony
 match _tcp_connection.send("some data")
-| let token: SendToken =>
-  // Accepted. The token comes back in _on_sent, or _on_send_failed on a drop.
+| SendAccepted =>
+  // Queued. _on_send_accepted has already fired with this send's token.
   None
 | SendErrorNotConnected =>
   // Connection is not open.
@@ -143,12 +143,27 @@ match _tcp_connection.send("some data")
 end
 ```
 
+An accepted send's token arrives at `_on_send_accepted`, which fires from
+inside `send()` before the bytes are written:
+
+```pony
+fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+  // Record the token to match against _on_sent and _on_send_failed later.
+  _outstanding.set(token.id)
+```
+
 [`SendToken`](/lori/lori-SendToken/) is an opaque value identifying the send
-operation. Each accepted `send()` gets exactly one terminal callback: the
-token comes back to `_on_sent` once its bytes reach the OS, or to
-`_on_send_failed` if the connection closes first. Callbacks arrive in send
-order, always in a later behavior turn, never during `send()`. "Handed to the
-OS" means written to the kernel send buffer, not received by the peer.
+operation. After `_on_send_accepted`, each accepted `send()` gets exactly one
+terminal callback: the token comes back to `_on_sent` once its bytes reach
+the OS, or to `_on_send_failed` if the connection closes first. Callbacks
+arrive in send order. "Handed to the OS" means written to the kernel send
+buffer, not received by the peer.
+
+`_on_sent` fires during the write that hands the bytes over, which can be the
+write inside the `send()` call that queued them. Calling `send()` from
+`_on_sent` nests on the stack: an application that sends its next message on
+each completion recurses for as long as the sends keep draining. Send from a
+behavior instead to break the nesting.
 
 The library does not queue data during backpressure. When `send()` returns
 [`SendErrorNotWriteable`](/lori/lori-SendErrorNotWriteable/), the application
