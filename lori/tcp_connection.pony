@@ -1706,6 +1706,13 @@ class TCPConnection
     _state = state
 
   fun ref _decrement_inflight(): U32 =>
+    // The count is set to the number of connection attempts started, and one
+    // decrement belongs to each attempt. A decrement at zero is one that
+    // belongs to no attempt.
+    if _inflight_connections == 0 then
+      _Unreachable()
+    end
+
     _inflight_connections = _inflight_connections - 1
     _inflight_connections
 
