@@ -5,8 +5,8 @@ use "ssl/net"
 
 class \nodoc\ iso _TestSendToken is UnitTest
   """
-  Test that send() returns a SendToken and that _on_sent fires with the
-  matching token after data is handed to the OS.
+  Test that _on_send_accepted delivers a token for an accepted send() and
+  that _on_sent fires with the matching token after data is handed to the OS.
   """
   fun name(): String => "SendToken"
 
@@ -73,12 +73,14 @@ actor \nodoc\ _TestSendTokenClient
   fun ref _on_connected() =>
     _h.complete_action("client connected")
     match \exhaustive\ _tcp_connection.send("hello")
-    | let token: SendToken =>
-      _expected_token = token
+    | SendAccepted => None
     | let _: SendError =>
       _h.fail("send() returned an error")
       _h.complete(false)
     end
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    _expected_token = token
 
   fun ref _on_sent(token: SendToken) =>
     match \exhaustive\ _expected_token
@@ -108,8 +110,8 @@ actor \nodoc\ _TestSendTokenServer
 
 class \nodoc\ iso _TestSendAfterClose is UnitTest
   """
-  Test that send() returns SendErrorNotConnected after the connection
-  has been closed.
+  Test that send() returns SendErrorNotConnected after the connection has been
+  closed, and that a refused send fires no `_on_send_accepted`.
   """
   fun name(): String => "SendAfterClose"
 
@@ -157,6 +159,7 @@ actor \nodoc\ _TestSendAfterCloseClient
   is (TCPConnectionActor & ClientLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _h: TestHelper
+  var _accepted_count: USize = 0
 
   new create(h: TestHelper) =>
     _h = h
@@ -176,15 +179,22 @@ actor \nodoc\ _TestSendAfterCloseClient
     _h.complete_action("client connected")
     _tcp_connection.close()
     match \exhaustive\ _tcp_connection.send("should fail")
-    | let _: SendToken =>
+    | SendAccepted =>
       _h.fail("send() should have returned an error after close")
       _h.complete(false)
     | let _: SendErrorNotConnected =>
+      _h.assert_eq[USize](
+        0,
+        _accepted_count,
+        "a refused send must not fire _on_send_accepted")
       _h.complete_action("send error verified")
     | let _: SendError =>
       _h.fail("send() returned wrong error type after close")
       _h.complete(false)
     end
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    _accepted_count = _accepted_count + 1
 
 actor \nodoc\ _TestSendAfterCloseServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
@@ -275,12 +285,14 @@ actor \nodoc\ _TestSendvClient
     _h.complete_action("client connected")
     match \exhaustive\ _tcp_connection.send(
       recover val [as ByteSeq: "Hello"; ", "; "world!"] end)
-    | let token: SendToken =>
-      _expected_token = token
+    | SendAccepted => None
     | let _: SendError =>
       _h.fail("send() returned an error")
       _h.complete(false)
     end
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    _expected_token = token
 
   fun ref _on_sent(token: SendToken) =>
     match \exhaustive\ _expected_token
@@ -319,8 +331,8 @@ actor \nodoc\ _TestSendvServer
 
 class \nodoc\ iso _TestSendvEmpty is UnitTest
   """
-  Test that send() with an empty ByteSeqIter returns a SendToken and that
-  _on_sent fires.
+  Test that send() with an empty ByteSeqIter is accepted and that _on_sent
+  fires.
   """
   fun name(): String => "SendvEmpty"
 
@@ -388,12 +400,14 @@ actor \nodoc\ _TestSendvEmptyClient
     _h.complete_action("client connected")
     match \exhaustive\ _tcp_connection.send(
       recover val Array[ByteSeq] end)
-    | let token: SendToken =>
-      _expected_token = token
+    | SendAccepted => None
     | let _: SendError =>
       _h.fail("send() returned an error for empty array")
       _h.complete(false)
     end
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    _expected_token = token
 
   fun ref _on_sent(token: SendToken) =>
     match \exhaustive\ _expected_token
@@ -513,7 +527,7 @@ class \nodoc\ iso _TestSendPerTokenCompletion is UnitTest
   data is still queued -- so tokens 4 and 5 are in the pending queue at once.
   The client then drains everything.
 
-  Asserts every returned token fires `_on_sent` exactly once, in ascending id
+  Asserts every accepted token fires `_on_sent` exactly once, in ascending id
   order (proving none was lost or reordered). A single shared pending token
   would let the second pending send overwrite the first, so token 4 never fires
   `_on_sent`: the ordering assertion then sees id 5 where it expects 4.
@@ -609,7 +623,7 @@ actor \nodoc\ _TestSendPerTokenServer
   var _started: Bool = false
   var _unmuted_client: Bool = false
   var _resumed: Bool = false
-  embed _returned: Array[USize] = _returned.create()
+  embed _accepted: Array[USize] = _accepted.create()
   embed _completed: Array[USize] = _completed.create()
   var _expected_next: USize = 1
 
@@ -633,11 +647,14 @@ actor \nodoc\ _TestSendPerTokenServer
     else _Unreachable()
     end
 
-  fun ref _record_send(r: (SendToken | SendError)) =>
+  fun ref _assert_accepted(r: SendResult) =>
     match \exhaustive\ r
-    | let t: SendToken => _returned.push(t.id)
+    | SendAccepted => None
     | let _: SendError => _h.fail("send() returned an error while flooding")
     end
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    _accepted.push(token.id)
 
   fun ref _large(): Array[U8] val =>
     recover val Array[U8].init('x', 256_000) end
@@ -648,11 +665,11 @@ actor \nodoc\ _TestSendPerTokenServer
     // Small send buffer so the pipe is tiny and backpressure comes fast.
     _tcp_connection.set_so_sndbuf(16384)
     // Three tiny sends fit the pipe and drain immediately -> _on_sent (1-3).
-    _record_send(_tcp_connection.send("t1"))
-    _record_send(_tcp_connection.send("t2"))
-    _record_send(_tcp_connection.send("t3"))
+    _assert_accepted(_tcp_connection.send("t1"))
+    _assert_accepted(_tcp_connection.send("t2"))
+    _assert_accepted(_tcp_connection.send("t3"))
     // One large send that partial-writes and stays pending (token 4).
-    _record_send(_tcp_connection.send(_large()))
+    _assert_accepted(_tcp_connection.send(_large()))
     KeepReading
 
   fun ref _on_throttled() =>
@@ -667,7 +684,7 @@ actor \nodoc\ _TestSendPerTokenServer
       // Token 4 (256 KiB) is still pending: _on_unthrottled fires before this
       // event drains, and 256 KiB won't clear in a single write. This send
       // (token 5) appends, so the pending queue holds 4 and 5 simultaneously.
-      _record_send(_tcp_connection.send(_large()))
+      _assert_accepted(_tcp_connection.send(_large()))
     end
 
   fun ref _on_sent(token: SendToken) =>
@@ -679,9 +696,9 @@ actor \nodoc\ _TestSendPerTokenServer
     _completed.push(token.id)
     if _completed.size() == _total_sends then
       _h.assert_eq[USize](
-        _returned.size(),
+        _accepted.size(),
         _completed.size(),
-        "every returned token must fire _on_sent exactly once")
+        "every accepted token must fire _on_sent exactly once")
       _tcp_connection.close()
       _h.complete(true)
     end
@@ -788,7 +805,7 @@ actor \nodoc\ _TestSendSSLLargeSingleSendClient
     _tcp_connection.set_so_rcvbuf(4096)
     match \exhaustive\ _tcp_connection.send(
       recover val Array[U8].init('x', _expected) end)
-    | let _: SendToken => None
+    | SendAccepted => None
     | let _: SendError =>
       _h.fail("client send failed")
       _h.complete(false)
@@ -836,7 +853,7 @@ actor \nodoc\ _TestSendSSLLargeSingleSendServer
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     match \exhaustive\ _tcp_connection.send(consume data)
-    | let _: SendToken => None
+    | SendAccepted => None
     | let _: SendError => _h.fail("server echo failed")
     end
     KeepReading
@@ -949,7 +966,7 @@ actor \nodoc\ _TestSendMidFlightDropServer
   var _unmuted_client: Bool = false
   var _resumed: Bool = false
   var _closed: Bool = false
-  embed _returned: Array[USize] = _returned.create()
+  embed _accepted: Array[USize] = _accepted.create()
   embed _sent_ids: Array[USize] = _sent_ids.create()
   embed _failed_ids: Array[USize] = _failed_ids.create()
 
@@ -975,11 +992,14 @@ actor \nodoc\ _TestSendMidFlightDropServer
     else _Unreachable()
     end
 
-  fun ref _record_send(r: (SendToken | SendError)) =>
+  fun ref _assert_accepted(r: SendResult) =>
     match \exhaustive\ r
-    | let t: SendToken => _returned.push(t.id)
+    | SendAccepted => None
     | let _: SendError => _h.fail("send() returned an error while flooding")
     end
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    _accepted.push(token.id)
 
   fun ref _large(): Array[U8] val =>
     recover val Array[U8].init('x', 256_000) end
@@ -988,10 +1008,10 @@ actor \nodoc\ _TestSendMidFlightDropServer
     if _started then return KeepReading end
     _started = true
     _tcp_connection.set_so_sndbuf(16384)
-    _record_send(_tcp_connection.send("t1"))
-    _record_send(_tcp_connection.send("t2"))
-    _record_send(_tcp_connection.send("t3"))
-    _record_send(_tcp_connection.send(_large()))
+    _assert_accepted(_tcp_connection.send("t1"))
+    _assert_accepted(_tcp_connection.send("t2"))
+    _assert_accepted(_tcp_connection.send("t3"))
+    _assert_accepted(_tcp_connection.send(_large()))
     KeepReading
 
   fun ref _on_throttled() =>
@@ -1005,7 +1025,7 @@ actor \nodoc\ _TestSendMidFlightDropServer
       _resumed = true
       // Token 4 (256 KiB) is still pending here; this second large send
       // (token 5) appends. Both are pending when we drop the connection.
-      _record_send(_tcp_connection.send(_large()))
+      _assert_accepted(_tcp_connection.send(_large()))
       _tcp_connection.hard_close()
     end
 
@@ -1026,9 +1046,9 @@ actor \nodoc\ _TestSendMidFlightDropServer
       return
     end
 
-    // Every returned token gets exactly one terminal callback: not both,
+    // Every accepted token gets exactly one terminal callback: not both,
     // not neither.
-    for id in _returned.values() do
+    for id in _accepted.values() do
       var count: USize = 0
       for s in _sent_ids.values() do
         if s == id then count = count + 1 end
@@ -1085,7 +1105,7 @@ class \nodoc\ iso _TestSendSSLPerTokenCompletion is UnitTest
   server makes a second 256 KiB send from `_on_unthrottled` (token 5), so
   tokens 4 and 5 are pending at once. The client then drains everything.
 
-  Asserts every returned token fires `_on_sent` exactly once, in ascending id
+  Asserts every accepted token fires `_on_sent` exactly once, in ascending id
   order.
 
   POSIX only, for the same reason as `SendPerTokenCompletion`.
@@ -1196,7 +1216,7 @@ actor \nodoc\ _TestSendSSLPerTokenServer
   var _started: Bool = false
   var _unmuted_client: Bool = false
   var _resumed: Bool = false
-  embed _returned: Array[USize] = _returned.create()
+  embed _accepted: Array[USize] = _accepted.create()
   embed _completed: Array[USize] = _completed.create()
   var _expected_next: USize = 1
 
@@ -1218,11 +1238,14 @@ actor \nodoc\ _TestSendSSLPerTokenServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _record_send(r: (SendToken | SendError)) =>
+  fun ref _assert_accepted(r: SendResult) =>
     match \exhaustive\ r
-    | let t: SendToken => _returned.push(t.id)
+    | SendAccepted => None
     | let _: SendError => _h.fail("send() returned an error while flooding")
     end
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    _accepted.push(token.id)
 
   fun ref _large(): Array[U8] val =>
     recover val Array[U8].init('x', 256_000) end
@@ -1231,10 +1254,10 @@ actor \nodoc\ _TestSendSSLPerTokenServer
     if _started then return KeepReading end
     _started = true
     _tcp_connection.set_so_sndbuf(16384)
-    _record_send(_tcp_connection.send("t1"))
-    _record_send(_tcp_connection.send("t2"))
-    _record_send(_tcp_connection.send("t3"))
-    _record_send(_tcp_connection.send(_large()))
+    _assert_accepted(_tcp_connection.send("t1"))
+    _assert_accepted(_tcp_connection.send("t2"))
+    _assert_accepted(_tcp_connection.send("t3"))
+    _assert_accepted(_tcp_connection.send(_large()))
     KeepReading
 
   fun ref _on_throttled() =>
@@ -1246,7 +1269,7 @@ actor \nodoc\ _TestSendSSLPerTokenServer
   fun ref _on_unthrottled() =>
     if not _resumed then
       _resumed = true
-      _record_send(_tcp_connection.send(_large()))
+      _assert_accepted(_tcp_connection.send(_large()))
     end
 
   fun ref _on_sent(token: SendToken) =>
@@ -1258,9 +1281,9 @@ actor \nodoc\ _TestSendSSLPerTokenServer
     _completed.push(token.id)
     if _completed.size() == _total_sends then
       _h.assert_eq[USize](
-        _returned.size(),
+        _accepted.size(),
         _completed.size(),
-        "every returned token must fire _on_sent exactly once")
+        "every accepted token must fire _on_sent exactly once")
       _tcp_connection.close()
       _h.complete(true)
     end
@@ -1395,7 +1418,7 @@ actor \nodoc\ _TestSendSSLMidFlightDropServer
   var _unmuted_client: Bool = false
   var _resumed: Bool = false
   var _closed: Bool = false
-  embed _returned: Array[USize] = _returned.create()
+  embed _accepted: Array[USize] = _accepted.create()
   embed _sent_ids: Array[USize] = _sent_ids.create()
   embed _failed_ids: Array[USize] = _failed_ids.create()
 
@@ -1417,11 +1440,14 @@ actor \nodoc\ _TestSendSSLMidFlightDropServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _record_send(r: (SendToken | SendError)) =>
+  fun ref _assert_accepted(r: SendResult) =>
     match \exhaustive\ r
-    | let t: SendToken => _returned.push(t.id)
+    | SendAccepted => None
     | let _: SendError => _h.fail("send() returned an error while flooding")
     end
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    _accepted.push(token.id)
 
   fun ref _large(): Array[U8] val =>
     recover val Array[U8].init('x', 256_000) end
@@ -1430,10 +1456,10 @@ actor \nodoc\ _TestSendSSLMidFlightDropServer
     if _started then return KeepReading end
     _started = true
     _tcp_connection.set_so_sndbuf(16384)
-    _record_send(_tcp_connection.send("t1"))
-    _record_send(_tcp_connection.send("t2"))
-    _record_send(_tcp_connection.send("t3"))
-    _record_send(_tcp_connection.send(_large()))
+    _assert_accepted(_tcp_connection.send("t1"))
+    _assert_accepted(_tcp_connection.send("t2"))
+    _assert_accepted(_tcp_connection.send("t3"))
+    _assert_accepted(_tcp_connection.send(_large()))
     KeepReading
 
   fun ref _on_throttled() =>
@@ -1445,7 +1471,7 @@ actor \nodoc\ _TestSendSSLMidFlightDropServer
   fun ref _on_unthrottled() =>
     if not _resumed then
       _resumed = true
-      _record_send(_tcp_connection.send(_large()))
+      _assert_accepted(_tcp_connection.send(_large()))
       _tcp_connection.hard_close()
     end
 
@@ -1466,9 +1492,9 @@ actor \nodoc\ _TestSendSSLMidFlightDropServer
       return
     end
 
-    // Every returned token gets exactly one terminal callback: not both,
+    // Every accepted token gets exactly one terminal callback: not both,
     // not neither.
-    for id in _returned.values() do
+    for id in _accepted.values() do
       var count: USize = 0
       for s in _sent_ids.values() do
         if s == id then count = count + 1 end
@@ -1633,7 +1659,7 @@ actor \nodoc\ _TestSendGracefulCloseServer
   var _started: Bool = false
   var _unmuted_client: Bool = false
   var _resumed: Bool = false
-  embed _returned: Array[USize] = _returned.create()
+  embed _accepted: Array[USize] = _accepted.create()
   embed _sent_ids: Array[USize] = _sent_ids.create()
 
   new create(fd: U32,
@@ -1658,11 +1684,14 @@ actor \nodoc\ _TestSendGracefulCloseServer
     else _Unreachable()
     end
 
-  fun ref _record_send(r: (SendToken | SendError)) =>
+  fun ref _assert_accepted(r: SendResult) =>
     match \exhaustive\ r
-    | let t: SendToken => _returned.push(t.id)
+    | SendAccepted => None
     | let _: SendError => _h.fail("send() returned an error while flooding")
     end
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    _accepted.push(token.id)
 
   fun ref _large(): Array[U8] val =>
     recover val Array[U8].init('x', 256_000) end
@@ -1671,10 +1700,10 @@ actor \nodoc\ _TestSendGracefulCloseServer
     if _started then return KeepReading end
     _started = true
     _tcp_connection.set_so_sndbuf(16384)
-    _record_send(_tcp_connection.send("t1"))
-    _record_send(_tcp_connection.send("t2"))
-    _record_send(_tcp_connection.send("t3"))
-    _record_send(_tcp_connection.send(_large()))
+    _assert_accepted(_tcp_connection.send("t1"))
+    _assert_accepted(_tcp_connection.send("t2"))
+    _assert_accepted(_tcp_connection.send("t3"))
+    _assert_accepted(_tcp_connection.send(_large()))
     KeepReading
 
   fun ref _on_throttled() =>
@@ -1688,7 +1717,7 @@ actor \nodoc\ _TestSendGracefulCloseServer
       _resumed = true
       // Token 5's bytes are queued when we close. A graceful close must flush
       // them, not drop them.
-      _record_send(_tcp_connection.send(_large()))
+      _assert_accepted(_tcp_connection.send(_large()))
       _tcp_connection.close()
     end
 
@@ -1698,8 +1727,8 @@ actor \nodoc\ _TestSendGracefulCloseServer
   fun ref _on_sent(token: SendToken) =>
     _sent_ids.push(token.id)
     if _sent_ids.size() == _total_sends then
-      // Every returned token fired _on_sent exactly once; none failed.
-      for id in _returned.values() do
+      // Every accepted token fired _on_sent exactly once; none failed.
+      for id in _accepted.values() do
         var count: USize = 0
         for s in _sent_ids.values() do
           if s == id then count = count + 1 end
@@ -1851,7 +1880,7 @@ actor \nodoc\ _TestSendSSLGracefulCloseServer
   var _started: Bool = false
   var _unmuted_client: Bool = false
   var _resumed: Bool = false
-  embed _returned: Array[USize] = _returned.create()
+  embed _accepted: Array[USize] = _accepted.create()
   embed _sent_ids: Array[USize] = _sent_ids.create()
 
   new create(sslctx: SSLContext val,
@@ -1872,11 +1901,14 @@ actor \nodoc\ _TestSendSSLGracefulCloseServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
-  fun ref _record_send(r: (SendToken | SendError)) =>
+  fun ref _assert_accepted(r: SendResult) =>
     match \exhaustive\ r
-    | let t: SendToken => _returned.push(t.id)
+    | SendAccepted => None
     | let _: SendError => _h.fail("send() returned an error while flooding")
     end
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    _accepted.push(token.id)
 
   fun ref _large(): Array[U8] val =>
     recover val Array[U8].init('x', 256_000) end
@@ -1885,10 +1917,10 @@ actor \nodoc\ _TestSendSSLGracefulCloseServer
     if _started then return KeepReading end
     _started = true
     _tcp_connection.set_so_sndbuf(16384)
-    _record_send(_tcp_connection.send("t1"))
-    _record_send(_tcp_connection.send("t2"))
-    _record_send(_tcp_connection.send("t3"))
-    _record_send(_tcp_connection.send(_large()))
+    _assert_accepted(_tcp_connection.send("t1"))
+    _assert_accepted(_tcp_connection.send("t2"))
+    _assert_accepted(_tcp_connection.send("t3"))
+    _assert_accepted(_tcp_connection.send(_large()))
     KeepReading
 
   fun ref _on_throttled() =>
@@ -1902,7 +1934,7 @@ actor \nodoc\ _TestSendSSLGracefulCloseServer
       _resumed = true
       // Token 5's ciphertext is queued when we close. A graceful close must
       // flush it, not drop it.
-      _record_send(_tcp_connection.send(_large()))
+      _assert_accepted(_tcp_connection.send(_large()))
       _tcp_connection.close()
     end
 
@@ -1912,7 +1944,7 @@ actor \nodoc\ _TestSendSSLGracefulCloseServer
   fun ref _on_sent(token: SendToken) =>
     _sent_ids.push(token.id)
     if _sent_ids.size() == _total_sends then
-      for id in _returned.values() do
+      for id in _accepted.values() do
         var count: USize = 0
         for s in _sent_ids.values() do
           if s == id then count = count + 1 end
@@ -1935,8 +1967,9 @@ class \nodoc\ iso _TestSendCloseFromThrottled is UnitTest
   so an application that closes from `_on_throttled` closes the connection from
   inside a `send()` that has already put bytes on the wire.
 
-  That send is accepted: `send()` returns a token, and because a graceful close
-  flushes what is queued, the token fires `_on_sent` once `_Closing` drains.
+  That send is accepted: `_on_send_accepted` delivers its token and `send()`
+  returns `SendAccepted`, and because a graceful close flushes what is queued,
+  the token fires `_on_sent` once `_Closing` drains.
 
   The close lands in the middle of `_do_send`, after it has queued the bytes. A
   `_do_send` that only recorded the send once the flush was over would find the
@@ -2074,13 +2107,15 @@ actor \nodoc\ _TestSendCloseFromThrottledServer
     _tcp_connection.set_so_sndbuf(16384)
     let payload = recover val Array[U8].init('x', 256_000) end
     match \exhaustive\ _tcp_connection.send(payload)
-    | let t: SendToken =>
-      _token = t
+    | SendAccepted =>
       _h.complete_action("send accepted")
     | let _: SendError =>
       _h.fail("send() must be accepted: its bytes reach the peer")
     end
     KeepReading
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    _token = token
 
   fun ref _on_throttled() =>
     if not _unmuted_client then
@@ -2108,10 +2143,11 @@ class \nodoc\ iso _TestSendHardCloseFromThrottled is UnitTest
   `_on_throttled` runs inside the `send()` that hit backpressure, on a
   connection whose first partial write has already put a prefix of the payload
   on the wire. Here the application calls `hard_close()`, which drops the queued
-  remainder. The send is still accepted -- `send()` returns a token -- and the
-  token fires `_on_send_failed`, because the send never finished reaching the
-  OS. An application told the send was rejected outright would retry it on a new
-  connection, and the peer that already got the prefix would see it twice.
+  remainder. The send is still accepted -- `_on_send_accepted` delivers its
+  token -- and that token fires `_on_send_failed`, because the send never
+  finished reaching the OS. An application told the send was rejected outright
+  would retry it on a new connection, and the peer that already got the prefix
+  would see it twice.
 
   This is the negative case, and it is why `SendCloseFromThrottled` is not
   enough on its own. That test asserts a token comes back and reaches
@@ -2225,17 +2261,24 @@ actor \nodoc\ _TestSendHardCloseFromThrottledServer
     _tcp_connection.set_so_sndbuf(16384)
     let payload = recover val Array[U8].init('x', 256_000) end
     match \exhaustive\ _tcp_connection.send(payload)
-    | let t: SendToken =>
-      _token = t
+    | SendAccepted =>
       // hard_close() fired _on_closed synchronously from inside this send().
       _h.assert_true(
         _closed,
-        "_on_closed must fire before send() hands back the token")
+        "_on_closed must fire before send() returns SendAccepted")
       _h.complete_action("send accepted")
     | let _: SendError =>
       _h.fail("send() must be accepted: a prefix of its bytes reaches the peer")
     end
     KeepReading
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    // Fires before the flush, so before the _on_closed that the flush's
+    // _on_throttled triggers.
+    _h.assert_false(
+      _closed,
+      "_on_send_accepted must fire before the flush hard-closes")
+    _token = token
 
   fun ref _on_throttled() =>
     _tcp_connection.hard_close()
@@ -2260,7 +2303,7 @@ class \nodoc\ iso _TestSendSSLHardCloseFromThrottled is UnitTest
   """
   The SSL analogue of `SendHardCloseFromThrottled`. The application calls
   `hard_close()` from the `_on_throttled` that runs inside its own `send()`.
-  `send()` returns a token and the token fires `_on_send_failed`.
+  `_on_send_accepted` delivers a token and that token fires `_on_send_failed`.
 
   The SSL path is not a relabel of the plaintext one. `_do_send` encrypts the
   payload into the SSL session and enqueues the ciphertext before it mints the
@@ -2395,17 +2438,24 @@ actor \nodoc\ _TestSendSSLHardCloseFromThrottledServer
     _tcp_connection.set_so_sndbuf(16384)
     let payload = recover val Array[U8].init('x', 256_000) end
     match \exhaustive\ _tcp_connection.send(payload)
-    | let t: SendToken =>
-      _token = t
+    | SendAccepted =>
       // hard_close() fired _on_closed synchronously from inside this send().
       _h.assert_true(
         _closed,
-        "_on_closed must fire before send() hands back the token")
+        "_on_closed must fire before send() returns SendAccepted")
       _h.complete_action("send accepted")
     | let _: SendError =>
       _h.fail("send() must be accepted: a prefix of its bytes reaches the peer")
     end
     KeepReading
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    // Fires before the flush, so before the _on_closed that the flush's
+    // _on_throttled triggers.
+    _h.assert_false(
+      _closed,
+      "_on_send_accepted must fire before the flush hard-closes")
+    _token = token
 
   fun ref _on_throttled() =>
     _tcp_connection.hard_close()
@@ -2579,7 +2629,7 @@ actor \nodoc\ _TestSendDeliveredServer
   fun ref _send_bytes(n: USize) =>
     let payload = recover val Array[U8].init('x', n) end
     match \exhaustive\ _tcp_connection.send(payload)
-    | let _: SendToken =>
+    | SendAccepted =>
       _queued = _queued + 1
     | let _: SendError =>
       _h.fail("send() must be accepted while the connection is writeable")
@@ -2640,3 +2690,1241 @@ actor \nodoc\ _TestSendDeliveredServer
 
   be dispose() =>
     _tcp_connection.hard_close()
+
+class \nodoc\ iso _TestSendAcceptedBeforeSent is UnitTest
+  """
+  A send's token reaches `_on_send_accepted` before it reaches `_on_sent`, and
+  `_on_send_accepted` gets the same data `send()` was given.
+
+  The client makes one `ByteSeq` send and one `ByteSeqIter` send, so both arms
+  of `send()`'s parameter reach the callback. An application that keys its
+  bookkeeping off the token has nothing to record a completion against if
+  `_on_sent` can arrive for a token it has not been handed yet.
+  """
+  fun name(): String => "SendAcceptedBeforeSent"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("server listening")
+    h.expect_action("byteseq data verified")
+    h.expect_action("byteseqiter data verified")
+    h.expect_action("both sends completed")
+
+    let s = _TestSendAcceptedBeforeSentListener(h)
+    h.dispose_when_done(s)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSendAcceptedBeforeSentListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestDoNothingServerActor | None) = None
+  var _client: (_TestSendAcceptedBeforeSentClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "7922",
+        this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestDoNothingServerActor =>
+    let s = _TestDoNothingServerActor(fd, _h)
+    _server = s
+    s
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendAcceptedBeforeSentClient).dispose() end
+    try (_server as _TestDoNothingServerActor).dispose() end
+
+  fun ref _on_listening() =>
+    _h.complete_action("server listening")
+    _client = _TestSendAcceptedBeforeSentClient(_h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSendAcceptedBeforeSentListener")
+
+actor \nodoc\ _TestSendAcceptedBeforeSentClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  embed _accepted: Array[USize] = _accepted.create()
+  embed _sent: Array[USize] = _sent.create()
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "7922",
+        "",
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    match \exhaustive\ _tcp_connection.send("hello")
+    | SendAccepted => None
+    | let _: SendError => _h.fail("the ByteSeq send was refused")
+    end
+    match \exhaustive\ _tcp_connection.send(
+      recover val [as ByteSeq: "a"; "bc"] end)
+    | SendAccepted => None
+    | let _: SendError => _h.fail("the ByteSeqIter send was refused")
+    end
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    _h.assert_false(
+      _sent.contains(token.id),
+      "_on_sent fired for a token before _on_send_accepted delivered it")
+    _accepted.push(token.id)
+
+    match data
+    | let s: String =>
+      _h.assert_eq[String](
+        "hello",
+        s,
+        "_on_send_accepted got a different ByteSeq than send() was given")
+      _h.complete_action("byteseq data verified")
+    | let i: ByteSeqIter =>
+      let joined =
+        recover val
+          let b = String
+          for chunk in i.values() do
+            b.append(chunk)
+          end
+          b
+        end
+      _h.assert_eq[String](
+        "abc",
+        joined,
+        "_on_send_accepted got a different ByteSeqIter than send() was given")
+      _h.complete_action("byteseqiter data verified")
+    else
+      _h.fail("_on_send_accepted got data of an unexpected type")
+    end
+
+  fun ref _on_sent(token: SendToken) =>
+    _h.assert_true(
+      _accepted.contains(token.id),
+      "_on_sent fired for a token _on_send_accepted never delivered")
+    _sent.push(token.id)
+    if _sent.size() == 2 then
+      _h.complete_action("both sends completed")
+      _tcp_connection.close()
+    end
+
+class \nodoc\ iso _TestSendCloseFromAccepted is UnitTest
+  """
+  A graceful `close()` from inside `_on_send_accepted` still sends the FIN.
+
+  `_on_send_accepted` runs after `send()` has queued the bytes and before it
+  flushes them, so a `close()` there moves the connection to `_Closing` while
+  the queue is non-empty, and `_initiate_shutdown()` defers the FIN. The flush
+  that follows empties the queue and the FIN goes out on that drain. Without
+  it the connection sits in `_Closing` with its write side never shut, and the
+  peer waits for a close that never comes.
+
+  Connects to a literal address rather than `localhost`, which resolves to more
+  than one. A second Happy Eyeballs attempt leaves `_inflight_connections`
+  above zero, which defers the FIN on its own, and the straggler's cleanup then
+  sends it -- so the test would pass whether or not the drain does.
+  """
+  fun name(): String => "SendCloseFromAccepted"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("send accepted")
+    h.expect_action("token sent")
+    h.expect_action("server saw payload")
+    h.expect_action("server saw close")
+
+    let s = _TestSendCloseFromAcceptedListener(h)
+    h.dispose_when_done(s)
+
+    h.long_test(10_000_000_000)
+
+actor \nodoc\ _TestSendCloseFromAcceptedListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestSendCloseFromAcceptedServer | None) = None
+  var _client: (_TestSendCloseFromAcceptedClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "127.0.0.1" end,
+        "7923",
+        this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSendCloseFromAcceptedServer =>
+    let s = _TestSendCloseFromAcceptedServer(fd, _h)
+    _server = s
+    s
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendCloseFromAcceptedClient).dispose() end
+    try (_server as _TestSendCloseFromAcceptedServer).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestSendCloseFromAcceptedClient(_h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSendCloseFromAcceptedListener")
+
+actor \nodoc\ _TestSendCloseFromAcceptedClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "127.0.0.1" end,
+        "7923",
+        "",
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    match \exhaustive\ _tcp_connection.send("payload")
+    | SendAccepted => _h.complete_action("send accepted")
+    | let _: SendError => _h.fail("send was refused on an open connection")
+    end
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    _tcp_connection.close()
+
+  fun ref _on_sent(token: SendToken) =>
+    _h.complete_action("token sent")
+
+  fun ref _on_send_failed(token: SendToken) =>
+    _h.fail("a graceful close flushes queued writes, it does not fail them")
+
+actor \nodoc\ _TestSendCloseFromAcceptedServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
+    match MakeBufferSize(7)
+    | let b: BufferSize => _tcp_connection.buffer_until(b)
+    else _Unreachable()
+    end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    _h.assert_eq[String]("payload", String.from_array(consume data))
+    _h.complete_action("server saw payload")
+    KeepReading
+
+  fun ref _on_closed() =>
+    _h.complete_action("server saw close")
+
+class \nodoc\ iso _TestSendCloseFromSent is UnitTest
+  """
+  A graceful `close()` from inside `_on_sent` still sends the FIN.
+
+  `_on_sent` fires from the flush that emptied the write queue, so a `close()`
+  there finds nothing pending and `_initiate_shutdown()` sends the FIN
+  immediately. `SendCloseFromAccepted` covers the other half, where the queue
+  is still full when `close()` runs; this one guards the path that does not go
+  through `_Closing.drained`, so a change to when the FIN goes out cannot break
+  it unnoticed.
+
+  Connects to a literal address for the same reason as `SendCloseFromAccepted`.
+  """
+  fun name(): String => "SendCloseFromSent"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("token sent")
+    h.expect_action("server saw payload")
+    h.expect_action("server saw close")
+
+    let s = _TestSendCloseFromSentListener(h)
+    h.dispose_when_done(s)
+
+    h.long_test(10_000_000_000)
+
+actor \nodoc\ _TestSendCloseFromSentListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestSendCloseFromSentServer | None) = None
+  var _client: (_TestSendCloseFromSentClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "127.0.0.1" end,
+        "7924",
+        this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSendCloseFromSentServer =>
+    let s = _TestSendCloseFromSentServer(fd, _h)
+    _server = s
+    s
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendCloseFromSentClient).dispose() end
+    try (_server as _TestSendCloseFromSentServer).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestSendCloseFromSentClient(_h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSendCloseFromSentListener")
+
+actor \nodoc\ _TestSendCloseFromSentClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "127.0.0.1" end,
+        "7924",
+        "",
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    match \exhaustive\ _tcp_connection.send("payload")
+    | SendAccepted => None
+    | let _: SendError => _h.fail("send was refused on an open connection")
+    end
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+
+  fun ref _on_sent(token: SendToken) =>
+    _h.complete_action("token sent")
+    _tcp_connection.close()
+
+  fun ref _on_send_failed(token: SendToken) =>
+    _h.fail("the payload reached the OS, so it must not report as failed")
+
+actor \nodoc\ _TestSendCloseFromSentServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
+    match MakeBufferSize(7)
+    | let b: BufferSize => _tcp_connection.buffer_until(b)
+    else _Unreachable()
+    end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    _h.assert_eq[String]("payload", String.from_array(consume data))
+    _h.complete_action("server saw payload")
+    KeepReading
+
+  fun ref _on_closed() =>
+    _h.complete_action("server saw close")
+
+class \nodoc\ iso _TestSendHardCloseFromAccepted is UnitTest
+  """
+  A `hard_close()` from inside `_on_send_accepted` still reports the send as
+  accepted, and its token fires `_on_send_failed`.
+
+  The token is already on the pending queue when `_on_send_accepted` runs, so
+  the hard close finds it there and fails it, and `send()` returns
+  `SendAccepted` to a caller whose connection is already closed. Reporting the
+  send as refused instead would leave the application with a token from
+  `_on_send_accepted` and a `SendError` from the same call.
+  """
+  fun name(): String => "SendHardCloseFromAccepted"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("send accepted")
+    h.expect_action("client closed")
+    h.expect_action("token failed")
+
+    let s = _TestSendHardCloseFromAcceptedListener(h)
+    h.dispose_when_done(s)
+
+    h.long_test(10_000_000_000)
+
+actor \nodoc\ _TestSendHardCloseFromAcceptedListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestDoNothingServerActor | None) = None
+  var _client: (_TestSendHardCloseFromAcceptedClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "7925",
+        this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestDoNothingServerActor =>
+    let s = _TestDoNothingServerActor(fd, _h)
+    _server = s
+    s
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendHardCloseFromAcceptedClient).dispose() end
+    try (_server as _TestDoNothingServerActor).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestSendHardCloseFromAcceptedClient(_h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSendHardCloseFromAcceptedListener")
+
+actor \nodoc\ _TestSendHardCloseFromAcceptedClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _token: (SendToken | None) = None
+  var _closed: Bool = false
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "7925",
+        "",
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    match \exhaustive\ _tcp_connection.send("payload")
+    | SendAccepted =>
+      _h.assert_true(
+        _closed,
+        "the hard close from _on_send_accepted must have already run")
+      _h.complete_action("send accepted")
+    | let _: SendError =>
+      _h.fail("send() must report accepted: _on_send_accepted already ran")
+    end
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    _h.assert_false(_closed, "_on_send_accepted must run before the close")
+    _token = token
+    _tcp_connection.hard_close()
+
+  fun ref _on_closed() =>
+    _closed = true
+    _h.complete_action("client closed")
+
+  fun ref _on_sent(token: SendToken) =>
+    _h.fail("a hard close drops the queued bytes, so this must not report sent")
+
+  fun ref _on_send_failed(token: SendToken) =>
+    match _token
+    | let t: SendToken if token == t =>
+      _h.complete_action("token failed")
+    else
+      _h.fail("_on_send_failed fired with an unexpected token")
+    end
+
+class \nodoc\ iso _TestSendReentrantFromSent is UnitTest
+  """
+  A `send()` made from inside `_on_sent` still completes in send order.
+
+  `_on_sent` fires from the flush inside `send()`, so sending the next message
+  from it nests one `send()` inside another. The client chains five that way.
+  Each send is minted, flushed and reported from inside the one before it, and
+  the ids still have to come out 1 through 5.
+
+  Each link completes before the next is issued, so this never has two tokens
+  queued at once. `SendHardCloseFromSentKeepsDelivered` and
+  `SendThrottleSuppressedByHardClose` are the ones that do.
+  """
+  fun name(): String => "SendReentrantFromSent"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("all sends completed in order")
+
+    let s = _TestSendReentrantFromSentListener(h)
+    h.dispose_when_done(s)
+
+    h.long_test(10_000_000_000)
+
+actor \nodoc\ _TestSendReentrantFromSentListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestDoNothingServerActor | None) = None
+  var _client: (_TestSendReentrantFromSentClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "7926",
+        this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestDoNothingServerActor =>
+    let s = _TestDoNothingServerActor(fd, _h)
+    _server = s
+    s
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendReentrantFromSentClient).dispose() end
+    try (_server as _TestDoNothingServerActor).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestSendReentrantFromSentClient(_h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSendReentrantFromSentListener")
+
+actor \nodoc\ _TestSendReentrantFromSentClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  let _total: USize = 5
+  var _issued: USize = 0
+  var _next_expected: USize = 1
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "7926",
+        "",
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _send_next()
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+
+  fun ref _send_next() =>
+    _issued = _issued + 1
+    match \exhaustive\ _tcp_connection.send("m" + _issued.string())
+    | SendAccepted => None
+    | let _: SendError =>
+      _h.fail("send " + _issued.string() + " was refused")
+    end
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    _h.assert_eq[USize](
+      _issued,
+      token.id,
+      "_on_send_accepted delivered a token out of send order")
+
+  fun ref _on_sent(token: SendToken) =>
+    _h.assert_eq[USize](_next_expected, token.id, "_on_sent fired out of order")
+    _next_expected = _next_expected + 1
+    if token.id == _total then
+      _h.complete_action("all sends completed in order")
+      _tcp_connection.close()
+    else
+      _send_next()
+    end
+
+  fun ref _on_send_failed(token: SendToken) =>
+    _h.fail("no send should fail on an idle loopback connection")
+
+class \nodoc\ iso _TestSendOnSentPrecedesThrottleAndClose is UnitTest
+  """
+  `_on_sent` for a send that already reached the OS arrives before
+  `_on_throttled`, and before the `_on_closed` of a hard close made from
+  `_on_throttled`.
+
+  The server makes two sends in one turn: a two-byte one that drains in full,
+  then a 256 KiB one that partial-writes and applies backpressure from inside
+  its own `send()`. The small send's bytes were with the OS first, so its
+  `_on_sent` has to be the first of the three callbacks. Delivering it in a
+  later behavior turn puts it after both, telling an application that a send
+  completed after it was told the connection had closed.
+
+  POSIX only, for the same reason as `SendPerTokenCompletion`.
+  """
+  fun name(): String => "SendOnSentPrecedesThrottleAndClose"
+
+  fun ref apply(h: TestHelper) =>
+    h.expect_action("sent before throttled")
+    h.expect_action("throttled send refused")
+    h.expect_action("sent before closed")
+    h.expect_action("large send failed")
+
+    let listener = _TestSendOnSentPrecedesListener(h)
+    h.dispose_when_done(listener)
+    h.long_test(30_000_000_000)
+
+actor \nodoc\ _TestSendOnSentPrecedesListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestSendOnSentPrecedesServer | None) = None
+  var _client: (_TestSendOnSentPrecedesClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "7927",
+        this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSendOnSentPrecedesServer =>
+    let s = _TestSendOnSentPrecedesServer(fd, _h)
+    _server = s
+    s
+
+  fun ref _on_listen_failure() =>
+    _h.fail("listener failed to start")
+
+  fun ref _on_listening() =>
+    _client = _TestSendOnSentPrecedesClient(_h)
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendOnSentPrecedesClient).dispose() end
+    try (_server as _TestSendOnSentPrecedesServer).dispose() end
+
+actor \nodoc\ _TestSendOnSentPrecedesClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "7927",
+        "",
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    // Muted with a small receive buffer so the pipe fills and stays full.
+    _tcp_connection.set_so_rcvbuf(4096)
+    _tcp_connection.mute()
+    match \exhaustive\ _tcp_connection.send("ready")
+    | SendAccepted => None
+    | let _: SendError => _h.fail("client could not send its ready message")
+    end
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+
+actor \nodoc\ _TestSendOnSentPrecedesServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _started: Bool = false
+  var _small_token: (SendToken | None) = None
+  var _large_token: (SendToken | None) = None
+  var _small_sent: Bool = false
+  var _accepted: USize = 0
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    match MakeBufferSize(5)
+    | let b: BufferSize => _tcp_connection.buffer_until(b)
+    else _Unreachable()
+    end
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    if _started then return KeepReading end
+    _started = true
+    _tcp_connection.set_so_sndbuf(16384)
+    // Two bytes fit whatever the pipe still has, so this drains in full and
+    // its _on_sent fires from inside this send().
+    match \exhaustive\ _tcp_connection.send("go")
+    | SendAccepted => None
+    | let _: SendError => _h.fail("the small send was refused")
+    end
+    // 256 KiB against a 16 KiB send buffer partial-writes, so _on_throttled
+    // fires from inside this send().
+    match \exhaustive\ _tcp_connection.send(
+      recover val Array[U8].init('x', 256_000) end)
+    | SendAccepted => None
+    | let _: SendError => _h.fail("the large send was refused")
+    end
+    KeepReading
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    _accepted = _accepted + 1
+    if _small_token is None then
+      _small_token = token
+    else
+      _large_token = token
+    end
+
+  fun ref _on_sent(token: SendToken) =>
+    match _small_token
+    | let t: SendToken if token == t => _small_sent = true
+    else
+      _h.fail("only the small send reaches the OS before the hard close")
+    end
+
+  fun ref _on_throttled() =>
+    _h.assert_true(
+      _small_sent,
+      "_on_sent for the drained send must arrive before _on_throttled")
+    _h.complete_action("sent before throttled")
+
+    // The connection is unwriteable here, so this send is refused by the one
+    // check that shares `_do_send` with the accept path. A refused send mints
+    // no token and fires no callback.
+    let accepted_before = _accepted
+    match \exhaustive\ _tcp_connection.send("nope")
+    | SendAccepted =>
+      _h.fail("send() must be refused while the connection is throttled")
+    | SendErrorNotWriteable =>
+      _h.assert_eq[USize](
+        accepted_before,
+        _accepted,
+        "a refused send must not fire _on_send_accepted")
+      _h.complete_action("throttled send refused")
+    | SendErrorNotConnected =>
+      _h.fail("the connection is throttled, not closed")
+    end
+
+    _tcp_connection.hard_close()
+
+  fun ref _on_closed() =>
+    _h.assert_true(
+      _small_sent,
+      "_on_sent for the drained send must arrive before _on_closed")
+    _h.complete_action("sent before closed")
+
+  fun ref _on_send_failed(token: SendToken) =>
+    match _large_token
+    | let t: SendToken if token == t =>
+      _h.complete_action("large send failed")
+    else
+      _h.fail("_on_send_failed fired for a send that reached the OS")
+    end
+
+class \nodoc\ iso _TestSendThrottleSuppressedByHardClose is UnitTest
+  """
+  `_on_throttled` does not fire when the application hard-closes from the
+  `_on_sent` that backpressure itself delivered.
+
+  Sending from inside `_on_send_accepted` queues a second send behind the first
+  before either has been written, so one `sendv` covers both: the two-byte
+  first send completes and the 256 KiB second one partial-writes. That raises
+  backpressure, which reports the completed send before it reports the
+  backpressure -- and the application hard-closes from that `_on_sent`. The
+  connection is no longer throttled and has already had `_on_closed` by the
+  time `_on_throttled` would fire, so it must not fire at all.
+
+  POSIX only, for the same reason as `SendPerTokenCompletion`.
+  """
+  fun name(): String => "SendThrottleSuppressedByHardClose"
+
+  fun ref apply(h: TestHelper) =>
+    h.expect_action("closed without throttling")
+    h.expect_action("large send failed")
+
+    let listener = _TestSendThrottleSuppressedListener(h)
+    h.dispose_when_done(listener)
+    h.long_test(30_000_000_000)
+
+actor \nodoc\ _TestSendThrottleSuppressedListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestSendThrottleSuppressedServer | None) = None
+  var _client: (_TestSendThrottleSuppressedClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "7928",
+        this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSendThrottleSuppressedServer =>
+    let s = _TestSendThrottleSuppressedServer(fd, _h)
+    _server = s
+    s
+
+  fun ref _on_listen_failure() =>
+    _h.fail("listener failed to start")
+
+  fun ref _on_listening() =>
+    _client = _TestSendThrottleSuppressedClient(_h)
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendThrottleSuppressedClient).dispose() end
+    try (_server as _TestSendThrottleSuppressedServer).dispose() end
+
+actor \nodoc\ _TestSendThrottleSuppressedClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        ifdef linux then "127.0.0.2" else "localhost" end,
+        "7928",
+        "",
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    // Muted with a small receive buffer so the pipe fills and stays full.
+    _tcp_connection.set_so_rcvbuf(4096)
+    _tcp_connection.mute()
+    match \exhaustive\ _tcp_connection.send("ready")
+    | SendAccepted => None
+    | let _: SendError => _h.fail("client could not send its ready message")
+    end
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+
+actor \nodoc\ _TestSendThrottleSuppressedServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _started: Bool = false
+  var _small_token: (SendToken | None) = None
+  var _large_token: (SendToken | None) = None
+  var _small_sent: Bool = false
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    match MakeBufferSize(5)
+    | let b: BufferSize => _tcp_connection.buffer_until(b)
+    else _Unreachable()
+    end
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    if _started then return KeepReading end
+    _started = true
+    _tcp_connection.set_so_sndbuf(16384)
+    match \exhaustive\ _tcp_connection.send("go")
+    | SendAccepted => None
+    | let _: SendError => _h.fail("the small send was refused")
+    end
+    KeepReading
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    match _small_token
+    | None =>
+      _small_token = token
+      // Queue the large send behind the small one before either has been
+      // written, so one sendv completes the small one and partial-writes the
+      // large one.
+      match \exhaustive\ _tcp_connection.send(
+        recover val Array[U8].init('x', 256_000) end)
+      | SendAccepted => None
+      | let _: SendError => _h.fail("the large send was refused")
+      end
+    else
+      _large_token = token
+    end
+
+  fun ref _on_sent(token: SendToken) =>
+    match _small_token
+    | let t: SendToken if token == t =>
+      _small_sent = true
+      _tcp_connection.hard_close()
+    else
+      _h.fail("only the small send reaches the OS before the hard close")
+    end
+
+  fun ref _on_throttled() =>
+    _h.fail("_on_throttled must not fire once the connection has closed")
+
+  fun ref _on_closed() =>
+    _h.assert_true(_small_sent, "_on_sent must arrive before _on_closed")
+    _h.complete_action("closed without throttling")
+
+  fun ref _on_send_failed(token: SendToken) =>
+    match _large_token
+    | let t: SendToken if token == t =>
+      _h.complete_action("large send failed")
+    else
+      _h.fail("_on_send_failed fired for a send that reached the OS")
+    end
+
+class \nodoc\ iso _TestSendHardCloseFromSentKeepsDelivered is UnitTest
+  """
+  A `hard_close()` from inside `_on_sent` does not turn an already-delivered
+  send into a failure.
+
+  Sending from inside `_on_send_accepted` puts two tokens on the queue before
+  either is written, so one `sendv` completes both. `_fire_completed_sends`
+  reports them one at a time, and the application hard-closes from the first
+  one's `_on_sent` while the second is still queued. Both sends' bytes are with
+  the OS and the peer receives them, so both have to report `_on_sent`. Failing
+  the second would tell an application to resend bytes the peer already has.
+
+  Both sends are four bytes on an idle loopback socket, so the write that
+  covers them is not partial.
+  """
+  fun name(): String => "SendHardCloseFromSentKeepsDelivered"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("both sends reported sent")
+    h.expect_action("client closed")
+    h.expect_action("server saw both payloads")
+
+    let s = _TestSendKeepsDeliveredListener(h)
+    h.dispose_when_done(s)
+
+    h.long_test(10_000_000_000)
+
+actor \nodoc\ _TestSendKeepsDeliveredListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestSendKeepsDeliveredServer | None) = None
+  var _client: (_TestSendKeepsDeliveredClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "7929",
+        this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSendKeepsDeliveredServer =>
+    let s = _TestSendKeepsDeliveredServer(fd, _h)
+    _server = s
+    s
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendKeepsDeliveredClient).dispose() end
+    try (_server as _TestSendKeepsDeliveredServer).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestSendKeepsDeliveredClient(_h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSendKeepsDeliveredListener")
+
+actor \nodoc\ _TestSendKeepsDeliveredClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _nested_sent: Bool = false
+  var _closed: Bool = false
+  embed _sent: Array[USize] = _sent.create()
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "7929",
+        "",
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    match \exhaustive\ _tcp_connection.send("AAAA")
+    | SendAccepted => None
+    | let _: SendError => _h.fail("the first send was refused")
+    end
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    if _nested_sent then return end
+    _nested_sent = true
+    // Queued behind the first send, before either has been written.
+    match \exhaustive\ _tcp_connection.send("BBBB")
+    | SendAccepted => None
+    | let _: SendError => _h.fail("the nested send was refused")
+    end
+
+  fun ref _on_sent(token: SendToken) =>
+    _h.assert_false(_closed, "_on_sent must arrive before _on_closed")
+    _sent.push(token.id)
+    if _sent.size() == 1 then
+      _tcp_connection.hard_close()
+    elseif _sent.size() == 2 then
+      _h.complete_action("both sends reported sent")
+    end
+
+  fun ref _on_send_failed(token: SendToken) =>
+    _h.fail("both sends reached the OS, so neither may report as failed")
+
+  fun ref _on_closed() =>
+    _closed = true
+    _h.assert_eq[USize](
+      2,
+      _sent.size(),
+      "both sends must report _on_sent before _on_closed")
+    _h.complete_action("client closed")
+
+actor \nodoc\ _TestSendKeepsDeliveredServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _received: String ref = String
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    _received.append(String.from_array(consume data))
+    if _received == "AAAABBBB" then
+      _h.complete_action("server saw both payloads")
+    end
+    KeepReading
+
+class \nodoc\ iso _TestSendOnSentPrecedesReceived is UnitTest
+  """
+  `_on_sent` for a completed write arrives before the `_on_received` for data
+  read after it.
+
+  The read loop takes messages out one at a time, so a send made from
+  `_on_received` for one message completes before the next message is
+  delivered. The server frames at four bytes and the client sends eight in one
+  call, so both messages come out of the same read: the server answers the
+  first, and its answer's `_on_sent` has to arrive before the second message.
+  Delivering `_on_sent` in a later behavior turn puts it after both.
+  """
+  fun name(): String => "SendOnSentPrecedesReceived"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("second message saw the first send completed")
+
+    let s = _TestSendPrecedesReceivedListener(h)
+    h.dispose_when_done(s)
+
+    h.long_test(10_000_000_000)
+
+actor \nodoc\ _TestSendPrecedesReceivedListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestSendPrecedesReceivedServer | None) = None
+  var _client: (_TestSendPrecedesReceivedClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "7930",
+        this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSendPrecedesReceivedServer =>
+    let s = _TestSendPrecedesReceivedServer(fd, _h)
+    _server = s
+    s
+
+  fun ref _on_closed() =>
+    try (_client as _TestSendPrecedesReceivedClient).dispose() end
+    try (_server as _TestSendPrecedesReceivedServer).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestSendPrecedesReceivedClient(_h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSendPrecedesReceivedListener")
+
+actor \nodoc\ _TestSendPrecedesReceivedClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "7930",
+        "",
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    // Two four-byte frames in one write, so the server reads both at once.
+    match \exhaustive\ _tcp_connection.send("AAAABBBB")
+    | SendAccepted => None
+    | let _: SendError => _h.fail("the client send was refused")
+    end
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    KeepReading
+
+actor \nodoc\ _TestSendPrecedesReceivedServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _received: USize = 0
+  var _sent: USize = 0
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
+    match MakeBufferSize(4)
+    | let b: BufferSize => _tcp_connection.buffer_until(b)
+    else _Unreachable()
+    end
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    _received = _received + 1
+    if _received == 1 then
+      match \exhaustive\ _tcp_connection.send("ok")
+      | SendAccepted => None
+      | let _: SendError => _h.fail("the server answer was refused")
+      end
+    elseif _received == 2 then
+      _h.assert_eq[USize](
+        1,
+        _sent,
+        "_on_sent for the answer must arrive before the next message")
+      _h.complete_action("second message saw the first send completed")
+      _tcp_connection.close()
+    end
+    KeepReading
+
+  fun ref _on_sent(token: SendToken) =>
+    _sent = _sent + 1

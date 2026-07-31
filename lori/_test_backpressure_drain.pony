@@ -126,6 +126,10 @@ actor \nodoc\ _TestBackpressureDrainServer
     _h.complete_action("server unthrottled")
     _tcp_connection.unmute()
 
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    // The payload is the only send this actor makes.
+    _payload_token = token
+
   fun ref _on_sent(token: SendToken) =>
     match _payload_token
     | let t: SendToken if token is t =>
@@ -147,8 +151,7 @@ actor \nodoc\ _TestBackpressureDrainServer
       _payload_size = 256_000
       let payload = recover iso Array[U8].init('x', _payload_size) end
       match \exhaustive\ _tcp_connection.send(consume payload)
-      | let t: SendToken =>
-        _payload_token = t
+      | SendAccepted =>
         _h.complete_action("server queued payload")
       | let _: SendError =>
         _h.fail("server send failed")
@@ -350,7 +353,7 @@ actor \nodoc\ _TestWriteOnlyEventReadRecoveryServer
       _payload_size = 256_000
       let payload = recover iso Array[U8].init('x', _payload_size) end
       match \exhaustive\ _tcp_connection.send(consume payload)
-      | let _: SendToken =>
+      | SendAccepted =>
         _h.complete_action("server queued payload")
       | let _: SendError =>
         _h.fail("server send failed")

@@ -39,7 +39,7 @@ Handling `send()` errors and throttle/unthrottle callbacks. A flood client sends
 
 ## [send-completion](send-completion/)
 
-Per-send completion tracking with `SendToken`. A client sends five labeled messages up front and keeps a map of the ones still outstanding, keyed by token id. `_on_sent(token)` identifies which specific send reached the OS — so the map shrinks to empty as each completes — and `_on_send_failed(token)` would identify which sends didn't make it if the connection dropped. Where `backpressure` counts completions, this tracks them by identity.
+Per-send completion tracking with `SendToken`. A client sends five labeled messages up front, recording each token from `_on_send_accepted` in a map of the sends still outstanding, keyed by token id. `_on_sent(token)` identifies which specific send reached the OS and drops it from the map, and `_on_send_failed(token)` would identify which sends didn't make it if the connection dropped. Where `backpressure` counts completions, this tracks them by identity.
 
 ## [yield-read](yield-read/)
 

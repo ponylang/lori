@@ -11,10 +11,14 @@ class \nodoc\ iso _TestMute is UnitTest
 
   Test works as follows:
 
-  Once an incoming connection is established, we set mute on it and then verify
-  that within a 5 second long test the `_on_received` callback is not triggered.
-  A timeout is considered passing; `_on_received` being called is grounds for a
-  failure.
+  Once an incoming connection is established, we mute it, ask the client for
+  data, and hold the test open for half a second with a timer. The client
+  answers at loopback speed, so its answer sits in the muted server's socket
+  for the rest of that window. `_on_received` firing at all is a failure.
+
+  The timer is what makes the test mean anything: without it the test completes
+  as soon as the client reports sending, which is before the server could have
+  read.
   """
   fun name(): String => "TestMute"
 
@@ -27,14 +31,12 @@ class \nodoc\ iso _TestMute is UnitTest
     h.expect_action("server muted")
     h.expect_action("server asks for data")
     h.expect_action("client sent data")
+    h.expect_action("mute window elapsed")
 
     let s = _TestMuteListener(h)
     h.dispose_when_done(s)
 
-    h.long_test(5_000_000_000)
-
-  fun timed_out(h: TestHelper) =>
-    h.complete(true)
+    h.long_test(10_000_000_000)
 
 actor \nodoc\ _TestMuteListener is TCPListenerActor
   var _tcp_listener: TCPListener = TCPListener.none()
@@ -125,8 +127,24 @@ actor \nodoc\ _TestMuteServer
     _h.complete_action("server started")
     _tcp_connection.mute()
     _h.complete_action("server muted")
-    _tcp_connection.send("send me some data that i won't ever read")
+    match \exhaustive\ _tcp_connection.send(
+      "send me some data that i won't ever read")
+    | SendAccepted => None
+    | let _: SendError => _h.fail("server could not ask for data")
+    end
     _h.complete_action("server asks for data")
+    match \exhaustive\ MakeTimerDuration(500)
+    | let d: TimerDuration =>
+      match \exhaustive\ _tcp_connection.set_timer(d)
+      | let _: TimerToken => None
+      | let _: SetTimerError => _h.fail("server could not set its timer")
+      end
+    | let _: ValidationFailure =>
+      _h.fail("MakeTimerDuration(500) should succeed")
+    end
+
+  fun ref _on_timer(token: TimerToken) =>
+    _h.complete_action("mute window elapsed")
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _h.fail("server should not receive data")
@@ -142,9 +160,14 @@ class \nodoc\ iso _TestUnmute is UnitTest
 
   Test works as follows:
 
-  Once an incoming connection is established, we set mute on it, request
-  that data be sent to us and then unmute the connection such that we should
-  receive the return data.
+  Once an incoming connection is established, we mute it, request data, and
+  unmute half a second later. The client answers at loopback speed, so its
+  answer is held for the rest of that window and can only reach `_on_received`
+  because of the unmute.
+
+  Waiting to unmute is what makes the test mean anything. Unmuting straight
+  away leaves nothing held, and the test then completes on its own bookkeeping
+  whether or not the data ever arrives.
   """
   fun name(): String => "TestUnmute"
 
@@ -158,11 +181,12 @@ class \nodoc\ iso _TestUnmute is UnitTest
     h.expect_action("server asks for data")
     h.expect_action("server unmuted")
     h.expect_action("client sent data")
+    h.expect_action("server received after unmute")
 
     let s = _TestUnmuteListener(h)
     h.dispose_when_done(s)
 
-    h.long_test(5_000_000_000)
+    h.long_test(10_000_000_000)
 
 actor \nodoc\ _TestUnmuteListener is TCPListenerActor
   var _tcp_listener: TCPListener = TCPListener.none()
@@ -236,6 +260,7 @@ actor \nodoc\ _TestUnmuteServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _h: TestHelper
+  var _muted_now: Bool = false
 
   new create(fd: U32, h: TestHelper) =>
     _h = h
@@ -252,14 +277,31 @@ actor \nodoc\ _TestUnmuteServer
   fun ref _on_started() =>
     _h.complete_action("server started")
     _tcp_connection.mute()
+    _muted_now = true
     _h.complete_action("server muted")
-    _tcp_connection.send("send me some data")
+    match \exhaustive\ _tcp_connection.send("send me some data")
+    | SendAccepted => None
+    | let _: SendError => _h.fail("server could not ask for data")
+    end
     _h.complete_action("server asks for data")
+    match \exhaustive\ MakeTimerDuration(500)
+    | let d: TimerDuration =>
+      match \exhaustive\ _tcp_connection.set_timer(d)
+      | let _: TimerToken => None
+      | let _: SetTimerError => _h.fail("server could not set its timer")
+      end
+    | let _: ValidationFailure =>
+      _h.fail("MakeTimerDuration(500) should succeed")
+    end
+
+  fun ref _on_timer(token: TimerToken) =>
+    _muted_now = false
     _tcp_connection.unmute()
     _h.complete_action("server unmuted")
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
-    _h.complete(true)
+    _h.assert_false(_muted_now, "a muted connection must not deliver data")
+    _h.complete_action("server received after unmute")
     KeepReading
 
 class \nodoc\ iso _TestMuteWithFullReadBuffer is UnitTest
@@ -351,6 +393,7 @@ actor \nodoc\ _TestMuteWithFullReadBufferClient
   var _tcp_connection: TCPConnection = TCPConnection.none()
   let _h: TestHelper
   let _listener: _TestMuteWithFullReadBufferListener
+  var _ping_token: (SendToken | None) = None
   var _payload_token: (SendToken | None) = None
 
   new create(h: TestHelper,
@@ -394,12 +437,22 @@ actor \nodoc\ _TestMuteWithFullReadBufferClient
       end
 
     match \exhaustive\ _tcp_connection.send(payload)
-    | let t: SendToken => _payload_token = t
+    | SendAccepted => None
     | let _: SendError =>
       _h.fail("client could not send the payload")
       _h.complete(false)
     end
     KeepReading
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    // The PING goes out from `_on_connected` and the payload from
+    // `_on_received`, in that order, so the first token is the PING's and the
+    // second is the payload's.
+    if _ping_token is None then
+      _ping_token = token
+    else
+      _payload_token = token
+    end
 
   fun ref _on_sent(token: SendToken) =>
     // The payload is with the OS, so it is in the server's socket by the time
@@ -930,3 +983,139 @@ actor \nodoc\ _TestSSLMuteCloseServer
 
   fun ref _on_closed() =>
     _h.complete_action("server closed")
+
+class \nodoc\ iso _TestMuteFromOnSent is UnitTest
+  """
+  A `mute()` called from `_on_sent` stops reading before the next read.
+
+  `_on_sent` fires from the flush inside `send()`, so the server mutes from
+  the middle of the `send()` it makes in `_on_started` -- before the read loop
+  has started. It then asks the client for data and unmutes half a second
+  later. The client answers at loopback speed, so the answer is sitting in the
+  server's socket for the whole muted window: `_on_received` firing before the
+  unmute means the mute did not take.
+  """
+  fun name(): String => "MuteFromOnSent"
+
+  fun ref apply(h: TestHelper) =>
+    h.expect_action("server muted")
+    h.expect_action("server unmuted")
+    h.expect_action("server received after unmute")
+    h.expect_action("client sent data")
+
+    let s = _TestMuteFromOnSentListener(h)
+    h.dispose_when_done(s)
+
+    h.long_test(10_000_000_000)
+
+actor \nodoc\ _TestMuteFromOnSentListener is TCPListenerActor
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _server: (_TestMuteFromOnSentServer | None) = None
+  var _client: (_TestMuteFromOnSentClient | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        "6869",
+        this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestMuteFromOnSentServer =>
+    let s = _TestMuteFromOnSentServer(fd, _h)
+    _server = s
+    s
+
+  fun ref _on_closed() =>
+    try (_client as _TestMuteFromOnSentClient).dispose() end
+    try (_server as _TestMuteFromOnSentServer).dispose() end
+
+  fun ref _on_listening() =>
+    _client = _TestMuteFromOnSentClient(_h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestMuteFromOnSentListener")
+
+actor \nodoc\ _TestMuteFromOnSentClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(_h.env.root),
+        "localhost",
+        "6869",
+        "",
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.fail("client connect failed")
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    match \exhaustive\ _tcp_connection.send(
+      "the muted server will not read this")
+    | SendAccepted => None
+    | let _: SendError => _h.fail("client could not send its answer")
+    end
+    _h.complete_action("client sent data")
+    KeepReading
+
+actor \nodoc\ _TestMuteFromOnSentServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  var _muted_now: Bool = false
+
+  new create(fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.server(
+        TCPServerAuth(_h.env.root),
+        fd,
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    match \exhaustive\ _tcp_connection.send("ask")
+    | SendAccepted => None
+    | let _: SendError => _h.fail("server send was refused")
+    end
+
+  fun ref _on_sent(token: SendToken) =>
+    _tcp_connection.mute()
+    _muted_now = true
+    _h.complete_action("server muted")
+    match \exhaustive\ MakeTimerDuration(500)
+    | let d: TimerDuration =>
+      match \exhaustive\ _tcp_connection.set_timer(d)
+      | let _: TimerToken => None
+      | let _: SetTimerError => _h.fail("server could not set its timer")
+      end
+    | let _: ValidationFailure =>
+      _h.fail("MakeTimerDuration(500) should succeed")
+    end
+
+  fun ref _on_timer(token: TimerToken) =>
+    _muted_now = false
+    _tcp_connection.unmute()
+    _h.complete_action("server unmuted")
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    _h.assert_false(_muted_now, "a muted connection must not deliver data")
+    _h.complete_action("server received after unmute")
+    KeepReading

@@ -1,18 +1,28 @@
 """
 Demonstrates per-send completion tracking.
 
-Every send() that returns a SendToken gets exactly one terminal callback:
-_on_sent(token) once its bytes reach the OS, or _on_send_failed(token) if the
-connection closes first. The token identifies WHICH send completed, so an
-application can track exactly which of several outstanding sends have been
-handed to the OS -- not just how many.
+Every accepted send() delivers a SendToken to _on_send_accepted, and that
+token gets exactly one terminal callback: _on_sent(token) once its bytes reach
+the OS, or _on_send_failed(token) if the connection closes first. The token
+identifies WHICH send completed, so an application can say which of its sends
+have been handed to the OS -- not just how many.
 
 This client sends five labeled messages up front and keeps a map of the ones
 still outstanding, keyed by token id. As each _on_sent arrives it reports which
-message completed and drops it from the map; when the map is empty every send
-has reached the OS and the client closes. If the connection had dropped with
-sends still outstanding, _on_send_failed would report which ones did not make
-it -- the same map, read the other way.
+message completed and drops it from the map; once every message has been
+issued and the map is empty, every send has reached the OS and the client
+closes. If the connection had dropped with sends still outstanding,
+_on_send_failed would report which ones did not make it -- the same map, read
+the other way.
+
+Over loopback with nothing in the way, each send reaches the OS inside the
+send() call that queued it, so the printed output shows each message recorded
+and completed in turn and the map holding one entry at a time. When the peer
+is slower than the sender the completions lag behind the sends and the map
+holds several at once. The bookkeeping is the same either way.
+
+Because _on_sent can fire from inside send(), an empty map on its own does not
+mean the client is finished -- it has to have issued every message as well.
 
 "Reached the OS" means written to the kernel send buffer, not received by the
 peer. End-to-end delivery is still the application's job.
@@ -85,6 +95,7 @@ actor Sender is (TCPConnectionActor & ClientLifecycleEventReceiver)
   let _messages: Array[String] val
   // Sends still waiting for _on_sent, keyed by token id.
   let _outstanding: Map[USize, String] = _outstanding.create()
+  var _all_issued: Bool = false
 
   new create(auth: TCPConnectAuth,
     host: String,
@@ -106,14 +117,28 @@ actor Sender is (TCPConnectionActor & ClientLifecycleEventReceiver)
       + " messages")
     for msg in _messages.values() do
       match \exhaustive\ _tcp_connection.send(msg)
-      | let token: SendToken =>
-        _outstanding(token.id) = msg
-        _out.print("  sent '" + msg + "' (token " + token.id.string()
-          + "), awaiting _on_sent")
+      | SendAccepted => None
       | let _: SendError =>
         _out.print("  could not send '" + msg + "'")
       end
     end
+    _all_issued = true
+    _maybe_close()
+
+  fun ref _on_send_accepted(token: SendToken, data: (ByteSeq | ByteSeqIter)) =>
+    // `data` is what was handed to send(), so there is nothing to stash before
+    // the call to have the message here.
+    let msg =
+      match data
+      | let s: String => s
+      else
+        // This example only ever sends a String.
+        ""
+      end
+
+    _outstanding(token.id) = msg
+    _out.print("  sent '" + msg + "' (token " + token.id.string()
+      + "), awaiting _on_sent")
 
   fun ref _on_sent(token: SendToken) =>
     try
@@ -122,7 +147,16 @@ actor Sender is (TCPConnectionActor & ClientLifecycleEventReceiver)
         + ") reached the OS; " + _outstanding.size().string()
         + " still outstanding")
     end
-    if _outstanding.size() == 0 then
+    _maybe_close()
+
+  fun ref _maybe_close() =>
+    """
+    Close once every message has been handed to send() and every one of those
+    sends has reached the OS. An empty outstanding map alone is not enough:
+    _on_sent fires from inside send(), so the map empties again between
+    messages while there are still messages left to issue.
+    """
+    if _all_issued and (_outstanding.size() == 0) then
       _out.print("Sender: every send reached the OS, closing")
       _tcp_connection.close()
     end
