@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file. This projec
 ### Fixed
 
 - Fire _on_sent in order with the other connection callbacks ([PR #346](https://github.com/ponylang/lori/pull/346))
+- Fix a file descriptor being closed twice on macOS ([PR #352](https://github.com/ponylang/lori/pull/352))
 
 ### Added
 
