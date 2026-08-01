@@ -153,14 +153,7 @@ class _ConnectionNone is _ConnectionState
     event: AsioEventID,
     flags: U32)
   =>
-    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
-      or AsioEvent.readable(flags))
-    then
-      return
-    end
-
-    PonyAsio.unsubscribe(event)
-    conn._close_event_fd(PonyAsio.event_fd(event))
+    _Unreachable()
 
   fun ref send(conn: TCPConnection ref,
     data: (ByteSeq | ByteSeqIter)): SendResult
