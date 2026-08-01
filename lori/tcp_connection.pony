@@ -1776,11 +1776,7 @@ class TCPConnection
     fails. Unsubscribes the event, closes the fd, and fires the connecting
     callback.
     """
-    // `unsubscribe` on an event that is already unsubscribed trips a runtime
-    // assertion, so check before calling it.
-    if not PonyAsio.get_disposable(event) then
-      PonyAsio.unsubscribe(event)
-    end
+    PonyAsio.unsubscribe(event)
     _close_event_fd(fd)
     _connecting_callback()
 
@@ -1790,11 +1786,7 @@ class TCPConnection
     chosen. Unsubscribes the event and closes the fd. Does NOT decrement
     _inflight_connections — caller handles that.
     """
-    // `unsubscribe` on an event that is already unsubscribed trips a runtime
-    // assertion, so check before calling it.
-    if not PonyAsio.get_disposable(event) then
-      PonyAsio.unsubscribe(event)
-    end
+    PonyAsio.unsubscribe(event)
     _close_event_fd(PonyAsio.event_fd(event))
 
   fun ref _event_notify(event: AsioEventID, flags: U32) =>

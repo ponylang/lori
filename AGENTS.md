@@ -83,7 +83,7 @@ Designs that were tried, or are tempting, and why lori does not use them — the
 
 - **The yield decision is the callback's return value, not a field.** `_on_received` returns `KeepReading` or `YieldReading`, and `_read()` acts on the returned value. An earlier design stored the answer in a `_yield_read` field, which made the one spot where the loop read that field load-bearing. Do not put the decision back in a field.
 
-- **A stale foreign event is dropped once, in `_event_notify`, not in each state.** The check used to sit in each `foreign_event` instead: eight copies, three of which were removed because the suite still passed on Linux, where the second message does not arrive. That shipped as issue #349, and only macOS reaches it. Do not push the check back down into the states.
+- **A stale foreign event is dropped once, in `_event_notify`, not in each state.** The check used to sit in each `foreign_event` instead. Three of those copies were removed because the suite still passed on Linux, where the second message does not arrive, and that shipped as issue #349 — reachable only where kqueue is the backend. Do not push the check back down into the states.
 
 - **STARTTLS refuses buffered read data (CVE-2021-23222).** `start_tls()` requires the connection open, not already TLS, not muted, no buffered read data, and no pending writes. The no-buffered-data precondition is there for the CVE; do not relax it.
 
@@ -91,7 +91,7 @@ Designs that were tried, or are tempting, and why lori does not use them — the
 
 POSIX and Windows share one readiness-based I/O path: one-shot readiness events (epoll/kqueue; `ProcessSocketNotifications` on Windows), resubscribe, then a synchronous `PonyTCP.receive`/`sendv`. Windows uses this path because ponyc removed IOCP; the floor is Windows 11 / Windows Server 2022. Two rules stay platform-specific — the vectored-send batch size (`PonyTCP.writev_max()`) and closing a subscribed fd (`_close_event_fd()`, POSIX-only) — both documented at those functions.
 
-How many messages one subscription delivers is platform-specific too, and nothing in lori says so. kqueue arms read and write as separate one-shot filters and sends a message from each (ponyc's `kqueue.c`), so a single subscribed socket can deliver two readiness messages; epoll and Windows combine both directions into one (`epoll.c`, `sock_notify.c`). Code written on the assumption of one message per subscription is wrong on macOS.
+How many messages one subscription delivers is platform-specific too. kqueue arms read and write as separate one-shot filters and sends a message from each (ponyc's `kqueue.c`), so a single subscribed socket can deliver two readiness messages; epoll and Windows combine both directions into one (`epoll.c`, `sock_notify.c`). Code written on the assumption of one message per subscription is wrong wherever kqueue is the backend — macOS is the one CI covers, but the BSDs use it too.
 
 ## Conventions
 

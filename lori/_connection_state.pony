@@ -159,11 +159,7 @@ class _ConnectionNone is _ConnectionState
       return
     end
 
-    // `unsubscribe` on an event that is already unsubscribed trips a runtime
-    // assertion, so check before calling it.
-    if not PonyAsio.get_disposable(event) then
-      PonyAsio.unsubscribe(event)
-    end
+    PonyAsio.unsubscribe(event)
     conn._close_event_fd(PonyAsio.event_fd(event))
 
   fun ref send(conn: TCPConnection ref,
