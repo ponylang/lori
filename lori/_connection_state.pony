@@ -134,7 +134,7 @@ trait _ConnectionState
     """
     Has a socket fd it can still do I/O on -- from the handshake through a
     graceful close still draining, but not before the fd exists or after a hard
-    close tears it down. See the state table in AGENTS.md.
+    close tears it down. See the lifecycle diagram in AGENTS.md.
     """
 
   fun receive(event: AsioEventID,
