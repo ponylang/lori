@@ -28,7 +28,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```
 make ssl=3.0.x                       # build + run unit tests (test is the default target)
-make test-one t=TestName ssl=3.0.x   # run a single test by name
+make test-one t=TestName ssl=3.0.x   # run one test, by its name() string
 make ci ssl=3.0.x                    # unit tests + build examples + build stress tests
 make examples ssl=3.0.x              # build all examples
 make stress-tests ssl=3.0.x          # build stress tests
@@ -50,24 +50,28 @@ A client connect subscribes one socket per resolved address at once (Happy Eyeba
 `TCPConnection` tracks its lifecycle with explicit state objects — the `_ConnectionState` trait and its implementers in `_connection_state.pony` — rather than boolean flags.
 
 ```
-_ConnectionNone → _ClientConnecting → _Open → _Closing → _Closed
-                                    ↘ _Closed (hard_close)
-_ClientConnecting → _SSLHandshaking → _Open (ssl_handshake_complete)
-                                    ↘ _Closed (hard_close / SSL error)
-_ClientConnecting → _UnconnectedClosing → _Closed (close, drain stragglers)
-_ClientConnecting → _Closed (hard_close / all connections failed)
-_ConnectionNone → _Open (server, plaintext) → _Closing → _Closed
-_ConnectionNone → _SSLHandshaking (server, SSL) → _Open (ssl_handshake_complete)
-_ConnectionNone → _Closed (SSL session creation failed)
-_Open → _TLSUpgrading (start_tls) → _Open (ssl_handshake_complete)
-                                   ↘ _Closed (hard_close / TLS error)
+_ConnectionNone     → _ClientConnecting
+                    → _Open              (server, plaintext)
+                    → _SSLHandshaking    (server, SSL)
+                    → _Closed            (SSL session creation failed)
+_ClientConnecting   → _Open              (connected, plaintext)
+                    → _SSLHandshaking    (connected, SSL)
+                    → _UnconnectedClosing (close, drain stragglers)
+                    → _Closed            (hard_close / all attempts failed)
+_SSLHandshaking     → _Open              (ssl_handshake_complete)
+                    → _Closed            (hard_close / SSL error)
+_Open               → _Closing           (close)
+                    → _TLSUpgrading      (start_tls)
+                    → _Closed            (hard_close)
+_TLSUpgrading       → _Open              (ssl_handshake_complete)
+                    → _Closed            (hard_close / TLS error)
+_Closing            → _Closed            (drained, or hard_close)
+_UnconnectedClosing → _Closed            (drained, or hard_close)
 ```
 
 Design: Discussion #219.
 
 ## Traps
-
-Designs that were tried, or are tempting, and why lori does not use them — the one thing the code cannot tell you, because it only records what it does now.
 
 - **One read loop; keep `_on_received` out of `_ssl_poll()`.** An earlier design had `_ssl_poll()` deliver application data from a second loop of its own, so mute and the liveness check had to be written twice. Both shipped as bugs before the second copy existed: the liveness check as a segfault (PR #311), mute as issue #313.
 
@@ -89,10 +93,9 @@ How many messages one subscription delivers is platform-specific too. kqueue arm
 
 ## Conventions
 
-- Follows the [Pony standard library Style Guide](https://github.com/ponylang/ponyc/blob/main/STYLE_GUIDE.md).
 - `_Unreachable()` in a branch the compiler cannot prove impossible, rather than an empty `else`.
-- A test listener must keep a reference to every actor it creates in `_on_accept`/`_on_listening` and dispose each one in `_on_closed`. The runtime will not exit while actors hold live I/O resources, so a missed dispose hangs CI (macOS especially).
-- Each test uses its own hardcoded port.
+- The runtime will not exit while an actor holds a live I/O resource, so a test has to dispose any actor that might still hold one when it ends, or CI hangs (macOS especially). That is the client a listener creates in `_on_listening`: keep a reference and dispose it in `_on_closed`. An actor returned from `_on_accept` releases its fd when its peer closes, so it needs no reference.
+- Each test uses its own hardcoded port. Grep `lori/_test_*.pony` for a free one.
 - `\nodoc\` on test classes.
 - A new test goes in the `_test_*.pony` file for its functional area, registered in `Main.tests()` in `_test.pony`, which holds only the test runner.
 - Each example has a file-level docstring saying what it demonstrates, uses the Listener/Server/Client actor structure, and uses a unique port. Adding one means adding it to `examples/README.md`, which is ordered simplest first.
