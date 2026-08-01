@@ -45,6 +45,8 @@ Windows builds and tests through `make.ps1`, not the Makefile. A build or test c
 
 `TCPConnection` (class) holds all TCP and SSL state and I/O logic and is not an actor. The user writes an actor that implements the `TCPConnectionActor` trait together with one of the two lifecycle-event-receiver traits, `ClientLifecycleEventReceiver` or `ServerLifecycleEventReceiver`, which carry the `_on_*` callbacks. `TCPListener`/`TCPListenerActor` are the same split for the accept side.
 
+A client connect subscribes one socket per resolved address at once (Happy Eyeballs). Whichever connects first becomes the connection's own event; the rest are stragglers, and each has to be unsubscribed and its fd closed when its event arrives. That is why every state handles `own_event` and `foreign_event` separately, and what `_UnconnectedClosing` drains.
+
 ### Connection lifecycle
 
 `TCPConnection` tracks its lifecycle with explicit state objects — the `_ConnectionState` trait and its implementers in `_connection_state.pony` — rather than boolean flags.
@@ -81,11 +83,15 @@ Designs that were tried, or are tempting, and why lori does not use them — the
 
 - **The yield decision is the callback's return value, not a field.** `_on_received` returns `KeepReading` or `YieldReading`, and `_read()` acts on the returned value. An earlier design stored the answer in a `_yield_read` field, which made the one spot where the loop read that field load-bearing. Do not put the decision back in a field.
 
+- **A stale foreign event is dropped once, in `_event_notify`, not in each state.** The check used to sit in each `foreign_event` instead. Three of those copies were removed because the suite still passed on Linux, where the second message does not arrive, and that shipped as issue #349 — reachable only where kqueue is the backend. Do not push the check back down into the states.
+
 - **STARTTLS refuses buffered read data (CVE-2021-23222).** `start_tls()` requires the connection open, not already TLS, not muted, no buffered read data, and no pending writes. The no-buffered-data precondition is there for the CVE; do not relax it.
 
 ## Platform differences
 
 POSIX and Windows share one readiness-based I/O path: one-shot readiness events (epoll/kqueue; `ProcessSocketNotifications` on Windows), resubscribe, then a synchronous `PonyTCP.receive`/`sendv`. Windows uses this path because ponyc removed IOCP; the floor is Windows 11 / Windows Server 2022. Two rules stay platform-specific — the vectored-send batch size (`PonyTCP.writev_max()`) and closing a subscribed fd (`_close_event_fd()`, POSIX-only) — both documented at those functions.
+
+How many messages one subscription delivers is platform-specific too. kqueue arms read and write as separate one-shot filters and sends a message from each (ponyc's `kqueue.c`), so a single subscribed socket can deliver two readiness messages; epoll and Windows combine both directions into one (`epoll.c`, `sock_notify.c`). Code written on the assumption of one message per subscription is wrong wherever kqueue is the backend — macOS is the one CI covers, but the BSDs use it too.
 
 ## Conventions
 
