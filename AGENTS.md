@@ -81,11 +81,15 @@ Designs that were tried, or are tempting, and why lori does not use them — the
 
 - **The yield decision is the callback's return value, not a field.** `_on_received` returns `KeepReading` or `YieldReading`, and `_read()` acts on the returned value. An earlier design stored the answer in a `_yield_read` field, which made the one spot where the loop read that field load-bearing. Do not put the decision back in a field.
 
+- **A stale foreign event is dropped once, in `_event_notify`, not in each state.** A readiness message can arrive for an event that has already been unsubscribed, and acting on it decrements the inflight count a second time and closes an fd the OS may have reassigned. The check that drops it belongs at the single point every foreign event passes through. It used to sit in each `foreign_event` instead: eight copies, of which three were dropped because the suite still passed on Linux — where, per Platform differences above, the second message does not exist. That shipped as issue #349, reachable only on macOS.
+
 - **STARTTLS refuses buffered read data (CVE-2021-23222).** `start_tls()` requires the connection open, not already TLS, not muted, no buffered read data, and no pending writes. The no-buffered-data precondition is there for the CVE; do not relax it.
 
 ## Platform differences
 
 POSIX and Windows share one readiness-based I/O path: one-shot readiness events (epoll/kqueue; `ProcessSocketNotifications` on Windows), resubscribe, then a synchronous `PonyTCP.receive`/`sendv`. Windows uses this path because ponyc removed IOCP; the floor is Windows 11 / Windows Server 2022. Two rules stay platform-specific — the vectored-send batch size (`PonyTCP.writev_max()`) and closing a subscribed fd (`_close_event_fd()`, POSIX-only) — both documented at those functions.
+
+How many messages one subscription delivers is platform-specific too, and nothing in lori says so. kqueue arms read and write as separate one-shot filters and sends a message from each, so a single subscribed socket delivers up to two readiness messages; epoll and Windows combine both directions into one. Anything written to run once per subscription runs twice on macOS.
 
 ## Conventions
 

@@ -159,10 +159,8 @@ class _ConnectionNone is _ConnectionState
       return
     end
 
-    // The message flags and the event struct's disposable status can
-    // disagree: a stale message may carry writeable/readable flags while
-    // the event struct has already been marked disposable by a prior
-    // unsubscribe. Check the struct before unsubscribing.
+    // `unsubscribe` on an event that is already unsubscribed trips a runtime
+    // assertion, so check before calling it.
     if not PonyAsio.get_disposable(event) then
       PonyAsio.unsubscribe(event)
     end
@@ -388,8 +386,6 @@ class _Open is _ConnectionState
     event: AsioEventID,
     flags: U32)
   =>
-    // Removing this guard causes the test suite to hang.
-    if PonyAsio.get_disposable(event) then return end
     if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
       or AsioEvent.readable(flags))
     then
@@ -498,8 +494,6 @@ class _Closing is _ConnectionState
     event: AsioEventID,
     flags: U32)
   =>
-    // Removing this guard causes the test suite to hang.
-    if PonyAsio.get_disposable(event) then return end
     if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
       or AsioEvent.readable(flags))
     then
@@ -831,8 +825,6 @@ class _SSLHandshaking is _ConnectionState
     event: AsioEventID,
     flags: U32)
   =>
-    // Removing this guard causes the test suite to hang.
-    if PonyAsio.get_disposable(event) then return end
     if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
       or AsioEvent.readable(flags))
     then
@@ -950,8 +942,6 @@ class _TLSUpgrading is _ConnectionState
     event: AsioEventID,
     flags: U32)
   =>
-    // Removing this guard causes the test suite to hang.
-    if PonyAsio.get_disposable(event) then return end
     if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
       or AsioEvent.readable(flags))
     then

@@ -1773,15 +1773,11 @@ class TCPConnection
   fun ref _connecting_event_failed(event: AsioEventID, fd: U32) =>
     """
     Called by _ClientConnecting when a Happy Eyeballs connection attempt
-    fails. Closes the fd and fires the connecting callback. Only
-    unsubscribes if the event hasn't already been unsubscribed — on
-    non-Windows systems, a race can cause the event to already be
-    disposable by the time we process it (see stdlib TCPConnection).
+    fails. Unsubscribes the event, closes the fd, and fires the connecting
+    callback.
     """
-    // The message flags and the event struct's disposable status can
-    // disagree: a stale message may carry writeable/readable flags while
-    // the event struct has already been marked disposable by a prior
-    // unsubscribe. Check the struct before unsubscribing.
+    // `unsubscribe` on an event that is already unsubscribed trips a runtime
+    // assertion, so check before calling it.
     if not PonyAsio.get_disposable(event) then
       PonyAsio.unsubscribe(event)
     end
@@ -1791,13 +1787,11 @@ class TCPConnection
   fun ref _straggler_cleanup(event: AsioEventID) =>
     """
     Clean up a Happy Eyeballs straggler event after the winner has been
-    chosen. Unsubscribes (if not already disposable) and closes the fd.
-    Does NOT decrement _inflight_connections — caller handles that.
+    chosen. Unsubscribes the event and closes the fd. Does NOT decrement
+    _inflight_connections — caller handles that.
     """
-    // The message flags and the event struct's disposable status can
-    // disagree: a stale message may carry writeable/readable flags while
-    // the event struct has already been marked disposable by a prior
-    // unsubscribe. Check the struct before unsubscribing.
+    // `unsubscribe` on an event that is already unsubscribed trips a runtime
+    // assertion, so check before calling it.
     if not PonyAsio.get_disposable(event) then
       PonyAsio.unsubscribe(event)
     end
@@ -1805,9 +1799,7 @@ class TCPConnection
 
   fun ref _event_notify(event: AsioEventID, flags: U32) =>
     // Explicit dispatch on event identity. Timer identity checks must come
-    // before `event is _event`. The else branch checks disposable first
-    // (stale timer disposables, straggler disposables), otherwise dispatches
-    // to foreign_event for Happy Eyeballs stragglers.
+    // before `event is _event`.
     if event is _connect_timer_event then
       if AsioEvent.errored(flags) then
         _fire_connect_timer_error()
@@ -1835,15 +1827,16 @@ class TCPConnection
     else
       if AsioEvent.disposable(flags) then
         PonyAsio.destroy(event)
-      elseif AsioEvent.errored(flags)
-        and PonyAsio.get_disposable(event)
-      then
-        // Stale errored event from a cancelled timer. The timer was
-        // unsubscribed (marking the event struct disposable) before
-        // the errored notification was processed. Destroy it here to
-        // prevent it from reaching foreign_event, where it would be
-        // misidentified as a Happy Eyeballs straggler.
-        PonyAsio.destroy(event)
+      elseif PonyAsio.get_disposable(event) then
+        // The message and the event struct disagree: this carries live flags
+        // for an event that has already been unsubscribed. Whatever the
+        // message is for was done when the event was unsubscribed, so there is
+        // nothing left to act on, and acting anyway means a second cleanup of
+        // an fd the OS may have reassigned and a second decrement of the
+        // inflight count. Drop it rather than destroy it -- the unsubscribe
+        // sends a disposable notification of its own, and that one frees the
+        // struct.
+        None
       else
         _state.foreign_event(this, event, flags)
       end
