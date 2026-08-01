@@ -1840,6 +1840,7 @@ class TCPConnection
         _event = AsioEvent.none()
       end
     else
+      _FETrace.dispatch(_state, event, flags, _inflight_connections)
       if AsioEvent.disposable(flags) then
         PonyAsio.destroy(event)
       elseif AsioEvent.errored(flags)
@@ -1917,6 +1918,7 @@ class TCPConnection
         PonyTCP.connect(
           e, _host, _port, _from, AsioEvent.read_write_oneshot()
           where ip_version = _ip_version)
+      _FETrace.started(_inflight_connections)
       _had_inflight = _inflight_connections > 0
       if _had_inflight then
         _arm_connect_timer()
