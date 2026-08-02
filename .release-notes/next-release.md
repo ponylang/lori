@@ -59,3 +59,7 @@ The same cleanup also miscounted how many connection attempts were still outstan
 
 Linux and Windows were not affected. macOS can deliver two readiness notifications for a single connection attempt where they deliver one, and the second was being treated as a second attempt.
 
+## Fix a number of SSL bugs
+
+Fixed multiple bugs affecting SSL support, including handshake failures being reported as authentication failures, data being silently dropped on large writes and when encryption fails, and connections being closed by unrelated SSL failures elsewhere.
+
