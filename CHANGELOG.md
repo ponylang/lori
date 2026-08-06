@@ -2,17 +2,11 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/) and [Keep a CHANGELOG](http://keepachangelog.com/).
 
-## [unreleased] - unreleased
+## [0.18.1] - 2026-08-06
 
 ### Fixed
 
 - Send TLS close_notify on graceful close ([PR #358](https://github.com/ponylang/lori/pull/358))
-
-### Added
-
-
-### Changed
-
 
 ## [0.18.0] - 2026-08-06
 
