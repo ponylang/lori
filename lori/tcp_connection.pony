@@ -44,6 +44,7 @@ class TCPConnection
   var _cumulative_sent: USize = 0
   // Built-in SSL support
   var _ssl: _TLSState = _NoTLS
+  var _close_notify_pending: Bool = false
   // Set when PonyTCP.connect returned > 0, meaning at least one TCP
   // connection attempt was made. Used by the failure callback to distinguish
   // DNS failure (no attempts) from TCP failure (all attempts failed).
@@ -657,11 +658,61 @@ class TCPConnection
     _set_unreadable()
     _set_unwriteable()
     _throttled = false
+    _close_notify_pending = false
 
     _close_event_fd(_fd)
     _fd = -1
 
     _dispose_tls()
+
+  fun ref _mark_close_notify_pending() =>
+    match _ssl
+    | let _: _TLS => _close_notify_pending = true
+    end
+
+  fun ref _close_notify_then_shutdown() =>
+    """
+    Send TLS `close_notify` (if applicable) and then TCP FIN. Called from
+    `_Closing.drained()` when the application's write queue is empty.
+
+    `SSL_shutdown` must happen here, not earlier: it makes `SSL_read` return
+    `SSL_ERROR_ZERO_RETURN`, so calling it during `close()` would discard
+    buffered TLS records the read loop has not yet delivered.
+
+    This runs from inside `_send_pending_writes()` (via `drained()`), so it
+    must not call `_send_pending_writes()` or `_ssl_flush_sends()` — that
+    would re-enter the write loop. Instead it pushes the close_notify
+    ciphertext directly onto the pending queue — bypassing `_enqueue()`,
+    whose `is_closed()` guard would drop it since `_Closing` reports as
+    closed.
+    """
+    if _close_notify_pending then
+      _close_notify_pending = false
+      match _ssl
+      | let tls: _TLS =>
+        tls.session.close()
+        // Drain the close_notify ciphertext from the SSL BIO directly into
+        // the pending queue. `_enqueue()` cannot be used here: the connection
+        // is in `_Closing`, where `is_closed() = true`, so `_enqueue()`
+        // silently drops the data.
+        while true do
+          match \exhaustive\ tls.session.send()
+          | let data: Array[U8] iso =>
+            let s = data.size()
+            _pending.push(consume data)
+            _cumulative_enqueued = _cumulative_enqueued + s
+          | None => break
+          end
+        end
+        if _has_pending_writes() then
+          _set_unwriteable()
+          PonyAsio.resubscribe_write(_event)
+          return
+        end
+      end
+    end
+
+    _initiate_shutdown()
 
   fun ref _dispose_tls() =>
     """
@@ -937,25 +988,33 @@ class TCPConnection
   fun ref _initiate_shutdown() =>
     """
     Send FIN to the peer, but only once there is nothing left to send ahead of
-    it: no inflight connection attempts and no queued writes. Idempotent — sends
-    FIN at most once, and no-ops until both have drained — so a graceful close
-    sends the queued writes before the write side is shut. `hard_close()` is the
+    it: no inflight connection attempts, no queued writes, and no pending TLS
+    close_notify. Idempotent — sends FIN at most once. `hard_close()` is the
     non-graceful path and still drops queued writes.
+
+    The TLS guard blocks FIN until close_notify has been sent.
+    `_close_notify_then_shutdown()` sends the alert when the write queue
+    drains, then calls back into this method for FIN.
     """
-    // Guard the fd the way `_read` does: this can run right after an I/O event
-    // hard-closed the connection and released the fd, and we must not
-    // `shutdown()` a released one.
     if not _state.is_live() then
       return
     end
 
-    if not _shutdown
-      and (_inflight_connections == 0)
-      and not _has_pending_writes()
+    if _shutdown
+      or (_inflight_connections > 0)
+      or _has_pending_writes()
     then
-      _shutdown = true
-      PonyTCP.shutdown(_fd)
+      return
     end
+
+    if _close_notify_pending then
+      _set_unwriteable()
+      PonyAsio.resubscribe_write(_event)
+      return
+    end
+
+    _shutdown = true
+    PonyTCP.shutdown(_fd)
 
   fun ref _enqueue(data: ByteSeq) =>
     """
@@ -1207,7 +1266,19 @@ class TCPConnection
               return
             end
           | SSLClosed =>
-            hard_close()
+            if _shutdown then
+              // Both sides have exchanged close_notify, and we have already
+              // sent FIN. The TLS session will keep returning SSLClosed on
+              // every read from here on, so continuing to read would loop
+              // forever. Tear down the socket.
+              hard_close()
+            else
+              close()
+              if _state.is_live() then
+                _set_unreadable()
+                PonyAsio.resubscribe_read(_event)
+              end
+            end
             return
           | SSLError =>
             hard_close()
@@ -1243,7 +1314,6 @@ class TCPConnection
           end
         end
       else
-        // The socket has been closed from the other side.
         hard_close()
       end
     | None =>
