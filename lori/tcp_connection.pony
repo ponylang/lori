@@ -1085,12 +1085,11 @@ class TCPConnection
       Streaming
     end
 
-  fun ref _next_message(): (Array[U8] iso^ | None) =>
+  fun ref _next_message():
+    (Array[U8] iso^ | None | SSLClosed | SSLError | InvalidOperation)
+  =>
     """
-    The next message for the application, or `None` when there isn't one. For an
-    SSL connection `None` also covers a session that has just errored; `_read()`
-    handles both the same way, by asking `_fill()` for more, and `_ssl_poll()`
-    turns the error into a `hard_close()` when the next ciphertext arrives.
+    The next message for the application, or `None` when there isn't one.
 
     Returns a value; it never calls the application. That is what keeps `mute`
     and `is_live` in `_read()`'s loop and out of here — code that hands over
@@ -1161,8 +1160,8 @@ class TCPConnection
       let x = _read_buffer = recover Array[U8] end
       (let cipher, _read_buffer) = (consume x).chop(_bytes_in_read_buffer)
       _bytes_in_read_buffer = 0
-      tls.session.receive(consume cipher)
-      _ssl_poll(s)
+      let ssl_result = tls.session.receive(consume cipher)
+      _ssl_poll(s, ssl_result)
     end
 
     bytes_read
@@ -1207,6 +1206,15 @@ class TCPConnection
               _queue_read()
               return
             end
+          | SSLClosed =>
+            hard_close()
+            return
+          | SSLError =>
+            hard_close()
+            return
+          | InvalidOperation =>
+            _Unreachable()
+            return
           | None =>
             // Reading the SSL session in `_next_message()` can make it queue
             // protocol output — a TLS 1.3 KeyUpdate response, say. The session
@@ -1582,9 +1590,11 @@ class TCPConnection
     """
     match _ssl
     | let tls: _TLS =>
-      try
-        while tls.session.can_send() do
-          _enqueue(tls.session.send()?)
+      while true do
+        match \exhaustive\ tls.session.send()
+        | let data: Array[U8] iso =>
+          _enqueue(consume data)
+        | None => break
         end
       end
     end
@@ -1612,46 +1622,37 @@ class TCPConnection
       _send_pending_writes()
     end
 
-  fun ref _ssl_poll(s: EitherLifecycleEventReceiver ref) =>
+  fun ref _ssl_poll(
+    s: EitherLifecycleEventReceiver ref,
+    result: SSLReceiveResult)
+  =>
     """
     Handle handshake completion, error detection, and protocol data flushing
     for the SSL session. Called by `_fill()` after `ssl.receive()` has fed it
-    new ciphertext.
+    new ciphertext and returned a result.
 
     Does not deliver application data — `_read()` takes messages out of the
     session one at a time via `_next_message()`.
 
     `ssl_handshake_complete` runs application callbacks, any of which can
     `hard_close()` and dispose the session. The flush below re-matches `_ssl`
-    rather than reusing the binding above, so it finds no session and does
-    nothing.
+    rather than reusing a binding, so it finds no session and does nothing.
     """
-    match _ssl
-    | let tls: _TLS =>
-      match \exhaustive\ tls.session.state()
-      | SSLHandshake =>
-        // Still handshaking; nothing to dispatch yet.
-        None
-      | SSLReady =>
-        _state.ssl_handshake_complete(this, s)
-      | SSLAuthFail =>
-        _hard_close(_TLSAuthFailure)
-        return
-      | SSLError =>
-        hard_close()
-        return
-      | SSLDisposed =>
-        // A live `_TLS` session is never disposed; disposing moves `_ssl` to
-        // `_TLSDisposed`, which is not matched above.
-        _Unreachable()
-      end
-
-      // `ssl_handshake_complete` above fires `_on_connected`, `_on_started` or
-      // `_on_tls_ready`, any of which can hard_close(). That disposes the
-      // session and moves `_ssl` to `_TLSDisposed`, so the flush below finds
-      // no session and does nothing. `tls` is a stale alias by then.
-      _ssl_flush_sends()
+    match \exhaustive\ result
+    | SSLAccepted => None
+    | SSLReady =>
+      _state.ssl_handshake_complete(this, s)
+    | SSLAuthFail =>
+      _hard_close(_TLSAuthFailure)
+      return
+    | SSLError =>
+      hard_close()
+      return
+    | InvalidOperation =>
+      _Unreachable()
+      return
     end
+    _ssl_flush_sends()
 
   fun _has_pending_writes(): Bool =>
     _pending.total() > 0
