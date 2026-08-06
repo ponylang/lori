@@ -394,6 +394,7 @@ class _Open is _ConnectionState
 
   fun ref close(conn: TCPConnection ref) =>
     conn._set_state(_Closing)
+    conn._mark_close_notify_pending()
     conn._initiate_shutdown()
 
   fun ref hard_close(conn: TCPConnection ref,
@@ -493,7 +494,7 @@ class _Closing is _ConnectionState
     conn._decrement_inflight()
     conn._straggler_cleanup(event)
 
-    // Inflight drained — can now send FIN
+    // Inflight drained — try to advance the shutdown sequence
     conn._initiate_shutdown()
 
   fun ref send(conn: TCPConnection ref,
@@ -502,7 +503,7 @@ class _Closing is _ConnectionState
     SendErrorNotConnected
 
   fun ref drained(conn: TCPConnection ref) =>
-    conn._initiate_shutdown()
+    conn._close_notify_then_shutdown()
 
   fun ref close(conn: TCPConnection ref) =>
     None

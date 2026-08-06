@@ -87,6 +87,10 @@ Design: Discussion #219.
 
 - **The hard-close reason is the `_HardCloseCause` argument, not a field.** An earlier design set one of three fields (`_connect_timed_out` and the like) right before an argumentless `hard_close()` and dug it back out after. Do not put it back in a field.
 
+- **`close_notify` is deferred to `_Closing.drained()`, not sent in `_Open.close()`.** `ssl.close()` calls `SSL_shutdown`, which makes `SSL_read` return `SSL_ERROR_ZERO_RETURN` — buffered TLS records the read loop has not yet delivered are lost. Issue #348.
+
+- **`_set_unwriteable()` before `PonyAsio.resubscribe_write()`.** The ponyc epoll backend's `pony_asio_event_resubscribe()` only includes `EPOLLOUT` when `!ev->writeable`. After `_dispatch_io_event()` sets writeable, the flag stays true, so a later resubscribe is a no-op for the write side. Clear the flag first. Issue #348.
+
 - **A stale foreign event is dropped once, in `_event_notify`, not in each state.** The check used to sit in each `foreign_event` instead. Three of those copies were removed because the suite still passed on Linux, where the second message does not arrive, and that shipped as issue #349 — reachable only where kqueue is the backend. Do not push the check back down into the states.
 
 ## Platform differences
