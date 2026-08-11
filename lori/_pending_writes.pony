@@ -52,7 +52,7 @@ class _PendingWrites
 
   fun buffers(): this->Array[ByteSeq] =>
     """
-    The buffers, for `PonyTCP.sendv`. Read together with `first_offset`.
+    The buffers, for `RuntimeBackend.sendv`. Read together with `first_offset`.
     """
     _buffers
 

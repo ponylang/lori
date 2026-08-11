@@ -13,6 +13,8 @@ All notable changes to this project will be documented in this file. This projec
 ### Changed
 
 - Remove is_open() from TCPConnection ([PR #365](https://github.com/ponylang/lori/pull/365))
+- Make TCPConnection and TCPListener generic over TCPBackend ([PR #366](https://github.com/ponylang/lori/pull/366))
+- Rename PonyTCP to RuntimeBackend ([PR #366](https://github.com/ponylang/lori/pull/366))
 
 ## [0.18.1] - 2026-08-06
 

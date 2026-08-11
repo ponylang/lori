@@ -1,9 +1,9 @@
-trait ServerLifecycleEventReceiver
+trait ServerLifecycleEventReceiver[TCP: TCPBackend val = RuntimeBackend]
   """
   Application-level callbacks for server-side TCP connections.
   One receiver per connection, no chaining.
   """
-  fun ref _connection(): TCPConnection
+  fun ref _connection(): TCPConnection[TCP]
 
   fun ref _on_started() =>
     """

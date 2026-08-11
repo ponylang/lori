@@ -1,9 +1,9 @@
-trait ClientLifecycleEventReceiver
+trait ClientLifecycleEventReceiver[TCP: TCPBackend val = RuntimeBackend]
   """
   Application-level callbacks for client-side TCP connections.
   One receiver per connection, no chaining.
   """
-  fun ref _connection(): TCPConnection
+  fun ref _connection(): TCPConnection[TCP]
 
   fun ref _on_connecting(inflight_connections: U32) =>
     """
@@ -230,5 +230,5 @@ trait ClientLifecycleEventReceiver
     """
     None
 
-type EitherLifecycleEventReceiver is
-  (ServerLifecycleEventReceiver | ClientLifecycleEventReceiver)
+type EitherLifecycleEventReceiver[TCP: TCPBackend val = RuntimeBackend] is
+  (ServerLifecycleEventReceiver[TCP] | ClientLifecycleEventReceiver[TCP])

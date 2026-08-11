@@ -2,7 +2,7 @@ use net = "net"
 use "collections"
 use "ssl/net"
 
-class TCPConnection
+class TCPConnection[TCP: TCPBackend val = RuntimeBackend]
   """
   The TCP connection: all connection state and I/O, including SSL. A
   `TCPConnectionActor` owns one and delegates to it.
@@ -12,7 +12,8 @@ class TCPConnection
   initializer before that. An open plaintext connection can be upgraded to TLS
   with `start_tls`. See the package documentation for the full lifecycle.
   """
-  var _state: _ConnectionState ref = _ConnectionNone
+  let _tcp: TCP = TCP
+  var _state: _ConnectionState[TCP] ref = _ConnectionNone[TCP]
   var _shutdown: Bool = false
   var _throttled: Bool = false
   var _readable: Bool = false
@@ -22,10 +23,12 @@ class TCPConnection
   var _inflight_connections: U32 = 0
   var _fd: U32 = -1
   var _event: AsioEventID = AsioEvent.none()
-  var _spawned_by: (TCPListenerActor | None) = None
+  var _spawned_by: (TCPListenerActor[TCP] | None) = None
   let _lifecycle_event_receiver:
-    (ClientLifecycleEventReceiver ref | ServerLifecycleEventReceiver ref | None)
-  let _enclosing: (TCPConnectionActor ref | None)
+    (ClientLifecycleEventReceiver[TCP] ref
+    | ServerLifecycleEventReceiver[TCP] ref
+    | None)
+  let _enclosing: (TCPConnectionActor[TCP] ref | None)
   embed _pending: _PendingWrites = _PendingWrites
   var _read_buffer: Array[U8] iso = recover Array[U8] end
   var _bytes_in_read_buffer: USize = 0
@@ -45,7 +48,7 @@ class TCPConnection
   // Built-in SSL support
   var _ssl: _TLSState = _NoTLS
   var _close_notify_pending: Bool = false
-  // Set when PonyTCP.connect returned > 0, meaning at least one TCP
+  // Set when connect returned > 0, meaning at least one TCP
   // connection attempt was made. Used by the failure callback to distinguish
   // DNS failure (no attempts) from TCP failure (all attempts failed).
   var _had_inflight: Bool = false
@@ -65,12 +68,19 @@ class TCPConnection
   var _from: String = ""
   var _ip_version: IPVersion = DualStack
 
+  fun _tcp_ops(): TCP =>
+    """
+    The TCP operations backend for this connection, used by state classes
+    that need to call receive.
+    """
+    _tcp
+
   new client(auth: TCPConnectAuth,
     host: String,
     port: String,
     from: String,
-    enclosing: TCPConnectionActor ref,
-    ler: ClientLifecycleEventReceiver ref,
+    enclosing: TCPConnectionActor[TCP] ref,
+    ler: ClientLifecycleEventReceiver[TCP] ref,
     read_buffer_size: ReadBufferSize = DefaultReadBufferSize(),
     ip_version: IPVersion = DualStack,
     connection_timeout: (ConnectionTimeout | None) = None)
@@ -98,8 +108,8 @@ class TCPConnection
 
   new server(auth: TCPServerAuth,
     fd': U32,
-    enclosing: TCPConnectionActor ref,
-    ler: ServerLifecycleEventReceiver ref,
+    enclosing: TCPConnectionActor[TCP] ref,
+    ler: ServerLifecycleEventReceiver[TCP] ref,
     read_buffer_size: ReadBufferSize = DefaultReadBufferSize())
   =>
     """
@@ -120,8 +130,8 @@ class TCPConnection
     host: String,
     port: String,
     from: String,
-    enclosing: TCPConnectionActor ref,
-    ler: ClientLifecycleEventReceiver ref,
+    enclosing: TCPConnectionActor[TCP] ref,
+    ler: ClientLifecycleEventReceiver[TCP] ref,
     read_buffer_size: ReadBufferSize = DefaultReadBufferSize(),
     ip_version: IPVersion = DualStack,
     connection_timeout: (ConnectionTimeout | None) = None)
@@ -155,8 +165,8 @@ class TCPConnection
   new ssl_server(auth: TCPServerAuth,
     ssl_ctx: SSLContext val,
     fd': U32,
-    enclosing: TCPConnectionActor ref,
-    ler: ServerLifecycleEventReceiver ref,
+    enclosing: TCPConnectionActor[TCP] ref,
+    ler: ServerLifecycleEventReceiver[TCP] ref,
     read_buffer_size: ReadBufferSize = DefaultReadBufferSize())
   =>
     """
@@ -468,7 +478,7 @@ class TCPConnection
     """
     recover
       let ip: net.NetAddress ref = net.NetAddress
-      PonyTCP.sockname(_fd, ip)
+      _tcp.sockname(_fd, ip)
       ip
     end
 
@@ -479,7 +489,7 @@ class TCPConnection
     """
     recover
       let ip: net.NetAddress ref = net.NetAddress
-      PonyTCP.peername(_fd, ip)
+      _tcp.peername(_fd, ip)
       ip
     end
 
@@ -538,7 +548,7 @@ class TCPConnection
     end
 
     match \exhaustive\ _lifecycle_event_receiver
-    | let _: EitherLifecycleEventReceiver =>
+    | let _: EitherLifecycleEventReceiver[TCP] =>
       _buffer_until = qty
     | None =>
       _Unreachable()
@@ -584,10 +594,10 @@ class TCPConnection
     appropriate failure callback, and cancels the idle, connect, and user
     timers.
     """
-    _state = _Closed
+    _state = _Closed[TCP]
     _dispose_tls()
     match _lifecycle_event_receiver
-    | let c: ClientLifecycleEventReceiver ref =>
+    | let c: ClientLifecycleEventReceiver[TCP] ref =>
       // `_had_inflight` is state, not a cause: it records whether any TCP
       // attempt ever started, which is what separates a DNS failure from a
       // TCP one. No caller knows it.
@@ -629,7 +639,7 @@ class TCPConnection
     // `_on_sent` stays a direct call so it still precedes `_on_closed`, which
     // the `_hard_close_*` methods fire after this returns.
     match _enclosing
-    | let e: TCPConnectionActor ref =>
+    | let e: TCPConnectionActor[TCP] ref =>
       try
         while _pending_tokens.size() > 0 do
           (let offset, let token) = _pending_tokens.shift()?
@@ -731,9 +741,9 @@ class TCPConnection
     closed. For client connections, this is a no-op.
     """
     match _lifecycle_event_receiver
-    | let e: ServerLifecycleEventReceiver ref =>
+    | let e: ServerLifecycleEventReceiver[TCP] ref =>
       match \exhaustive\ _spawned_by
-      | let spawner: TCPListenerActor =>
+      | let spawner: TCPListenerActor[TCP] =>
         spawner._connection_closed()
         _spawned_by = None
       | None =>
@@ -750,11 +760,11 @@ class TCPConnection
     reachable from `_Open` and `_Closing` — handshake states have their own
     hard-close methods. Fires `_on_closed` and notifies the spawner.
     """
-    _state = _Closed
+    _state = _Closed[TCP]
     _hard_close_cleanup()
 
     match \exhaustive\ _lifecycle_event_receiver
-    | let s: EitherLifecycleEventReceiver ref =>
+    | let s: EitherLifecycleEventReceiver[TCP] ref =>
       s._on_closed()
     | None =>
       _Unreachable()
@@ -768,13 +778,13 @@ class TCPConnection
     The application has not been notified — fires `_on_connection_failure`
     (client) or `_on_start_failure` (server).
     """
-    _state = _Closed
+    _state = _Closed[TCP]
     _hard_close_cleanup()
 
     match \exhaustive\ _lifecycle_event_receiver
-    | let s: EitherLifecycleEventReceiver ref =>
+    | let s: EitherLifecycleEventReceiver[TCP] ref =>
       match \exhaustive\ s
-      | let c: ClientLifecycleEventReceiver ref =>
+      | let c: ClientLifecycleEventReceiver[TCP] ref =>
         let reason =
           match cause
           | _ConnectTimerFailed => ConnectionFailedTimerError
@@ -782,7 +792,7 @@ class TCPConnection
           else ConnectionFailedSSL
           end
         c._on_connection_failure(reason)
-      | let srv: ServerLifecycleEventReceiver ref =>
+      | let srv: ServerLifecycleEventReceiver[TCP] ref =>
         srv._on_start_failure(StartFailedSSL)
       end
     | None =>
@@ -797,7 +807,7 @@ class TCPConnection
     The application was already notified of the plaintext connection, so
     `_on_tls_failure` fires followed by `_on_closed`.
     """
-    _state = _Closed
+    _state = _Closed[TCP]
     _hard_close_cleanup()
 
     let reason =
@@ -807,7 +817,7 @@ class TCPConnection
       end
 
     match \exhaustive\ _lifecycle_event_receiver
-    | let s: EitherLifecycleEventReceiver ref =>
+    | let s: EitherLifecycleEventReceiver[TCP] ref =>
       s._on_tls_failure(reason)
       s._on_closed()
     | None =>
@@ -852,7 +862,7 @@ class TCPConnection
     _state.start_tls(this, ssl_ctx, host)
 
   fun _do_keepalive(secs: U32) =>
-    PonyTCP.keepalive(_fd, secs)
+    _tcp.keepalive(_fd, secs)
 
   fun _do_getsockopt(level: I32,
     option_name: I32,
@@ -889,9 +899,9 @@ class TCPConnection
     let ssl =
       try
         match \exhaustive\ _lifecycle_event_receiver
-        | let _: ClientLifecycleEventReceiver ref =>
+        | let _: ClientLifecycleEventReceiver[TCP] ref =>
           ssl_ctx.client(host)?
-        | let _: ServerLifecycleEventReceiver ref =>
+        | let _: ServerLifecycleEventReceiver[TCP] ref =>
           ssl_ctx.server()?
         | None =>
           _Unreachable()
@@ -902,7 +912,7 @@ class TCPConnection
       end
 
     _ssl = _TLS(consume ssl)
-    _state = _TLSUpgrading
+    _state = _TLSUpgrading[TCP]
     _ssl_flush_sends()
     None
 
@@ -1006,7 +1016,7 @@ class TCPConnection
     end
 
     _shutdown = true
-    PonyTCP.shutdown(_fd)
+    _tcp.shutdown(_fd)
 
   fun ref _enqueue(data: ByteSeq) =>
     """
@@ -1044,7 +1054,7 @@ class TCPConnection
     `_on_throttled` when it applies backpressure. Either can close the
     connection under the caller.
     """
-    let writev_batch_size: USize = PonyTCP.writev_max().usize()
+    let writev_batch_size: USize = _tcp.writev_max().usize()
     var wrote_bytes: Bool = false
 
     while _writeable and (_pending.total() > 0) do
@@ -1055,7 +1065,7 @@ class TCPConnection
         let bytes_to_send: USize = _pending.prefix_total(num_to_send)
 
         // sendv — three-state result with bytes-sent count
-        match \exhaustive\ PonyTCP.sendv(
+        match \exhaustive\ _tcp.sendv(
           _event, _pending.buffers(), 0, num_to_send, _pending.first_offset())?
         | (SocketResultOk, let len: USize) =>
           if len > 0 then
@@ -1169,7 +1179,7 @@ class TCPConnection
       consume data'
     end
 
-  fun ref _fill(s: EitherLifecycleEventReceiver ref): (USize | None) ? =>
+  fun ref _fill(s: EitherLifecycleEventReceiver[TCP] ref): (USize | None) ? =>
     """
     Get more bytes off the socket. Returns the number read, or `None` when the
     socket has nothing more to give (read interest is re-armed first). Raises
@@ -1188,6 +1198,7 @@ class TCPConnection
 
     let bytes_read =
       match \exhaustive\ _state.receive(
+        this,
         _event,
         _read_buffer.cpointer(_bytes_in_read_buffer),
         _read_buffer.size() - _bytes_in_read_buffer)
@@ -1215,7 +1226,7 @@ class TCPConnection
   fun ref _read() =>
     _reset_idle_timer()
     match \exhaustive\ _lifecycle_event_receiver
-    | let s: EitherLifecycleEventReceiver ref =>
+    | let s: EitherLifecycleEventReceiver[TCP] ref =>
       try
         var total_bytes_read: USize = 0
 
@@ -1331,7 +1342,7 @@ class TCPConnection
     unmuting.
     """
     match \exhaustive\ _enclosing
-    | let e: TCPConnectionActor ref =>
+    | let e: TCPConnectionActor[TCP] ref =>
       e._read_again()
     | None =>
       _Unreachable()
@@ -1339,7 +1350,7 @@ class TCPConnection
 
   fun ref _apply_backpressure() =>
     match \exhaustive\ _lifecycle_event_receiver
-    | let s: EitherLifecycleEventReceiver =>
+    | let s: EitherLifecycleEventReceiver[TCP] =>
       if not _throttled then
         _throttled = true
         // throttled means we are also unwriteable
@@ -1362,7 +1373,7 @@ class TCPConnection
 
   fun ref _release_backpressure() =>
     match \exhaustive\ _lifecycle_event_receiver
-    | let s: EitherLifecycleEventReceiver =>
+    | let s: EitherLifecycleEventReceiver[TCP] =>
       if _throttled then
         _throttled = false
         s._on_unthrottled()
@@ -1378,7 +1389,7 @@ class TCPConnection
     Dispatch _on_send_accepted to the lifecycle event receiver.
     """
     match \exhaustive\ _lifecycle_event_receiver
-    | let s: EitherLifecycleEventReceiver ref =>
+    | let s: EitherLifecycleEventReceiver[TCP] ref =>
       s._on_send_accepted(token, data)
     | None =>
       _Unreachable()
@@ -1389,7 +1400,7 @@ class TCPConnection
     Dispatch _on_sent to the lifecycle event receiver.
     """
     match \exhaustive\ _lifecycle_event_receiver
-    | let s: EitherLifecycleEventReceiver ref =>
+    | let s: EitherLifecycleEventReceiver[TCP] ref =>
       s._on_sent(token)
     | None =>
       _Unreachable()
@@ -1401,7 +1412,7 @@ class TCPConnection
     _notify_send_failed behavior on TCPConnectionActor.
     """
     match \exhaustive\ _lifecycle_event_receiver
-    | let s: EitherLifecycleEventReceiver ref =>
+    | let s: EitherLifecycleEventReceiver[TCP] ref =>
       s._on_send_failed(token)
     | None =>
       _Unreachable()
@@ -1436,7 +1447,7 @@ class TCPConnection
 
     let nsec = duration() * 1_000_000
     match \exhaustive\ _enclosing
-    | let e: TCPConnectionActor ref =>
+    | let e: TCPConnectionActor[TCP] ref =>
       _user_timer_event = PonyAsio.create_timer_event(e, nsec)
     | None =>
       _Unreachable()
@@ -1457,7 +1468,7 @@ class TCPConnection
     if _idle_timeout_nsec == 0 then return end
     if not _timer_event.is_null() then return end
     match \exhaustive\ _enclosing
-    | let e: TCPConnectionActor ref =>
+    | let e: TCPConnectionActor[TCP] ref =>
       _timer_event = PonyAsio.create_timer_event(e, _idle_timeout_nsec)
     | None =>
       _Unreachable()
@@ -1491,7 +1502,7 @@ class TCPConnection
 
   fun ref _dispatch_idle_timeout() =>
     match \exhaustive\ _lifecycle_event_receiver
-    | let s: EitherLifecycleEventReceiver ref =>
+    | let s: EitherLifecycleEventReceiver[TCP] ref =>
       s._on_idle_timeout()
     | None =>
       _Unreachable()
@@ -1512,7 +1523,7 @@ class TCPConnection
     """
     _cancel_idle_timer()
     match \exhaustive\ _lifecycle_event_receiver
-    | let s: EitherLifecycleEventReceiver ref =>
+    | let s: EitherLifecycleEventReceiver[TCP] ref =>
       s._on_idle_timer_failure()
     | None =>
       _Unreachable()
@@ -1521,12 +1532,12 @@ class TCPConnection
   fun ref _arm_connect_timer() =>
     """
     Create the ASIO timer event for the connect timeout. Called after
-    `PonyTCP.connect` succeeds (at least one connection attempt is inflight).
+    connect succeeds (at least one connection attempt is inflight).
     No-op when `_connect_timeout_nsec == 0` (no timeout configured).
     """
     if _connect_timeout_nsec == 0 then return end
     match \exhaustive\ _enclosing
-    | let e: TCPConnectionActor ref =>
+    | let e: TCPConnectionActor[TCP] ref =>
       _connect_timer_event =
         PonyAsio.create_timer_event(e, _connect_timeout_nsec)
     | None =>
@@ -1579,7 +1590,7 @@ class TCPConnection
     PonyAsio.unsubscribe(_user_timer_event)
     _user_timer_event = AsioEvent.none()
     match \exhaustive\ (token, _lifecycle_event_receiver)
-    | (let t: TimerToken, let s: EitherLifecycleEventReceiver ref) =>
+    | (let t: TimerToken, let s: EitherLifecycleEventReceiver[TCP] ref) =>
       s._on_timer(t)
     | (None, _) =>
       _Unreachable()
@@ -1610,7 +1621,7 @@ class TCPConnection
     """
     _cancel_user_timer()
     match \exhaustive\ _lifecycle_event_receiver
-    | let s: EitherLifecycleEventReceiver ref =>
+    | let s: EitherLifecycleEventReceiver[TCP] ref =>
       s._on_timer_failure()
     | None =>
       _Unreachable()
@@ -1658,7 +1669,7 @@ class TCPConnection
     end
 
   fun ref _ssl_poll(
-    s: EitherLifecycleEventReceiver ref,
+    s: EitherLifecycleEventReceiver[TCP] ref,
     result: SSLReceiveResult)
   =>
     """
@@ -1735,7 +1746,7 @@ class TCPConnection
   fun ref _do_read_again() =>
     _read()
 
-  fun ref _set_state(state: _ConnectionState ref) =>
+  fun ref _set_state(state: _ConnectionState[TCP] ref) =>
     _state = state
 
   fun ref _decrement_inflight(): U32 =>
@@ -1755,7 +1766,7 @@ class TCPConnection
 
     match \exhaustive\ _ssl
     | let _: _TLS =>
-      _state = _SSLHandshaking
+      _state = _SSLHandshaking[TCP]
       // Flush ClientHello to initiate SSL handshake.
       // _on_connected() and _arm_idle_timer() deferred until
       // ssl_handshake_complete.
@@ -1763,11 +1774,11 @@ class TCPConnection
     | _TLSDisposed | _TLSFailed =>
       _Unreachable()
     | _NoTLS =>
-      _state = _Open
+      _state = _Open[TCP]
       _arm_idle_timer()
       _cancel_connect_timer()
       match _lifecycle_event_receiver
-      | let c: ClientLifecycleEventReceiver ref =>
+      | let c: ClientLifecycleEventReceiver[TCP] ref =>
         c._on_connected()
       end
     end
@@ -1789,10 +1800,10 @@ class TCPConnection
     Use this for every fd whose event was created via
     `pony_asio_event_create`. Raw, never-subscribed fds (e.g. an accepted fd
     rejected before an event is created) are closed directly with
-    `PonyTCP.close` on both platforms.
+    `close` on both platforms.
     """
     ifdef not windows then
-      PonyTCP.close(fd)
+      _tcp.close(fd)
     end
 
   fun ref _connecting_event_failed(event: AsioEventID, fd: U32) =>
@@ -1861,13 +1872,13 @@ class TCPConnection
 
   fun ref _connecting_callback() =>
     match \exhaustive\ _lifecycle_event_receiver
-    | let c: ClientLifecycleEventReceiver ref =>
+    | let c: ClientLifecycleEventReceiver[TCP] ref =>
       if _inflight_connections > 0 then
         c._on_connecting(_inflight_connections)
       else
         hard_close()
       end
-    | let s: ServerLifecycleEventReceiver ref =>
+    | let s: ServerLifecycleEventReceiver[TCP] ref =>
       _Unreachable()
     | None =>
       _Unreachable()
@@ -1877,7 +1888,7 @@ class TCPConnection
     (let errno: U32, let value: U32) = _OSSocket.get_so_error(fd)
     (errno == 0) and (value == 0)
 
-  fun ref _register_spawner(listener: TCPListenerActor) =>
+  fun ref _register_spawner(listener: TCPListenerActor[TCP]) =>
     if _spawned_by is None then
       if not _state.is_closed() then
         // We were connected by the time the spawner was registered,
@@ -1895,29 +1906,29 @@ class TCPConnection
 
   fun ref _finish_initialization() =>
     match \exhaustive\ _lifecycle_event_receiver
-    | let s: ServerLifecycleEventReceiver ref =>
+    | let s: ServerLifecycleEventReceiver[TCP] ref =>
       _complete_server_initialization(s)
-    | let c: ClientLifecycleEventReceiver ref =>
+    | let c: ClientLifecycleEventReceiver[TCP] ref =>
       _complete_client_initialization(c)
     | None =>
       _Unreachable()
     end
 
   fun ref _complete_client_initialization(
-    s: ClientLifecycleEventReceiver ref)
+    s: ClientLifecycleEventReceiver[TCP] ref)
   =>
     if _ssl is _TLSFailed then
-      _state = _Closed
+      _state = _Closed[TCP]
       s._on_connection_failure(ConnectionFailedSSL)
       return
     end
 
     match \exhaustive\ _enclosing
-    | let e: TCPConnectionActor ref =>
-      _state = _ClientConnecting
+    | let e: TCPConnectionActor[TCP] ref =>
+      _state = _ClientConnecting[TCP]
 
       _inflight_connections =
-        PonyTCP.connect(
+        _tcp.connect(
           e, _host, _port, _from, AsioEvent.read_write_oneshot()
           where ip_version = _ip_version)
       _had_inflight = _inflight_connections > 0
@@ -1930,29 +1941,29 @@ class TCPConnection
     end
 
   fun ref _complete_server_initialization(
-    s: ServerLifecycleEventReceiver ref)
+    s: ServerLifecycleEventReceiver[TCP] ref)
   =>
     if _ssl is _TLSFailed then
       // Raw fd: no ASIO event has been created for it yet (that happens below,
       // after this early return), so close it directly on every platform. Do
       // NOT route this through `_close_event_fd` — that defers to the readiness
       // backend on Windows, which would never close this never-subscribed fd.
-      PonyTCP.close(_fd)
+      _tcp.close(_fd)
       _fd = -1
-      _state = _Closed
+      _state = _Closed[TCP]
       s._on_start_failure(StartFailedSSL)
       return
     end
 
     match \exhaustive\ _enclosing
-    | let e: TCPConnectionActor ref =>
+    | let e: TCPConnectionActor[TCP] ref =>
       _event = PonyAsio.create_event(e, _fd)
       _set_readable()
       _set_writeable()
 
       match \exhaustive\ _ssl
       | let _: _TLS =>
-        _state = _SSLHandshaking
+        _state = _SSLHandshaking[TCP]
         // Flush any initial SSL data (usually no-op for servers).
         // _on_started() and _arm_idle_timer() deferred until
         // ssl_handshake_complete.
@@ -1960,7 +1971,7 @@ class TCPConnection
       | _TLSDisposed | _TLSFailed =>
         _Unreachable()
       | _NoTLS =>
-        _state = _Open
+        _state = _Open[TCP]
         _arm_idle_timer()
         s._on_started()
       end

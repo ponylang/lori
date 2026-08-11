@@ -95,7 +95,7 @@ Design: Discussion #219.
 
 ## Platform differences
 
-POSIX and Windows share one readiness-based I/O path: one-shot readiness events (epoll/kqueue; `ProcessSocketNotifications` on Windows), resubscribe, then a synchronous `PonyTCP.receive`/`sendv`. Windows uses this path because ponyc removed IOCP; the floor is Windows 11 / Windows Server 2022.
+POSIX and Windows share one readiness-based I/O path: one-shot readiness events (epoll/kqueue; `ProcessSocketNotifications` on Windows), resubscribe, then a synchronous `RuntimeBackend.receive`/`sendv`. Windows uses this path because ponyc removed IOCP; the floor is Windows 11 / Windows Server 2022.
 
 How many messages one subscription delivers is platform-specific too. kqueue arms read and write as separate one-shot filters and sends a message from each (ponyc's `kqueue.c`), so a single subscribed socket can deliver two readiness messages; epoll and Windows combine both directions into one (`epoll.c`, `sock_notify.c`). Code written on the assumption of one message per subscription is wrong wherever kqueue is the backend — macOS is the one CI covers, but the BSDs use it too.
 

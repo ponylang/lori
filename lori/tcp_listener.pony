@@ -1,13 +1,14 @@
 use "collections"
 use net = "net"
 
-class TCPListener
+class TCPListener[TCP: TCPBackend val = RuntimeBackend]
   """
   The TCP listener: opens a listening socket, runs the accept loop, and
   enforces the connection limit. A `TCPListenerActor` owns one and delegates to
   it. Create it with `TCPListener(auth, host, port, this)`, using
   `TCPListener.none()` as the field initializer before that.
   """
+  let _tcp: TCP = TCP
   let _host: String
   let _port: String
   let _limit: (MaxSpawn | None)
@@ -17,12 +18,12 @@ class TCPListener
   var _event: AsioEventID = AsioEvent.none()
   var _fd: U32 = -1
   var _listening: Bool = false
-  var _enclosing: (TCPListenerActor ref | None)
+  var _enclosing: (TCPListenerActor[TCP] ref | None)
 
   new create(auth: TCPListenAuth,
     host: String,
     port: String,
-    enclosing: TCPListenerActor ref,
+    enclosing: TCPListenerActor[TCP] ref,
     ip_version: IPVersion = DualStack,
     limit: (MaxSpawn | None) = DefaultMaxSpawn())
   =>
@@ -46,7 +47,7 @@ class TCPListener
 
   fun ref close() =>
     match \exhaustive\ _enclosing
-    | let e: TCPListenerActor ref =>
+    | let e: TCPListenerActor[TCP] ref =>
       // TODO: when in debug mode we should blow up if listener is closed
       if _listening then
         _listening = false
@@ -60,7 +61,7 @@ class TCPListener
           // accepted/rejected fds in _accept are raw (never subscribed), so
           // those closes stay cross-platform.
           ifdef not windows then
-            PonyTCP.close(_fd)
+            _tcp.close(_fd)
           end
           _fd = -1
           e._on_closed()
@@ -77,7 +78,7 @@ class TCPListener
     """
     recover
       let ip: net.NetAddress ref = net.NetAddress
-      PonyTCP.sockname(_fd, ip)
+      _tcp.sockname(_fd, ip)
       ip
     end
 
@@ -103,10 +104,10 @@ class TCPListener
 
   fun ref _accept() =>
     match \exhaustive\ _enclosing
-    | let e: TCPListenerActor ref =>
+    | let e: TCPListenerActor[TCP] ref =>
       if _listening then
         while not _at_connection_limit() do
-          var fd = PonyTCP.accept(_event)
+          var fd = _tcp.accept(_event)
 
           // 0: would block, -1: error
           if fd <= 0 then
@@ -120,7 +121,7 @@ class TCPListener
           else
             // Rejected before an event was created — raw fd, close on both
             // platforms.
-            PonyTCP.close(fd.u32())
+            _tcp.close(fd.u32())
           end
         end
 
@@ -149,8 +150,8 @@ class TCPListener
 
   fun ref _finish_initialization() =>
     match \exhaustive\ _enclosing
-    | let e: TCPListenerActor ref =>
-      _event = PonyTCP.listen(e, _host, _port where ip_version = _ip_version)
+    | let e: TCPListenerActor[TCP] ref =>
+      _event = _tcp.listen(e, _host, _port where ip_version = _ip_version)
       if not _event.is_null() then
         _fd = PonyAsio.event_fd(_event)
         _listening = true
