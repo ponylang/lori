@@ -566,8 +566,7 @@ actor \nodoc\ _TestSSLHandshakeFailurePlainClient
 
 class \nodoc\ iso _TestSSLHandshakeCompleteTransitionsToOpen is UnitTest
   """
-  Test that after a successful SSL handshake, the connection is in _Open
-  state: is_open() returns true and send() returns SendAccepted.
+  Test that after a successful SSL handshake, the connection accepts sends.
   """
   fun name(): String => "SSLHandshakeCompleteTransitionsToOpen"
 
@@ -586,7 +585,6 @@ class \nodoc\ iso _TestSSLHandshakeCompleteTransitionsToOpen is UnitTest
           .> set_server_verify(false)
       end
 
-    h.expect_action("is_open verified")
     h.expect_action("send accepted")
 
     let listener =
@@ -650,9 +648,6 @@ actor \nodoc\ _TestSSLTransitionToOpenClient
     _tcp_connection
 
   fun ref _on_connected() =>
-    _h.assert_true(_tcp_connection.is_open(), "is_open should be true")
-    _h.complete_action("is_open verified")
-
     match \exhaustive\ _tcp_connection.send("test")
     | SendAccepted =>
       _h.complete_action("send accepted")
@@ -1183,10 +1178,6 @@ class \nodoc\ iso _TestSSLCloseDuringReceive is UnitTest
   keeps delivering. close() moves to `_Closing`, which still receives and
   does not dispose the SSL session, so the rest of the decrypted records from
   the same read are delivered.
-
-  This is the other side of `_TestSSLHardCloseDuringReceive`, and it is what
-  makes `is_live()` the right predicate to bound `_read()`'s loop:
-  `is_open()` and `is_closed()` both stop delivery here, and both are wrong.
   """
   fun name(): String => "SSLCloseDuringReceive"
 

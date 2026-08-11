@@ -108,16 +108,17 @@ trait _ConnectionState
     Set or clear the idle timeout; states differ in whether they arm it.
     """
 
+  fun ref fire_idle_timeout(conn: TCPConnection ref)
+    """
+    The idle timer fired. Dispatch the callback and re-arm if this state
+    should keep the timer running.
+    """
+
   fun ref set_timer(conn: TCPConnection ref,
     duration: TimerDuration)
     : (TimerToken | SetTimerError)
     """
     Start a user timer, or return why it can't be started in this state.
-    """
-
-  fun is_open(): Bool
-    """
-    The connection is open for application I/O (`_Open`/`_TLSUpgrading`).
     """
 
   fun is_closed(): Bool
@@ -128,13 +129,6 @@ trait _ConnectionState
   fun sends_allowed(): Bool
     """
     Sends are accepted in this state.
-    """
-
-  fun is_live(): Bool
-    """
-    Has a socket fd it can still do I/O on -- from the handshake through a
-    graceful close still draining, but not before the fd exists or after a hard
-    close tears it down. See the lifecycle diagram in AGENTS.md.
     """
 
   fun receive(event: AsioEventID,
@@ -230,15 +224,16 @@ class _ConnectionNone is _ConnectionState
   =>
     conn._store_idle_timeout(duration)
 
+  fun ref fire_idle_timeout(conn: TCPConnection ref) =>
+    conn._dispatch_idle_timeout()
+
   fun ref set_timer(conn: TCPConnection ref,
     duration: TimerDuration): (TimerToken | SetTimerError)
   =>
     SetTimerNotOpen
 
-  fun is_open(): Bool => false
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
-  fun is_live(): Bool => false
 
   fun receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
@@ -349,15 +344,16 @@ class _ClientConnecting is _ConnectionState
   =>
     conn._store_idle_timeout(duration)
 
+  fun ref fire_idle_timeout(conn: TCPConnection ref) =>
+    conn._dispatch_idle_timeout()
+
   fun ref set_timer(conn: TCPConnection ref,
     duration: TimerDuration): (TimerToken | SetTimerError)
   =>
     SetTimerNotOpen
 
-  fun is_open(): Bool => false
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
-  fun is_live(): Bool => false
 
   fun receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
@@ -394,6 +390,7 @@ class _Open is _ConnectionState
 
   fun ref close(conn: TCPConnection ref) =>
     conn._set_state(_Closing)
+    conn._cancel_idle_timer()
     conn._mark_close_notify_pending()
     conn._initiate_shutdown()
 
@@ -457,15 +454,17 @@ class _Open is _ConnectionState
   =>
     conn._do_idle_timeout(duration)
 
+  fun ref fire_idle_timeout(conn: TCPConnection ref) =>
+    conn._dispatch_idle_timeout()
+    conn._rearm_idle_timer_if_configured()
+
   fun ref set_timer(conn: TCPConnection ref,
     duration: TimerDuration): (TimerToken | SetTimerError)
   =>
     conn._do_set_timer(duration)
 
-  fun is_open(): Bool => true
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => true
-  fun is_live(): Bool => true
 
   fun receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
@@ -567,15 +566,16 @@ class _Closing is _ConnectionState
   =>
     conn._store_idle_timeout(duration)
 
+  fun ref fire_idle_timeout(conn: TCPConnection ref) =>
+    conn._dispatch_idle_timeout()
+
   fun ref set_timer(conn: TCPConnection ref,
     duration: TimerDuration): (TimerToken | SetTimerError)
   =>
     SetTimerNotOpen
 
-  fun is_open(): Bool => false
   fun is_closed(): Bool => true
   fun sends_allowed(): Bool => false
-  fun is_live(): Bool => true
 
   fun receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
@@ -680,15 +680,16 @@ class _UnconnectedClosing is _ConnectionState
   =>
     conn._store_idle_timeout(duration)
 
+  fun ref fire_idle_timeout(conn: TCPConnection ref) =>
+    conn._dispatch_idle_timeout()
+
   fun ref set_timer(conn: TCPConnection ref,
     duration: TimerDuration): (TimerToken | SetTimerError)
   =>
     SetTimerNotOpen
 
-  fun is_open(): Bool => false
   fun is_closed(): Bool => true
   fun sends_allowed(): Bool => false
-  fun is_live(): Bool => false
 
   fun receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
@@ -784,22 +785,22 @@ class _Closed is _ConnectionState
   =>
     conn._store_idle_timeout(duration)
 
+  fun ref fire_idle_timeout(conn: TCPConnection ref) =>
+    conn._dispatch_idle_timeout()
+
   fun ref set_timer(conn: TCPConnection ref,
     duration: TimerDuration): (TimerToken | SetTimerError)
   =>
     SetTimerNotOpen
 
-  fun is_open(): Bool => false
   fun is_closed(): Bool => true
   fun sends_allowed(): Bool => false
-  fun is_live(): Bool => false
 
   fun receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
     : (SocketResult, USize)
   =>
-    _Unreachable()
     (SocketResultError, 0)
 
 class _SSLHandshaking is _ConnectionState
@@ -902,15 +903,16 @@ class _SSLHandshaking is _ConnectionState
   =>
     conn._store_idle_timeout(duration)
 
+  fun ref fire_idle_timeout(conn: TCPConnection ref) =>
+    conn._dispatch_idle_timeout()
+
   fun ref set_timer(conn: TCPConnection ref,
     duration: TimerDuration): (TimerToken | SetTimerError)
   =>
     SetTimerNotOpen
 
-  fun is_open(): Bool => false
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
-  fun is_live(): Bool => true
 
   fun receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
@@ -1015,15 +1017,17 @@ class _TLSUpgrading is _ConnectionState
   =>
     conn._do_idle_timeout(duration)
 
+  fun ref fire_idle_timeout(conn: TCPConnection ref) =>
+    conn._dispatch_idle_timeout()
+    conn._rearm_idle_timer_if_configured()
+
   fun ref set_timer(conn: TCPConnection ref,
     duration: TimerDuration): (TimerToken | SetTimerError)
   =>
     conn._do_set_timer(duration)
 
-  fun is_open(): Bool => true
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
-  fun is_live(): Bool => true
 
   fun receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
