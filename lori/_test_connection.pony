@@ -513,8 +513,7 @@ class \nodoc\ iso _TestHardCloseAfterFramedReceive is UnitTest
   With `buffer_until` framing, `_read`'s inner loop hands over one frame at a
   time from a single buffered read. A `hard_close()` in the first frame's
   `_on_received` transitions the connection to `_Closed`; the loop must stop
-  rather than deliver the buffered second frame after `_on_closed` fired. The
-  close is unmuted, so `is_live()` — not `_muted` — is what has to stop it.
+  rather than deliver the buffered second frame after `_on_closed` fired.
   The delivery count is checked in a self-behavior that runs after `_read`
   returns, so a regression fails with a clear assertion, not a process exit.
 

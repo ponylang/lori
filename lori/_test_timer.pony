@@ -950,7 +950,7 @@ actor \nodoc\ _TestTimerSetDuringClosingServer
 
   fun ref _on_started() =>
     _tcp_connection.close()
-    // Now in _Closing — is_open() returns false
+    // Now in _Closing
     match \exhaustive\ MakeTimerDuration(1_000)
     | let d: TimerDuration =>
       match \exhaustive\ _tcp_connection.set_timer(d)
@@ -1044,7 +1044,7 @@ actor \nodoc\ _TestSetTimerNotOpenSSLClient
           this
           where connection_timeout = ct)
       // Try to set a timer before _finish_initialization runs.
-      // The state is still _ConnectionNone (is_open() is false).
+      // The state is still _ConnectionNone.
       match \exhaustive\ MakeTimerDuration(1_000)
       | let d: TimerDuration =>
         match \exhaustive\ _tcp_connection.set_timer(d)
@@ -1233,7 +1233,7 @@ actor \nodoc\ _TestSetTimerNotOpenSSLServerConn
         this,
         this)
     // Try to set a timer before _finish_initialization runs.
-    // The state is still _ConnectionNone (is_open() is false).
+    // The state is still _ConnectionNone.
     match \exhaustive\ MakeTimerDuration(1_000)
     | let d: TimerDuration =>
       match \exhaustive\ _tcp_connection.set_timer(d)

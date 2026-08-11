@@ -332,9 +332,7 @@ class TCPConnection
     is `None`, the idle timeout is disabled.
 
     The timer re-arms after each firing while the connection is open.
-    `hard_close()` cancels it. A graceful `close()` does not, so
-    `_on_idle_timeout` can still arrive on a closing connection that is moving
-    bytes.
+    Both `hard_close()` and `close()` cancel it.
 
     Can be called before the connection is established — the value is
     stored and the timer starts when the connection is ready.
@@ -657,6 +655,7 @@ class TCPConnection
     PonyAsio.unsubscribe(_event)
     _set_unreadable()
     _set_unwriteable()
+    _bytes_in_read_buffer = 0
     _throttled = false
     _close_notify_pending = false
 
@@ -816,9 +815,6 @@ class TCPConnection
     end
 
     _spawner_notification()
-
-  fun is_open(): Bool =>
-    _state.is_open()
 
   fun is_closed(): Bool =>
     """
@@ -996,10 +992,6 @@ class TCPConnection
     `_close_notify_then_shutdown()` sends the alert when the write queue
     drains, then calls back into this method for FIN.
     """
-    if not _state.is_live() then
-      return
-    end
-
     if _shutdown
       or (_inflight_connections > 0)
       or _has_pending_writes()
@@ -1022,11 +1014,9 @@ class TCPConnection
     flush are separate steps because `_do_send` records a send's completion
     offset between them; `_send_pending_writes()` is the flush.
 
-    Uses `not is_closed()` rather than `is_open()` because
-    `_ssl_enqueue_sends()` calls `_enqueue()` during `_SSLHandshaking` (where
-    `is_open() = false`) to push handshake protocol data. The wider guard
-    allows handshake data through while still blocking enqueue after the
-    connection closes.
+    `_ssl_enqueue_sends()` calls this during `_SSLHandshaking` to push
+    handshake protocol data, so the guard is `is_closed()` — not
+    `sends_allowed()`, which is false during the handshake.
     """
     if data.size() == 0 then return end
     if not is_closed() then
@@ -1151,8 +1141,8 @@ class TCPConnection
     The next message for the application, or `None` when there isn't one.
 
     Returns a value; it never calls the application. That is what keeps `mute`
-    and `is_live` in `_read()`'s loop and out of here — code that hands over
-    control needs those guards, code that hands back a value does not.
+    in `_read()`'s loop and out of here — code that hands over control needs
+    that guard, code that hands back a value does not.
 
     For an SSL connection the messages come from the SSL session, which frames
     them itself. Otherwise they are chopped off the read buffer.
@@ -1161,9 +1151,6 @@ class TCPConnection
     | let tls: _TLS =>
       tls.session.read(_user_buffer_until())
     | _TLSDisposed | _TLSFailed =>
-      // `_read()`'s loop stops on `is_live()` before it gets here, and a
-      // connection whose session never existed never opened.
-      _Unreachable()
       None
     | _NoTLS =>
       if not _there_is_buffered_read_data() then
@@ -1233,22 +1220,6 @@ class TCPConnection
         var total_bytes_read: USize = 0
 
         while _readable do
-          // `_on_received` can mute us or hard_close us, and either takes
-          // effect before the next message is taken or the socket is touched.
-          // The `_ssl_flush_sends()` below writes protocol output, which
-          // carries no send token, so `_on_throttled` is the callback it can
-          // run. That can do the same, so both controls are re-checked after
-          // it.
-          //
-          // `is_live()` is about the socket: `_fill()` must not read an fd
-          // a `hard_close()` has released. The SSL session guards itself — a
-          // `hard_close()` moves `_ssl` to `_TLSDisposed`, which no match
-          // binds. A graceful `close()` stays live, so reading
-          // continues there to pick up the peer's FIN.
-          if not _state.is_live() then
-            return
-          end
-
           if _muted then
             // Mute stops reading. It does not hold the write side, so protocol
             // output `ssl.read()` queued still goes out; a mute lasts as long
@@ -1274,7 +1245,7 @@ class TCPConnection
               hard_close()
             else
               close()
-              if _state.is_live() then
+              if not PonyAsio.get_disposable(_event) then
                 _set_unreadable()
                 PonyAsio.resubscribe_read(_event)
               end
@@ -1293,10 +1264,7 @@ class TCPConnection
             // peer waiting on the output would otherwise wedge. No-op on a
             // plaintext connection.
             _ssl_flush_sends()
-            if (not _state.is_live()) or _muted then
-              // The flush can hard_close on a write error, and it can raise
-              // backpressure, so `_on_throttled` runs here and the application
-              // can hard_close or mute from it.
+            if _muted then
               return
             end
 
@@ -1519,21 +1487,18 @@ class TCPConnection
     end
 
   fun ref _fire_idle_timeout() =>
-    """
-    Dispatch _on_idle_timeout to the lifecycle event receiver, then re-arm
-    the timer if the connection is still open and the timeout is still
-    configured.
+    _state.fire_idle_timeout(this)
 
-    Not the only thing that arms it: `_reset_idle_timer()` re-arms an
-    already-fired timer on any I/O, in any state.
-    """
+  fun ref _dispatch_idle_timeout() =>
     match \exhaustive\ _lifecycle_event_receiver
     | let s: EitherLifecycleEventReceiver ref =>
       s._on_idle_timeout()
     | None =>
       _Unreachable()
     end
-    if is_open() and (_idle_timeout_nsec > 0) then
+
+  fun ref _rearm_idle_timer_if_configured() =>
+    if _idle_timeout_nsec > 0 then
       _reset_idle_timer()
     end
 
@@ -1762,11 +1727,8 @@ class TCPConnection
     // Mirror for the write side: a readable event drops the write interest, and
     // a read that mutes or yields before EAGAIN never re-arms it, so a
     // backpressured write wedges. Re-arm it, guarded by `_throttled`.
-    // `is_live()` (was `is_open()`) covers `_Closing`, which now drains queued
-    // writes before it closes. Do not weaken; see #294, #296.
-    if _throttled and _state.is_live()
-      and not PonyAsio.get_disposable(_event)
-    then
+    // Do not weaken; see #294, #296.
+    if _throttled and not PonyAsio.get_disposable(_event) then
       PonyAsio.resubscribe_write(_event)
     end
 
@@ -1808,14 +1770,6 @@ class TCPConnection
       | let c: ClientLifecycleEventReceiver ref =>
         c._on_connected()
       end
-    end
-
-    // The flush above can hard_close on a write error, and `_on_connected` can
-    // hard_close from the application. If either did, the fd is gone and there
-    // is nothing to read or drain. A graceful `close()` stays live and falls
-    // through, so its drain and FIN read still happen.
-    if not _state.is_live() then
-      return
     end
 
     _read()
@@ -2011,15 +1965,6 @@ class TCPConnection
         s._on_started()
       end
 
-      // The flush above can hard_close on a write error, and `_on_started` can
-      // hard_close from the application. If either did, the fd is gone. A
-      // graceful `close()` stays live and falls through.
-      if not _state.is_live() then
-        return
-      end
-
-      // Queue up reads as we are now connected
-      // But might have been in a race with ASIO
       _queue_read()
     | None =>
       _Unreachable()
