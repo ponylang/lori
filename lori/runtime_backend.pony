@@ -40,7 +40,7 @@ use @pony_os_writev_max[I32]()
 
 use net = "net"
 
-primitive PonyTCP
+primitive RuntimeBackend is TCPBackend
   """
   Wrappers for the runtime's `pony_os_*` TCP functions -- connect, listen,
   accept, receive, sendv, keepalive, and socket teardown.

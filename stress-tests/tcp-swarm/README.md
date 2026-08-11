@@ -20,7 +20,7 @@ oracle on top. Each flag is tied to a distinct code path in `tcp_connection.pony
 - `--write-shape` (`write` | `writev`) — a single-buffer `send(ByteSeq)` vs a
   vectored `send(ByteSeqIter)`.
 - `--writev-chunks` (`N`, writev only) — how many buffers one vectored `send`
-  splits its payload into. Above `PonyTCP.writev_max()` (IOV_MAX on POSIX, 1 on
+  splits its payload into. Above `RuntimeBackend.writev_max()` (IOV_MAX on POSIX, 1 on
   Windows) a single `send` queues more buffers than one `writev` syscall can carry,
   so `_send_pending_writes()` takes its multi-batch path — one `writev_max`-sized
   batch per pass.

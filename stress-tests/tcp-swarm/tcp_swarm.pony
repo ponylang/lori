@@ -16,7 +16,7 @@ Each swarm dimension is tied to a distinct code path in lori's
 * `--write-shape` (`write` | `writev`) -- a single-buffer `send(ByteSeq)` vs a
   vectored `send(ByteSeqIter)`.
 * `--writev-chunks` (N, writev only) -- how many buffers a single vectored
-  `send` splits its payload into. Above `PonyTCP.writev_max()` (IOV_MAX on
+  `send` splits its payload into. Above `writev_max()` (IOV_MAX on
   POSIX, 1 on Windows) lori's `_send_pending_writes()` takes its multi-batch
   path, sending one `writev_max`-sized batch per pass.
 * `--expect` (0 = off, N = frame size) -- fixed-size framed reads via

@@ -1,4 +1,5 @@
-trait tag TCPListenerActor is AsioEventNotify
+trait tag TCPListenerActor[TCP: TCPBackend val = RuntimeBackend]
+  is AsioEventNotify
   """
   The actor trait a listener actor implements. Provide `_listener()` returning
   the `TCPListener` the actor owns; the behaviors here deliver ASIO events to
@@ -6,9 +7,9 @@ trait tag TCPListenerActor is AsioEventNotify
   socket, and the listen lifecycle callbacks (`_on_listening`,
   `_on_listen_failure`, `_on_closed`) as needed.
   """
-  fun ref _listener(): TCPListener
+  fun ref _listener(): TCPListener[TCP]
 
-  fun ref _on_accept(fd: U32): TCPConnectionActor ?
+  fun ref _on_accept(fd: U32): TCPConnectionActor[TCP] ?
     """
     Called when a connection is accepted
     """

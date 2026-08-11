@@ -337,7 +337,7 @@ with the same range as `IdleTimeout` (1 to 18,446,744,073,709 milliseconds).
 The timer is a one-shot: it either fires and fails the connection, or is
 cancelled when the connection becomes ready.
 
-The timer is armed after `PonyTCP.connect` returns, so it does not cover DNS
+The timer is armed after connect returns, so it does not cover DNS
 resolution time. If DNS itself blocks (common with unresponsive nameservers),
 the total wait will exceed the configured timeout by the DNS resolution time.
 
