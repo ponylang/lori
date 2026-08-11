@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Changed
 
+- Remove is_open() from TCPConnection ([PR #365](https://github.com/ponylang/lori/pull/365))
 
 ## [0.18.1] - 2026-08-06
 
