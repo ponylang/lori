@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 
+- Fix resource leak when disposing a server connection during initialization ([PR #368](https://github.com/ponylang/lori/pull/368))
 
 ### Added
 
