@@ -1788,6 +1788,14 @@ class TCPConnection[TCP: TCPBackend val = RuntimeBackend]
       _send_pending_writes()
     end
 
+  fun ref _close_raw_fd() =>
+    """
+    Close the connection's fd directly, bypassing `_close_event_fd`. For use
+    when no ASIO event was ever created for this fd.
+    """
+    _tcp.close(_fd)
+    _fd = -1
+
   fun ref _close_event_fd(fd: U32) =>
     """
     Close the fd backing a subscribed event. On POSIX the stdlib owns the
@@ -1905,6 +1913,15 @@ class TCPConnection[TCP: TCPBackend val = RuntimeBackend]
     end
 
   fun ref _finish_initialization() =>
+    // _finish_initialization is a self→self message queued during the
+    // constructor. dispose() comes from an external actor. Different senders
+    // have no ordering guarantee, so dispose() can race ahead and transition
+    // to _Closed via _ConnectionNone.hard_close(). When that happens, the fd
+    // and TLS session are already cleaned up — skip initialization.
+    match _state
+    | let _: _Closed[TCP] => return
+    end
+
     match \exhaustive\ _lifecycle_event_receiver
     | let s: ServerLifecycleEventReceiver[TCP] ref =>
       _complete_server_initialization(s)

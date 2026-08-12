@@ -632,3 +632,848 @@ actor \nodoc\ _TestHardCloseAfterFramedReceiveServer
     else
       _h.fail("second frame delivered after hard_close()")
     end
+
+// ===========================================================================
+// Fake-backend receive tests (no real sockets for I/O)
+// ===========================================================================
+class \nodoc\ iso _TestFakeRecvError is UnitTest
+  """
+  receive returns error. Verify: _on_closed fires (hard close from receive
+  error). _on_received does not fire.
+  """
+  fun name(): String => "FakeRecvError"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("on_closed")
+
+    let a = _TestFakeRecvErrorActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeRecvErrorActor
+  is (TCPConnectionActor[_FBSendOkRecvError]
+    & ServerLifecycleEventReceiver[_FBSendOkRecvError])
+  var _tcp_connection: TCPConnection[_FBSendOkRecvError] =
+    TCPConnection[_FBSendOkRecvError].none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    try
+      let fd = _FakeServerFd()?
+      _tcp_connection =
+        TCPConnection[_FBSendOkRecvError].server(
+          TCPServerAuth(_h.env.root),
+          fd,
+          this,
+          this)
+    else
+      _h.fail("could not allocate socket")
+      _h.complete(false)
+    end
+
+  fun ref _connection(): TCPConnection[_FBSendOkRecvError] =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    _h.fail("_on_received should not fire when receive errors")
+    _h.complete(false)
+    KeepReading
+
+  fun ref _on_closed() =>
+    _h.complete_action("on_closed")
+
+  be dispose() =>
+    _tcp_connection.hard_close()
+
+class \nodoc\ iso _TestFakeRecvRetry is UnitTest
+  """
+  receive returns retry. Verify: _on_received does not fire. The connection
+  waits for the next readable event.
+  """
+  fun name(): String => "FakeRecvRetry"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("started")
+
+    let a = _TestFakeRecvRetryActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeRecvRetryActor
+  is (TCPConnectionActor[_FBSendOkRecvRetry]
+    & ServerLifecycleEventReceiver[_FBSendOkRecvRetry])
+  var _tcp_connection: TCPConnection[_FBSendOkRecvRetry] =
+    TCPConnection[_FBSendOkRecvRetry].none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    try
+      let fd = _FakeServerFd()?
+      _tcp_connection =
+        TCPConnection[_FBSendOkRecvRetry].server(
+          TCPServerAuth(_h.env.root),
+          fd,
+          this,
+          this)
+    else
+      _h.fail("could not allocate socket")
+      _h.complete(false)
+    end
+
+  fun ref _connection(): TCPConnection[_FBSendOkRecvRetry] =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    _tcp_connection.mute()
+    _h.complete_action("started")
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    _h.fail("_on_received should not fire when receive retries")
+    _h.complete(false)
+    KeepReading
+
+  be dispose() =>
+    _tcp_connection.hard_close()
+
+class \nodoc\ iso _TestFakeRecvData is UnitTest
+  """
+  receive delivers "hello" on the first call, then retries. Verify:
+  _on_received fires with "hello".
+  """
+  fun name(): String => "FakeRecvData"
+
+  fun apply(h: TestHelper) =>
+    @lori_test_set_recv_hello_step(0)
+
+    h.expect_action("received_hello")
+
+    let a = _TestFakeRecvDataActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeRecvDataActor
+  is (TCPConnectionActor[_FBSendOkRecvHello]
+    & ServerLifecycleEventReceiver[_FBSendOkRecvHello])
+  var _tcp_connection: TCPConnection[_FBSendOkRecvHello] =
+    TCPConnection[_FBSendOkRecvHello].none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    try
+      let fd = _FakeServerFd()?
+      _tcp_connection =
+        TCPConnection[_FBSendOkRecvHello].server(
+          TCPServerAuth(_h.env.root),
+          fd,
+          this,
+          this)
+    else
+      _h.fail("could not allocate socket")
+      _h.complete(false)
+    end
+
+  fun ref _connection(): TCPConnection[_FBSendOkRecvHello] =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    let s = String.from_iso_array(consume data)
+    if s == "hello" then
+      _tcp_connection.mute()
+      _h.complete_action("received_hello")
+    else
+      _h.fail("expected 'hello', got '" + consume s + "'")
+      _h.complete(false)
+    end
+    KeepReading
+
+  be dispose() =>
+    _tcp_connection.hard_close()
+
+class \nodoc\ iso _TestFakeRecvFramed is UnitTest
+  """
+  receive delivers 10 bytes, buffer_until(4). Verify: _on_received fires
+  twice with 4 bytes each.
+  """
+  fun name(): String => "FakeRecvFramed"
+
+  fun apply(h: TestHelper) =>
+    @lori_test_set_recv_10_step(0)
+
+    h.expect_action("received_two_frames")
+
+    let a = _TestFakeRecvFramedActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeRecvFramedActor
+  is (TCPConnectionActor[_FBSendOkRecv10]
+    & ServerLifecycleEventReceiver[_FBSendOkRecv10])
+  var _tcp_connection: TCPConnection[_FBSendOkRecv10] =
+    TCPConnection[_FBSendOkRecv10].none()
+  let _h: TestHelper
+  var _received_count: USize = 0
+
+  new create(h: TestHelper) =>
+    _h = h
+    try
+      let fd = _FakeServerFd()?
+      _tcp_connection =
+        TCPConnection[_FBSendOkRecv10].server(
+          TCPServerAuth(_h.env.root),
+          fd,
+          this,
+          this)
+      match MakeBufferSize(4)
+      | let b: BufferSize => _tcp_connection.buffer_until(b)
+      else _Unreachable()
+      end
+    else
+      _h.fail("could not allocate socket")
+      _h.complete(false)
+    end
+
+  fun ref _connection(): TCPConnection[_FBSendOkRecv10] =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    _received_count = _received_count + 1
+    _h.assert_eq[USize](
+      4,
+      data.size(),
+      "frame " + _received_count.string() + " should be 4 bytes")
+    if _received_count == 2 then
+      _tcp_connection.mute()
+      _h.complete_action("received_two_frames")
+    end
+    KeepReading
+
+  be dispose() =>
+    _tcp_connection.hard_close()
+
+class \nodoc\ iso _TestFakeMute is UnitTest
+  """
+  mute() before read loop runs prevents _on_received from firing. unmute()
+  resumes delivery via _read_again.
+  """
+  fun name(): String => "FakeMute"
+
+  fun apply(h: TestHelper) =>
+    @lori_test_set_recv_mute_step(0)
+
+    h.expect_action("received_after_unmute")
+
+    let a = _TestFakeMuteActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeMuteActor
+  is (TCPConnectionActor[_FBSendOkRecvHelloMute]
+    & ServerLifecycleEventReceiver[_FBSendOkRecvHelloMute])
+  var _tcp_connection: TCPConnection[_FBSendOkRecvHelloMute] =
+    TCPConnection[_FBSendOkRecvHelloMute].none()
+  let _h: TestHelper
+  var _unmuted: Bool = false
+
+  new create(h: TestHelper) =>
+    _h = h
+    try
+      let fd = _FakeServerFd()?
+      _tcp_connection =
+        TCPConnection[_FBSendOkRecvHelloMute].server(
+          TCPServerAuth(_h.env.root),
+          fd,
+          this,
+          this)
+    else
+      _h.fail("could not allocate socket")
+      _h.complete(false)
+    end
+
+  fun ref _connection(): TCPConnection[_FBSendOkRecvHelloMute] =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    _tcp_connection.mute()
+    _check_muted()
+
+  be _check_muted() =>
+    _unmuted = true
+    _tcp_connection.unmute()
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    if not _unmuted then
+      _h.fail("_on_received fired while muted")
+      _h.complete(false)
+    else
+      _tcp_connection.mute()
+      _h.complete_action("received_after_unmute")
+    end
+    KeepReading
+
+  be dispose() =>
+    _tcp_connection.hard_close()
+
+class \nodoc\ iso _TestFakeYieldReading is UnitTest
+  """
+  _on_received returns YieldReading. Verify: no further delivery until
+  _read_again runs in a subsequent behavior turn.
+  """
+  fun name(): String => "FakeYieldReading"
+
+  fun apply(h: TestHelper) =>
+    @lori_test_set_recv_yield_step(0)
+
+    h.expect_action("yielded_then_resumed")
+
+    let a = _TestFakeYieldReadingActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeYieldReadingActor
+  is (TCPConnectionActor[_FBSendOkRecv10Yield]
+    & ServerLifecycleEventReceiver[_FBSendOkRecv10Yield])
+  var _tcp_connection: TCPConnection[_FBSendOkRecv10Yield] =
+    TCPConnection[_FBSendOkRecv10Yield].none()
+  let _h: TestHelper
+  var _received_count: USize = 0
+  var _yielded: Bool = false
+
+  new create(h: TestHelper) =>
+    _h = h
+    try
+      let fd = _FakeServerFd()?
+      _tcp_connection =
+        TCPConnection[_FBSendOkRecv10Yield].server(
+          TCPServerAuth(_h.env.root),
+          fd,
+          this,
+          this)
+      match MakeBufferSize(5)
+      | let b: BufferSize => _tcp_connection.buffer_until(b)
+      else _Unreachable()
+      end
+    else
+      _h.fail("could not allocate socket")
+      _h.complete(false)
+    end
+
+  fun ref _connection(): TCPConnection[_FBSendOkRecv10Yield] =>
+    _tcp_connection
+
+  fun ref _on_received(data: Array[U8] iso): ReadAction =>
+    _received_count = _received_count + 1
+    if _received_count == 1 then
+      _yielded = true
+      YieldReading
+    else
+      if _yielded then
+        _tcp_connection.mute()
+        _h.complete_action("yielded_then_resumed")
+      else
+        _h.fail("second delivery without yielding first")
+        _h.complete(false)
+      end
+      KeepReading
+    end
+
+  be dispose() =>
+    _tcp_connection.hard_close()
+
+// ---------------------------------------------------------------------------
+// Client connection fake-backend tests
+// ---------------------------------------------------------------------------
+class \nodoc\ iso _TestFakeConnectDNSFailure is UnitTest
+  """
+  connect returns 0 (no addresses resolved). _on_connection_failure fires
+  with ConnectionFailedDNS.
+  """
+  fun name(): String => "FakeConnectDNSFailure"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("connection_failed_dns")
+
+    let a = _TestFakeConnectDNSFailureActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeConnectDNSFailureActor
+  is (TCPConnectionActor[_FBConnect0]
+    & ClientLifecycleEventReceiver[_FBConnect0])
+  var _tcp_connection: TCPConnection[_FBConnect0] =
+    TCPConnection[_FBConnect0].none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection[_FBConnect0].client(
+        TCPConnectAuth(_h.env.root),
+        "fake-host",
+        "12345",
+        "",
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection[_FBConnect0] =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _h.fail("_on_connected should not fire for DNS failure")
+    _h.complete(false)
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    match reason
+    | ConnectionFailedDNS =>
+      _h.complete_action("connection_failed_dns")
+    else
+      _h.fail("expected ConnectionFailedDNS")
+      _h.complete(false)
+    end
+
+class \nodoc\ iso _TestFakeConnectInflight is UnitTest
+  """
+  connect returns 3 (three inflight attempts). _on_connecting fires with
+  count 3.
+  """
+  fun name(): String => "FakeConnectInflight"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("on_connecting_3")
+
+    let a = _TestFakeConnectInflightActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeConnectInflightActor
+  is (TCPConnectionActor[_FBConnect3]
+    & ClientLifecycleEventReceiver[_FBConnect3])
+  var _tcp_connection: TCPConnection[_FBConnect3] =
+    TCPConnection[_FBConnect3].none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection[_FBConnect3].client(
+        TCPConnectAuth(_h.env.root),
+        "fake-host",
+        "12345",
+        "",
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection[_FBConnect3] =>
+    _tcp_connection
+
+  fun ref _on_connecting(inflight_connections: U32) =>
+    if inflight_connections == 3 then
+      _h.complete_action("on_connecting_3")
+    else
+      _h.fail("expected inflight_connections == 3, got " +
+        inflight_connections.string())
+      _h.complete(false)
+    end
+
+// ---------------------------------------------------------------------------
+// State machine fake-backend tests
+// ---------------------------------------------------------------------------
+class \nodoc\ iso _TestFakeSendWhileConnecting is UnitTest
+  """
+  send() in _ClientConnecting returns SendErrorNotConnected.
+  """
+  fun name(): String => "FakeSendWhileConnecting"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("send_rejected")
+
+    let a = _TestFakeSendWhileConnectingActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeSendWhileConnectingActor
+  is (TCPConnectionActor[_FBConnect1]
+    & ClientLifecycleEventReceiver[_FBConnect1])
+  var _tcp_connection: TCPConnection[_FBConnect1] =
+    TCPConnection[_FBConnect1].none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection[_FBConnect1].client(
+        TCPConnectAuth(_h.env.root),
+        "fake-host",
+        "12345",
+        "",
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection[_FBConnect1] =>
+    _tcp_connection
+
+  fun ref _on_connecting(inflight_connections: U32) =>
+    match \exhaustive\ _tcp_connection.send("aaa")
+    | SendAccepted =>
+      _h.fail("send should not succeed while connecting")
+      _h.complete(false)
+    | SendErrorNotConnected =>
+      _h.complete_action("send_rejected")
+    | SendErrorNotWriteable =>
+      _h.fail("send returned SendErrorNotWriteable")
+      _h.complete(false)
+    end
+
+class \nodoc\ iso _TestFakeSendWhileUnconnectedClosing is UnitTest
+  """
+  send() in _UnconnectedClosing returns SendErrorNotConnected.
+  """
+  fun name(): String => "FakeSendWhileUnconnectedClosing"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("send_rejected")
+
+    let a = _TestFakeSendWhileUnconnectedClosingActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeSendWhileUnconnectedClosingActor
+  is (TCPConnectionActor[_FBConnect1]
+    & ClientLifecycleEventReceiver[_FBConnect1])
+  var _tcp_connection: TCPConnection[_FBConnect1] =
+    TCPConnection[_FBConnect1].none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection[_FBConnect1].client(
+        TCPConnectAuth(_h.env.root),
+        "fake-host",
+        "12345",
+        "",
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection[_FBConnect1] =>
+    _tcp_connection
+
+  fun ref _on_connecting(inflight_connections: U32) =>
+    _tcp_connection.close()
+    match \exhaustive\ _tcp_connection.send("aaa")
+    | SendAccepted =>
+      _h.fail("send should not succeed in _UnconnectedClosing")
+      _h.complete(false)
+    | SendErrorNotConnected =>
+      _h.complete_action("send_rejected")
+    | SendErrorNotWriteable =>
+      _h.fail("send returned SendErrorNotWriteable")
+      _h.complete(false)
+    end
+
+class \nodoc\ iso _TestFakeUnconnectedClosingDrain is UnitTest
+  """
+  close() during connecting enters _UnconnectedClosing. Two foreign events
+  drain the inflight count to 0, triggering _on_connection_failure.
+  """
+  fun name(): String => "FakeUnconnectedClosingDrain"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("connection_failed")
+
+    let a = _TestFakeUnconnectedClosingDrainActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeUnconnectedClosingDrainActor
+  is (TCPConnectionActor[_FBConnect2]
+    & ClientLifecycleEventReceiver[_FBConnect2])
+  var _tcp_connection: TCPConnection[_FBConnect2] =
+    TCPConnection[_FBConnect2].none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection[_FBConnect2].client(
+        TCPConnectAuth(_h.env.root),
+        "fake-host",
+        "12345",
+        "",
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection[_FBConnect2] =>
+    _tcp_connection
+
+  fun ref _on_connecting(inflight_connections: U32) =>
+    _tcp_connection.close()
+    _deliver_stragglers()
+
+  be _deliver_stragglers() =>
+    try
+      let fd1 = @socket(I32(2), I32(1), I32(0))
+      if fd1 < 0 then error end
+      let ev1 = PonyAsio.create_event(this, fd1.u32())
+      _tcp_connection._event_notify(ev1, AsioEvent.read_write())
+
+      let fd2 = @socket(I32(2), I32(1), I32(0))
+      if fd2 < 0 then error end
+      let ev2 = PonyAsio.create_event(this, fd2.u32())
+      _tcp_connection._event_notify(ev2, AsioEvent.read_write())
+    else
+      _h.fail("could not allocate straggler sockets")
+      _h.complete(false)
+    end
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.complete_action("connection_failed")
+
+class \nodoc\ iso _TestFakeHardCloseDuringUnconnectedClosing is UnitTest
+  """
+  hard_close() during _UnconnectedClosing fires _on_connection_failure
+  without waiting for stragglers.
+  """
+  fun name(): String => "FakeHardCloseDuringUnconnectedClosing"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("connection_failed")
+
+    let a = _TestFakeHardCloseDuringUnconnectedClosingActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeHardCloseDuringUnconnectedClosingActor
+  is (TCPConnectionActor[_FBConnect2]
+    & ClientLifecycleEventReceiver[_FBConnect2])
+  var _tcp_connection: TCPConnection[_FBConnect2] =
+    TCPConnection[_FBConnect2].none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection[_FBConnect2].client(
+        TCPConnectAuth(_h.env.root),
+        "fake-host",
+        "12345",
+        "",
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection[_FBConnect2] =>
+    _tcp_connection
+
+  fun ref _on_connecting(inflight_connections: U32) =>
+    _tcp_connection.close()
+    _tcp_connection.hard_close()
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _h.complete_action("connection_failed")
+
+// ---------------------------------------------------------------------------
+// Listener fake-backend tests
+// ---------------------------------------------------------------------------
+actor \nodoc\ _TestFakeServerStub[TCP: TCPBackend val]
+  is (TCPConnectionActor[TCP] & ServerLifecycleEventReceiver[TCP])
+  """
+  Minimal server connection for listener accept tests. Closes the fd via
+  the fake backend on dispose.
+  """
+  var _tcp_connection: TCPConnection[TCP] = TCPConnection[TCP].none()
+
+  new create(fd: U32, h: TestHelper) =>
+    _tcp_connection =
+      TCPConnection[TCP].server(
+        TCPServerAuth(h.env.root),
+        fd,
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection[TCP] =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    _tcp_connection.mute()
+
+class \nodoc\ iso _TestFakeListenFailure is UnitTest
+  """
+  listen returns a null event. _on_listen_failure fires.
+  """
+  fun name(): String => "FakeListenFailure"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("listen_failed")
+
+    let a = _TestFakeListenFailureActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeListenFailureActor is TCPListenerActor[_FBListenFail]
+  var _tcp_listener: TCPListener[_FBListenFail] =
+    TCPListener[_FBListenFail].none()
+  let _h: TestHelper
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener =
+      TCPListener[_FBListenFail](
+        TCPListenAuth(_h.env.root),
+        "fake-host",
+        "12345",
+        this)
+
+  fun ref _listener(): TCPListener[_FBListenFail] =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestFakeServerStub[_FBListenFail] ? =>
+    _h.fail("_on_accept should not fire")
+    error
+
+  fun ref _on_listen_failure() =>
+    _h.complete_action("listen_failed")
+
+class \nodoc\ iso _TestFakeAccept is UnitTest
+  """
+  listen succeeds and accept returns one connection. _on_accept fires
+  with the fd.
+  """
+  fun name(): String => "FakeAccept"
+
+  fun apply(h: TestHelper) =>
+    @lori_test_set_accept_step(0)
+
+    h.expect_action("accepted")
+
+    let a = _TestFakeAcceptActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeAcceptActor is TCPListenerActor[_FBListenOk]
+  var _tcp_listener: TCPListener[_FBListenOk] =
+    TCPListener[_FBListenOk].none()
+  let _h: TestHelper
+  var _accepted: (_TestFakeServerStub[_FBListenOk] | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    _tcp_listener =
+      TCPListener[_FBListenOk](
+        TCPListenAuth(_h.env.root),
+        "fake-host",
+        "12345",
+        this)
+
+  fun ref _listener(): TCPListener[_FBListenOk] =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestFakeServerStub[_FBListenOk] =>
+    let stub = _TestFakeServerStub[_FBListenOk](fd, _h)
+    _accepted = stub
+    _h.complete_action("accepted")
+    stub
+
+  fun ref _on_listening() =>
+    _tcp_listener._accept()
+
+  fun ref _on_closed() =>
+    try (_accepted as _TestFakeServerStub[_FBListenOk]).dispose() end
+
+class \nodoc\ iso _TestFakeConnectionLimit is UnitTest
+  """
+  Listener with max_spawn 2 pauses after accepting 2 connections. Closing
+  one resumes accepting.
+  """
+  fun name(): String => "FakeConnectionLimit"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("accept_1")
+    h.expect_action("accept_2")
+    h.expect_action("accept_3")
+
+    let a = _TestFakeConnectionLimitActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeConnectionLimitActor
+  is TCPListenerActor[_FBListenOkMulti]
+  var _tcp_listener: TCPListener[_FBListenOkMulti] =
+    TCPListener[_FBListenOkMulti].none()
+  let _h: TestHelper
+  var _accept_count: U32 = 0
+  var _first_accepted:
+    (_TestFakeServerStub[_FBListenOkMulti] | None) = None
+  var _second_accepted:
+    (_TestFakeServerStub[_FBListenOkMulti] | None) = None
+  var _third_accepted:
+    (_TestFakeServerStub[_FBListenOkMulti] | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    match \exhaustive\ MakeMaxSpawn(2)
+    | let limit: MaxSpawn =>
+      _tcp_listener =
+        TCPListener[_FBListenOkMulti](
+          TCPListenAuth(_h.env.root),
+          "fake-host",
+          "12345",
+          this where limit = limit)
+    | let _: ValidationFailure =>
+      _h.fail("MakeMaxSpawn(2) failed")
+    end
+
+  fun ref _listener(): TCPListener[_FBListenOkMulti] =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32)
+    : _TestFakeServerStub[_FBListenOkMulti]
+  =>
+    _accept_count = _accept_count + 1
+    let stub = _TestFakeServerStub[_FBListenOkMulti](fd, _h)
+    match _accept_count
+    | 1 =>
+      _first_accepted = stub
+      _h.complete_action("accept_1")
+    | 2 =>
+      _second_accepted = stub
+      _h.complete_action("accept_2")
+    | 3 =>
+      _third_accepted = stub
+      _h.complete_action("accept_3")
+    end
+    stub
+
+  fun ref _on_listening() =>
+    _tcp_listener._accept()
+    _simulate_close()
+
+  be _simulate_close() =>
+    _tcp_listener._connection_closed()
+
+  fun ref _on_closed() =>
+    try
+      (_first_accepted as _TestFakeServerStub[_FBListenOkMulti]).dispose()
+    end
+    try
+      (_second_accepted as _TestFakeServerStub[_FBListenOkMulti]).dispose()
+    end
+    try
+      (_third_accepted as _TestFakeServerStub[_FBListenOkMulti]).dispose()
+    end

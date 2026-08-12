@@ -168,8 +168,12 @@ class _ConnectionNone[TCP: TCPBackend val] is _ConnectionState[TCP]
     // _finish_initialization is a self→self message queued during the
     // constructor. dispose() comes from an external actor. Different senders
     // have no ordering guarantee, so dispose() can arrive first — unlikely
-    // but possible.
-    None
+    // but possible. Transition to _Closed so _finish_initialization (which
+    // will still run) sees it and skips ASIO event creation. No ASIO event
+    // exists yet, so close the raw fd directly and dispose TLS.
+    conn._set_state(_Closed[TCP])
+    conn._close_raw_fd()
+    conn._dispose_tls()
 
   fun ref start_tls(conn: TCPConnection[TCP] ref,
     ssl_ctx: SSLContext val,

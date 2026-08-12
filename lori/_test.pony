@@ -109,6 +109,29 @@ actor \nodoc\ Main is TestList
     // POSIX only: these provoke write backpressure with a fixed payload, which
     // Windows loopback won't trigger (it buffers far beyond SO_SNDBUF/RCVBUF).
     // The drain and write-only re-arm logic they cover is platform-neutral.
+
+    // Fake-backend tests (no real sockets for I/O)
+    test(_TestFakeSendOk)
+    test(_TestFakeSendMultipleTokenOrder)
+    test(_TestFakeSendOnClosed)
+    test(_TestFakeSendError)
+    test(_TestFakeSendFailedAfterClosed)
+    test(_TestFakeRecvError)
+    test(_TestFakeRecvRetry)
+    test(_TestFakeRecvData)
+    test(_TestFakeRecvFramed)
+    test(_TestFakeMute)
+    test(_TestFakeYieldReading)
+    test(_TestFakeGracefulClose)
+    test(_TestFakeConnectDNSFailure)
+    test(_TestFakeConnectInflight)
+    test(_TestFakeSendWhileConnecting)
+    test(_TestFakeSendWhileUnconnectedClosing)
+    test(_TestFakeUnconnectedClosingDrain)
+    test(_TestFakeHardCloseDuringUnconnectedClosing)
+    test(_TestFakeListenFailure)
+    test(_TestFakeAccept)
+    test(_TestFakeConnectionLimit)
     ifdef posix then test(_TestStaleForeignEventDropped) end
     ifdef posix then test(_TestBackpressureDrain) end
     ifdef posix then test(_TestWriteOnlyEventReadRecovery) end
