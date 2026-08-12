@@ -3455,9 +3455,6 @@ actor \nodoc\ _TestSendOnSentPrecedesServer
       "_on_sent for the drained send must arrive before _on_throttled")
     _h.complete_action("sent before throttled")
 
-    // The connection is unwriteable here, so this send is refused by the one
-    // check that shares `_do_send` with the accept path. A refused send mints
-    // no token and fires no callback.
     let accepted_before = _accepted
     match \exhaustive\ _tcp_connection.send("nope")
     | SendAccepted =>
@@ -3928,3 +3925,465 @@ actor \nodoc\ _TestSendPrecedesReceivedServer
 
   fun ref _on_sent(token: SendToken) =>
     _sent = _sent + 1
+
+// ===========================================================================
+// Fake-backend send tests (no real sockets for I/O)
+// ===========================================================================
+class \nodoc\ iso _TestFakeSendOk is UnitTest
+  """
+  sendv accepts all bytes. Verify: send returns SendAccepted,
+  _on_send_accepted fires with a token and the data, _on_sent fires with
+  the same token.
+  """
+  fun name(): String => "FakeSendOk"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("on_send_accepted")
+    h.expect_action("on_sent")
+
+    let a = _TestFakeSendOkActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeSendOkActor
+  is (TCPConnectionActor[_FBSendOkRecvRetry]
+    & ServerLifecycleEventReceiver[_FBSendOkRecvRetry])
+  var _tcp_connection: TCPConnection[_FBSendOkRecvRetry] =
+    TCPConnection[_FBSendOkRecvRetry].none()
+  let _h: TestHelper
+  var _expected_token: (SendToken | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    try
+      let fd = _FakeServerFd()?
+      _tcp_connection =
+        TCPConnection[_FBSendOkRecvRetry].server(
+          TCPServerAuth(_h.env.root),
+          fd,
+          this,
+          this)
+    else
+      _h.fail("could not allocate socket")
+      _h.complete(false)
+    end
+
+  fun ref _connection(): TCPConnection[_FBSendOkRecvRetry] =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    _tcp_connection.mute()
+    match \exhaustive\ _tcp_connection.send("hello")
+    | SendAccepted => None
+    | let _: SendError =>
+      _h.fail("send returned an error")
+      _h.complete(false)
+    end
+
+  fun ref _on_send_accepted(
+    token: SendToken,
+    data: (ByteSeq | ByteSeqIter))
+  =>
+    _expected_token = token
+    _h.complete_action("on_send_accepted")
+
+  fun ref _on_sent(token: SendToken) =>
+    match \exhaustive\ _expected_token
+    | let expected: SendToken =>
+      _h.assert_true(token == expected, "token mismatch")
+      _h.complete_action("on_sent")
+    | None =>
+      _h.fail("_on_sent fired without _on_send_accepted")
+    end
+
+  be dispose() =>
+    _tcp_connection.hard_close()
+
+class \nodoc\ iso _TestFakeSendMultipleTokenOrder is UnitTest
+  """
+  Three sends all succeed. Verify: _on_send_accepted fires three times with
+  distinct tokens, and _on_sent fires three times in the same order.
+  """
+  fun name(): String => "FakeSendMultipleTokenOrder"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("all_sent")
+
+    let a = _TestFakeSendMultipleTokenOrderActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeSendMultipleTokenOrderActor
+  is (TCPConnectionActor[_FBSendOkRecvRetry]
+    & ServerLifecycleEventReceiver[_FBSendOkRecvRetry])
+  var _tcp_connection: TCPConnection[_FBSendOkRecvRetry] =
+    TCPConnection[_FBSendOkRecvRetry].none()
+  let _h: TestHelper
+  let _expected_tokens: Array[SendToken] = Array[SendToken]
+  var _sent_count: USize = 0
+
+  new create(h: TestHelper) =>
+    _h = h
+    try
+      let fd = _FakeServerFd()?
+      _tcp_connection =
+        TCPConnection[_FBSendOkRecvRetry].server(
+          TCPServerAuth(_h.env.root),
+          fd,
+          this,
+          this)
+    else
+      _h.fail("could not allocate socket")
+      _h.complete(false)
+    end
+
+  fun ref _connection(): TCPConnection[_FBSendOkRecvRetry] =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    _tcp_connection.mute()
+    for payload in ["aaa"; "bbb"; "ccc"].values() do
+      match \exhaustive\ _tcp_connection.send(payload)
+      | SendAccepted => None
+      | let _: SendError =>
+        _h.fail("send returned an error")
+        _h.complete(false)
+        return
+      end
+    end
+
+  fun ref _on_send_accepted(
+    token: SendToken,
+    data: (ByteSeq | ByteSeqIter))
+  =>
+    _expected_tokens.push(token)
+
+  fun ref _on_sent(token: SendToken) =>
+    try
+      let expected = _expected_tokens(_sent_count)?
+      _h.assert_true(
+        token == expected,
+        "token order mismatch at index " + _sent_count.string())
+    else
+      _h.fail("_on_sent with no matching _on_send_accepted")
+    end
+    _sent_count = _sent_count + 1
+    if _sent_count == 3 then
+      _h.complete_action("all_sent")
+    end
+
+  be dispose() =>
+    _tcp_connection.hard_close()
+
+class \nodoc\ iso _TestFakeSendOnClosed is UnitTest
+  """
+  send() on a hard-closed connection returns SendErrorNotConnected without
+  firing _on_send_accepted.
+  """
+  fun name(): String => "FakeSendOnClosed"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("send_error_verified")
+
+    let a = _TestFakeSendOnClosedActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeSendOnClosedActor
+  is (TCPConnectionActor[_FBSendOkRecvRetry]
+    & ServerLifecycleEventReceiver[_FBSendOkRecvRetry])
+  var _tcp_connection: TCPConnection[_FBSendOkRecvRetry] =
+    TCPConnection[_FBSendOkRecvRetry].none()
+  let _h: TestHelper
+  var _send_accepted_after_close: Bool = false
+
+  new create(h: TestHelper) =>
+    _h = h
+    try
+      let fd = _FakeServerFd()?
+      _tcp_connection =
+        TCPConnection[_FBSendOkRecvRetry].server(
+          TCPServerAuth(_h.env.root),
+          fd,
+          this,
+          this)
+    else
+      _h.fail("could not allocate socket")
+      _h.complete(false)
+    end
+
+  fun ref _connection(): TCPConnection[_FBSendOkRecvRetry] =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    _tcp_connection.mute()
+    _tcp_connection.hard_close()
+
+  fun ref _on_closed() =>
+    match \exhaustive\ _tcp_connection.send("hello")
+    | SendAccepted =>
+      _h.fail("send on closed connection returned SendAccepted")
+      _h.complete(false)
+    | SendErrorNotConnected =>
+      _h.complete_action("send_error_verified")
+    | SendErrorNotWriteable =>
+      _h.fail("send on closed connection returned SendErrorNotWriteable")
+      _h.complete(false)
+    end
+
+  fun ref _on_send_accepted(
+    token: SendToken,
+    data: (ByteSeq | ByteSeqIter))
+  =>
+    _send_accepted_after_close = true
+    _h.fail("_on_send_accepted fired after hard_close")
+    _h.complete(false)
+
+  be dispose() =>
+    _tcp_connection.hard_close()
+
+class \nodoc\ iso _TestFakeSendError is UnitTest
+  """
+  sendv returns error. Verify: _on_send_accepted fires (token minted before
+  flush), then _on_closed fires (hard close from sendv error), then
+  _on_send_failed fires with the token (deferred).
+  """
+  fun name(): String => "FakeSendError"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("on_send_accepted")
+    h.expect_action("on_closed")
+    h.expect_action("on_send_failed")
+
+    let a = _TestFakeSendErrorActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeSendErrorActor
+  is (TCPConnectionActor[_FBSendErrorRecvRetry]
+    & ServerLifecycleEventReceiver[_FBSendErrorRecvRetry])
+  var _tcp_connection: TCPConnection[_FBSendErrorRecvRetry] =
+    TCPConnection[_FBSendErrorRecvRetry].none()
+  let _h: TestHelper
+  var _expected_token: (SendToken | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    try
+      let fd = _FakeServerFd()?
+      _tcp_connection =
+        TCPConnection[_FBSendErrorRecvRetry].server(
+          TCPServerAuth(_h.env.root),
+          fd,
+          this,
+          this)
+    else
+      _h.fail("could not allocate socket")
+      _h.complete(false)
+    end
+
+  fun ref _connection(): TCPConnection[_FBSendErrorRecvRetry] =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    _tcp_connection.mute()
+    match \exhaustive\ _tcp_connection.send("hello")
+    | SendAccepted => None
+    | let _: SendError =>
+      _h.fail("send returned an error before flush")
+      _h.complete(false)
+    end
+
+  fun ref _on_send_accepted(
+    token: SendToken,
+    data: (ByteSeq | ByteSeqIter))
+  =>
+    _expected_token = token
+    _h.complete_action("on_send_accepted")
+
+  fun ref _on_closed() =>
+    _h.complete_action("on_closed")
+
+  fun ref _on_send_failed(token: SendToken) =>
+    match \exhaustive\ _expected_token
+    | let expected: SendToken =>
+      _h.assert_true(token == expected, "send_failed token mismatch")
+      _h.complete_action("on_send_failed")
+    | None =>
+      _h.fail("_on_send_failed without _on_send_accepted")
+    end
+
+  be dispose() =>
+    _tcp_connection.hard_close()
+
+class \nodoc\ iso _TestFakeSendFailedAfterClosed is UnitTest
+  """
+  _on_send_failed must arrive after _on_closed when hard_close is called with
+  queued sends. Verify: send queues bytes (sendv returns retry), hard_close
+  fires _on_closed synchronously, then _on_send_failed arrives in a
+  subsequent behavior turn.
+  """
+  fun name(): String => "FakeSendFailedAfterClosed"
+
+  fun apply(h: TestHelper) =>
+    @lori_test_set_sendv_failed_step(0)
+
+    h.expect_action("on_closed")
+    h.expect_action("on_send_failed_after_closed")
+
+    let a = _TestFakeSendFailedAfterClosedActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeSendFailedAfterClosedActor
+  is (TCPConnectionActor[_FBSendStepRecvRetryFailed]
+    & ServerLifecycleEventReceiver[_FBSendStepRecvRetryFailed])
+  var _tcp_connection: TCPConnection[_FBSendStepRecvRetryFailed] =
+    TCPConnection[_FBSendStepRecvRetryFailed].none()
+  let _h: TestHelper
+  var _expected_token: (SendToken | None) = None
+  var _closed: Bool = false
+
+  new create(h: TestHelper) =>
+    _h = h
+    try
+      let fd = _FakeServerFd()?
+      _tcp_connection =
+        TCPConnection[_FBSendStepRecvRetryFailed].server(
+          TCPServerAuth(_h.env.root),
+          fd,
+          this,
+          this)
+    else
+      _h.fail("could not allocate socket")
+      _h.complete(false)
+    end
+
+  fun ref _connection(): TCPConnection[_FBSendStepRecvRetryFailed] =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    _tcp_connection.mute()
+    match \exhaustive\ _tcp_connection.send("hello")
+    | SendAccepted => None
+    | let _: SendError =>
+      _h.fail("send returned an error")
+      _h.complete(false)
+      return
+    end
+    _tcp_connection.hard_close()
+
+  fun ref _on_send_accepted(
+    token: SendToken,
+    data: (ByteSeq | ByteSeqIter))
+  =>
+    _expected_token = token
+
+  fun ref _on_closed() =>
+    _closed = true
+    _h.complete_action("on_closed")
+
+  fun ref _on_send_failed(token: SendToken) =>
+    if not _closed then
+      _h.fail("_on_send_failed fired before _on_closed")
+      _h.complete(false)
+      return
+    end
+    match \exhaustive\ _expected_token
+    | let expected: SendToken =>
+      _h.assert_true(token == expected, "send_failed token mismatch")
+      _h.complete_action("on_send_failed_after_closed")
+    | None =>
+      _h.fail("_on_send_failed without _on_send_accepted")
+    end
+
+  be dispose() =>
+    _tcp_connection.hard_close()
+
+class \nodoc\ iso _TestFakeGracefulClose is UnitTest
+  """
+  Graceful close after a completed send. Verify: _on_sent fires, and
+  close() makes subsequent send() return SendErrorNotConnected (_Closing
+  rejects sends the same way _Closed does).
+  """
+  fun name(): String => "FakeGracefulClose"
+
+  fun apply(h: TestHelper) =>
+    h.expect_action("on_sent")
+    h.expect_action("close_rejects_send")
+
+    let a = _TestFakeGracefulCloseActor(h)
+    h.dispose_when_done(a)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestFakeGracefulCloseActor
+  is (TCPConnectionActor[_FBSendOkRecvRetry]
+    & ServerLifecycleEventReceiver[_FBSendOkRecvRetry])
+  var _tcp_connection: TCPConnection[_FBSendOkRecvRetry] =
+    TCPConnection[_FBSendOkRecvRetry].none()
+  let _h: TestHelper
+  var _expected_token: (SendToken | None) = None
+
+  new create(h: TestHelper) =>
+    _h = h
+    try
+      let fd = _FakeServerFd()?
+      _tcp_connection =
+        TCPConnection[_FBSendOkRecvRetry].server(
+          TCPServerAuth(_h.env.root),
+          fd,
+          this,
+          this)
+    else
+      _h.fail("could not allocate socket")
+      _h.complete(false)
+    end
+
+  fun ref _connection(): TCPConnection[_FBSendOkRecvRetry] =>
+    _tcp_connection
+
+  fun ref _on_started() =>
+    _tcp_connection.mute()
+    match \exhaustive\ _tcp_connection.send("aaa")
+    | SendAccepted => None
+    | let _: SendError =>
+      _h.fail("send returned an error")
+      _h.complete(false)
+      return
+    end
+    _tcp_connection.close()
+    match \exhaustive\ _tcp_connection.send("bbb")
+    | SendAccepted =>
+      _h.fail("send after close should fail")
+      _h.complete(false)
+    | SendErrorNotConnected =>
+      _h.complete_action("close_rejects_send")
+    | SendErrorNotWriteable =>
+      _h.fail("send after close returned SendErrorNotWriteable")
+      _h.complete(false)
+    end
+
+  fun ref _on_send_accepted(
+    token: SendToken,
+    data: (ByteSeq | ByteSeqIter))
+  =>
+    _expected_token = token
+
+  fun ref _on_sent(token: SendToken) =>
+    match \exhaustive\ _expected_token
+    | let expected: SendToken =>
+      _h.assert_true(token == expected, "token mismatch")
+      _h.complete_action("on_sent")
+    | None =>
+      _h.fail("_on_sent without _on_send_accepted")
+    end
+
+  be dispose() =>
+    _tcp_connection.hard_close()
+
