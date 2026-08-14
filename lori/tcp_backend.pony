@@ -1,15 +1,15 @@
 use net = "net"
 
-trait val TCPBackend
+trait ref TCPBackend
   """
   The TCP operations a connection and listener need from the runtime.
   `RuntimeBackend` is the production implementation; test code can
   substitute a fake to drive the connection state machine without
   real sockets.
   """
-  new val create()
+  new create()
 
-  fun listen(the_actor: AsioEventNotify,
+  fun ref listen(the_actor: AsioEventNotify,
     host: String,
     port: String,
     ip_version: IPVersion = DualStack)
@@ -20,19 +20,19 @@ trait val TCPBackend
     or a null event on failure.
     """
 
-  fun accept(event: AsioEventID): I32
+  fun ref accept(event: AsioEventID): I32
     """
     Accept one pending connection on the listening socket behind
     `event`. Returns the fd (> 0), 0 if none is ready, or -1 on
     error.
     """
 
-  fun close(fd: U32)
+  fun ref close(fd: U32)
     """
     Close the socket.
     """
 
-  fun connect(the_actor: AsioEventNotify,
+  fun ref connect(the_actor: AsioEventNotify,
     host: String,
     port: String,
     from: String,
@@ -45,18 +45,18 @@ trait val TCPBackend
     address). Zero means every attempt failed immediately.
     """
 
-  fun keepalive(fd: U32, secs: U32)
+  fun ref keepalive(fd: U32, secs: U32)
     """
     Enable TCP keepalive on `fd` with an interval of `secs` seconds.
     """
 
-  fun peername(fd: U32, ip: net.NetAddress ref): Bool
+  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool
     """
     Fill `ip` with the remote address of `fd`. Returns true on
     success.
     """
 
-  fun receive(event: AsioEventID,
+  fun ref receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
     : (SocketResult, USize)
@@ -67,18 +67,18 @@ trait val TCPBackend
     peer close.
     """
 
-  fun shutdown(fd: U32)
+  fun ref shutdown(fd: U32)
     """
     Shut down the write side of `fd`.
     """
 
-  fun sockname(fd: U32, ip: net.NetAddress ref): Bool
+  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool
     """
     Fill `ip` with the local address of `fd`. Returns true on
     success.
     """
 
-  fun sendv(event: AsioEventID,
+  fun ref sendv(event: AsioEventID,
     data: Array[ByteSeq] box,
     from: USize,
     count: USize,
@@ -91,7 +91,7 @@ trait val TCPBackend
     non-blocking.
     """
 
-  fun writev_max(): I32
+  fun ref writev_max(): I32
     """
     Maximum number of buffers a single `sendv` call may carry.
     """

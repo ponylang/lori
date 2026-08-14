@@ -1,4 +1,4 @@
-trait tag TCPListenerActor[TCP: TCPBackend val = RuntimeBackend]
+trait tag TCPListenerActor[TCP: TCPBackend ref = RuntimeBackend]
   is AsioEventNotify
   """
   The actor trait a listener actor implements. Provide `_listener()` returning

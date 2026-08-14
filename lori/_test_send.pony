@@ -4230,8 +4230,6 @@ class \nodoc\ iso _TestFakeSendFailedAfterClosed is UnitTest
   fun name(): String => "FakeSendFailedAfterClosed"
 
   fun apply(h: TestHelper) =>
-    @lori_test_set_sendv_failed_step(0)
-
     h.expect_action("on_closed")
     h.expect_action("on_send_failed_after_closed")
 

@@ -1,26 +1,6 @@
 use "pony_test"
 use net = "net"
 
-// FFI: multi-step scripting state (backed by _test_fake_state.c)
-use @lori_test_get_sendv_failed_step[USize]()
-use @lori_test_set_sendv_failed_step[None](v: USize)
-use @lori_test_inc_sendv_failed_step[None]()
-use @lori_test_get_recv_hello_step[USize]()
-use @lori_test_set_recv_hello_step[None](v: USize)
-use @lori_test_inc_recv_hello_step[None]()
-use @lori_test_get_recv_10_step[USize]()
-use @lori_test_set_recv_10_step[None](v: USize)
-use @lori_test_inc_recv_10_step[None]()
-use @lori_test_get_recv_mute_step[USize]()
-use @lori_test_set_recv_mute_step[None](v: USize)
-use @lori_test_inc_recv_mute_step[None]()
-use @lori_test_get_recv_yield_step[USize]()
-use @lori_test_set_recv_yield_step[None](v: USize)
-use @lori_test_inc_recv_yield_step[None]()
-use @lori_test_get_accept_step[USize]()
-use @lori_test_set_accept_step[None](v: USize)
-use @lori_test_inc_accept_step[None]()
-
 // FFI: memcpy for writing into Pointer[U8] tag buffers in fake receive
 use @memcpy[Pointer[None]](dst: Pointer[None] tag, src: Pointer[None] tag,
   n: USize)
@@ -31,10 +11,10 @@ use @memcpy[Pointer[None]](dst: Pointer[None] tag, src: Pointer[None] tag,
 // Shared stub methods
 // ---------------------------------------------------------------------------
 //
-// Every fake backend is a primitive implementing TCPBackend. Most methods are
+// Every fake backend is a class implementing TCPBackend. Most methods are
 // identical stubs — only sendv, receive, connect, listen, or accept differ.
-// Pony primitives cannot inherit, so the stubs are repeated in each primitive.
-// The per-primitive docstring says which methods carry test behaviour; the rest
+// Pony classes cannot inherit, so the stubs are repeated in each class.
+// The per-class docstring says which methods carry test behaviour; the rest
 // are stubs.
 
 // ---------------------------------------------------------------------------
@@ -44,11 +24,13 @@ use @memcpy[Pointer[None]](dst: Pointer[None] tag, src: Pointer[None] tag,
 // listen, or accept, so those are stubs. close releases the raw fd the test
 // allocated.
 
-primitive \nodoc\ _FBSendOkRecvRetry is TCPBackend
+class \nodoc\ _FBSendOkRecvRetry is TCPBackend
   """
   sendv: accepts all bytes.  receive: always retries.
   """
-  fun listen(the_actor: AsioEventNotify,
+  new create() => None
+
+  fun ref listen(the_actor: AsioEventNotify,
     host: String,
     port: String,
     ip_version: IPVersion)
@@ -56,11 +38,11 @@ primitive \nodoc\ _FBSendOkRecvRetry is TCPBackend
   =>
     AsioEvent.none()
 
-  fun accept(event: AsioEventID): I32 => 0
+  fun ref accept(event: AsioEventID): I32 => 0
 
-  fun close(fd: U32) => @pony_os_socket_close(fd)
+  fun ref close(fd: U32) => @pony_os_socket_close(fd)
 
-  fun connect(the_actor: AsioEventNotify,
+  fun ref connect(the_actor: AsioEventNotify,
     host: String,
     port: String,
     from: String,
@@ -70,24 +52,24 @@ primitive \nodoc\ _FBSendOkRecvRetry is TCPBackend
   =>
     0
 
-  fun keepalive(fd: U32, secs: U32) => None
+  fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun peername(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun shutdown(fd: U32) => None
+  fun ref shutdown(fd: U32) => None
 
-  fun sockname(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun writev_max(): I32 => 1024
+  fun ref writev_max(): I32 => 1024
 
-  fun receive(event: AsioEventID,
+  fun ref receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
     : (SocketResult, USize)
   =>
     (SocketResultRetry, 0)
 
-  fun sendv(event: AsioEventID,
+  fun ref sendv(event: AsioEventID,
     data: Array[ByteSeq] box,
     from: USize,
     count: USize,
@@ -104,11 +86,13 @@ primitive \nodoc\ _FBSendOkRecvRetry is TCPBackend
     end
     (SocketResultOk, total)
 
-primitive \nodoc\ _FBSendErrorRecvRetry is TCPBackend
+class \nodoc\ _FBSendErrorRecvRetry is TCPBackend
   """
   sendv: always returns error.  receive: always retries.
   """
-  fun listen(the_actor: AsioEventNotify,
+  new create() => None
+
+  fun ref listen(the_actor: AsioEventNotify,
     host: String,
     port: String,
     ip_version: IPVersion)
@@ -116,11 +100,11 @@ primitive \nodoc\ _FBSendErrorRecvRetry is TCPBackend
   =>
     AsioEvent.none()
 
-  fun accept(event: AsioEventID): I32 => 0
+  fun ref accept(event: AsioEventID): I32 => 0
 
-  fun close(fd: U32) => @pony_os_socket_close(fd)
+  fun ref close(fd: U32) => @pony_os_socket_close(fd)
 
-  fun connect(the_actor: AsioEventNotify,
+  fun ref connect(the_actor: AsioEventNotify,
     host: String,
     port: String,
     from: String,
@@ -130,24 +114,24 @@ primitive \nodoc\ _FBSendErrorRecvRetry is TCPBackend
   =>
     0
 
-  fun keepalive(fd: U32, secs: U32) => None
+  fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun peername(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun shutdown(fd: U32) => None
+  fun ref shutdown(fd: U32) => None
 
-  fun sockname(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun writev_max(): I32 => 1024
+  fun ref writev_max(): I32 => 1024
 
-  fun receive(event: AsioEventID,
+  fun ref receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
     : (SocketResult, USize)
   =>
     (SocketResultRetry, 0)
 
-  fun sendv(event: AsioEventID,
+  fun ref sendv(event: AsioEventID,
     data: Array[ByteSeq] box,
     from: USize,
     count: USize,
@@ -156,13 +140,16 @@ primitive \nodoc\ _FBSendErrorRecvRetry is TCPBackend
   =>
     (SocketResultError, 0)
 
-primitive \nodoc\ _FBSendStepRecvRetryFailed is TCPBackend
+class \nodoc\ _FBSendStepRecvRetryFailed is TCPBackend
   """
   sendv: step 0 returns retry, step 1+ returns ok (all bytes).
   receive: always retries.
-  Reset lori_test_set_sendv_failed_step(0) before use.
   """
-  fun listen(the_actor: AsioEventNotify,
+  var _step: USize = 0
+
+  new create() => None
+
+  fun ref listen(the_actor: AsioEventNotify,
     host: String,
     port: String,
     ip_version: IPVersion)
@@ -170,11 +157,11 @@ primitive \nodoc\ _FBSendStepRecvRetryFailed is TCPBackend
   =>
     AsioEvent.none()
 
-  fun accept(event: AsioEventID): I32 => 0
+  fun ref accept(event: AsioEventID): I32 => 0
 
-  fun close(fd: U32) => @pony_os_socket_close(fd)
+  fun ref close(fd: U32) => @pony_os_socket_close(fd)
 
-  fun connect(the_actor: AsioEventNotify,
+  fun ref connect(the_actor: AsioEventNotify,
     host: String,
     port: String,
     from: String,
@@ -184,32 +171,32 @@ primitive \nodoc\ _FBSendStepRecvRetryFailed is TCPBackend
   =>
     0
 
-  fun keepalive(fd: U32, secs: U32) => None
+  fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun peername(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun shutdown(fd: U32) => None
+  fun ref shutdown(fd: U32) => None
 
-  fun sockname(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun writev_max(): I32 => 1024
+  fun ref writev_max(): I32 => 1024
 
-  fun receive(event: AsioEventID,
+  fun ref receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
     : (SocketResult, USize)
   =>
     (SocketResultRetry, 0)
 
-  fun sendv(event: AsioEventID,
+  fun ref sendv(event: AsioEventID,
     data: Array[ByteSeq] box,
     from: USize,
     count: USize,
     first_buffer_byte_offset: USize)
     : (SocketResult, USize) ?
   =>
-    let step = @lori_test_get_sendv_failed_step()
-    @lori_test_inc_sendv_failed_step()
+    let step = _step
+    _step = _step + 1
     if step == 0 then
       (SocketResultRetry, 0)
     else
@@ -225,12 +212,16 @@ primitive \nodoc\ _FBSendStepRecvRetryFailed is TCPBackend
       (SocketResultOk, total)
     end
 
-primitive \nodoc\ _FBSendOkRecvHello is TCPBackend
+class \nodoc\ _FBSendOkRecvHello is TCPBackend
   """
   sendv: accepts all bytes.  receive: step 0 copies "hello" into buffer,
-  step 1+ returns retry.  Reset lori_test_set_recv_hello_step(0) before use.
+  step 1+ returns retry.
   """
-  fun listen(the_actor: AsioEventNotify,
+  var _step: USize = 0
+
+  new create() => None
+
+  fun ref listen(the_actor: AsioEventNotify,
     host: String,
     port: String,
     ip_version: IPVersion)
@@ -238,11 +229,11 @@ primitive \nodoc\ _FBSendOkRecvHello is TCPBackend
   =>
     AsioEvent.none()
 
-  fun accept(event: AsioEventID): I32 => 0
+  fun ref accept(event: AsioEventID): I32 => 0
 
-  fun close(fd: U32) => @pony_os_socket_close(fd)
+  fun ref close(fd: U32) => @pony_os_socket_close(fd)
 
-  fun connect(the_actor: AsioEventNotify,
+  fun ref connect(the_actor: AsioEventNotify,
     host: String,
     port: String,
     from: String,
@@ -252,23 +243,23 @@ primitive \nodoc\ _FBSendOkRecvHello is TCPBackend
   =>
     0
 
-  fun keepalive(fd: U32, secs: U32) => None
+  fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun peername(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun shutdown(fd: U32) => None
+  fun ref shutdown(fd: U32) => None
 
-  fun sockname(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun writev_max(): I32 => 1024
+  fun ref writev_max(): I32 => 1024
 
-  fun receive(event: AsioEventID,
+  fun ref receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
     : (SocketResult, USize)
   =>
-    let step = @lori_test_get_recv_hello_step()
-    @lori_test_inc_recv_hello_step()
+    let step = _step
+    _step = _step + 1
     if step == 0 then
       let src: Array[U8] val = [as U8: 'h'; 'e'; 'l'; 'l'; 'o']
       @memcpy(buffer, src.cpointer(), 5)
@@ -277,7 +268,7 @@ primitive \nodoc\ _FBSendOkRecvHello is TCPBackend
       (SocketResultRetry, 0)
     end
 
-  fun sendv(event: AsioEventID,
+  fun ref sendv(event: AsioEventID,
     data: Array[ByteSeq] box,
     from: USize,
     count: USize,
@@ -294,13 +285,16 @@ primitive \nodoc\ _FBSendOkRecvHello is TCPBackend
     end
     (SocketResultOk, total)
 
-primitive \nodoc\ _FBSendOkRecv10 is TCPBackend
+class \nodoc\ _FBSendOkRecv10 is TCPBackend
   """
   sendv: accepts all bytes.  receive: step 0 copies 10 bytes ('A' repeated)
-  into buffer, step 1+ returns retry.  Reset lori_test_set_recv_10_step(0)
-  before use.
+  into buffer, step 1+ returns retry.
   """
-  fun listen(the_actor: AsioEventNotify,
+  var _step: USize = 0
+
+  new create() => None
+
+  fun ref listen(the_actor: AsioEventNotify,
     host: String,
     port: String,
     ip_version: IPVersion)
@@ -308,11 +302,11 @@ primitive \nodoc\ _FBSendOkRecv10 is TCPBackend
   =>
     AsioEvent.none()
 
-  fun accept(event: AsioEventID): I32 => 0
+  fun ref accept(event: AsioEventID): I32 => 0
 
-  fun close(fd: U32) => @pony_os_socket_close(fd)
+  fun ref close(fd: U32) => @pony_os_socket_close(fd)
 
-  fun connect(the_actor: AsioEventNotify,
+  fun ref connect(the_actor: AsioEventNotify,
     host: String,
     port: String,
     from: String,
@@ -322,23 +316,23 @@ primitive \nodoc\ _FBSendOkRecv10 is TCPBackend
   =>
     0
 
-  fun keepalive(fd: U32, secs: U32) => None
+  fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun peername(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun shutdown(fd: U32) => None
+  fun ref shutdown(fd: U32) => None
 
-  fun sockname(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun writev_max(): I32 => 1024
+  fun ref writev_max(): I32 => 1024
 
-  fun receive(event: AsioEventID,
+  fun ref receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
     : (SocketResult, USize)
   =>
-    let step = @lori_test_get_recv_10_step()
-    @lori_test_inc_recv_10_step()
+    let step = _step
+    _step = _step + 1
     if step == 0 then
       let src: Array[U8] val = recover val Array[U8].init('A', 10) end
       @memcpy(buffer, src.cpointer(), 10)
@@ -347,7 +341,7 @@ primitive \nodoc\ _FBSendOkRecv10 is TCPBackend
       (SocketResultRetry, 0)
     end
 
-  fun sendv(event: AsioEventID,
+  fun ref sendv(event: AsioEventID,
     data: Array[ByteSeq] box,
     from: USize,
     count: USize,
@@ -364,14 +358,16 @@ primitive \nodoc\ _FBSendOkRecv10 is TCPBackend
     end
     (SocketResultOk, total)
 
-primitive \nodoc\ _FBSendOkRecvHelloMute is TCPBackend
+class \nodoc\ _FBSendOkRecvHelloMute is TCPBackend
   """
   sendv: accepts all bytes.  receive: step 0 copies "hello" into buffer,
-  step 1+ returns retry.  Uses recv_mute_step counter (separate from
-  _FBSendOkRecvHello's recv_hello_step) to avoid interference.
-  Reset lori_test_set_recv_mute_step(0) before use.
+  step 1+ returns retry.
   """
-  fun listen(the_actor: AsioEventNotify,
+  var _step: USize = 0
+
+  new create() => None
+
+  fun ref listen(the_actor: AsioEventNotify,
     host: String,
     port: String,
     ip_version: IPVersion)
@@ -379,11 +375,11 @@ primitive \nodoc\ _FBSendOkRecvHelloMute is TCPBackend
   =>
     AsioEvent.none()
 
-  fun accept(event: AsioEventID): I32 => 0
+  fun ref accept(event: AsioEventID): I32 => 0
 
-  fun close(fd: U32) => @pony_os_socket_close(fd)
+  fun ref close(fd: U32) => @pony_os_socket_close(fd)
 
-  fun connect(the_actor: AsioEventNotify,
+  fun ref connect(the_actor: AsioEventNotify,
     host: String,
     port: String,
     from: String,
@@ -393,23 +389,23 @@ primitive \nodoc\ _FBSendOkRecvHelloMute is TCPBackend
   =>
     0
 
-  fun keepalive(fd: U32, secs: U32) => None
+  fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun peername(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun shutdown(fd: U32) => None
+  fun ref shutdown(fd: U32) => None
 
-  fun sockname(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun writev_max(): I32 => 1024
+  fun ref writev_max(): I32 => 1024
 
-  fun receive(event: AsioEventID,
+  fun ref receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
     : (SocketResult, USize)
   =>
-    let step = @lori_test_get_recv_mute_step()
-    @lori_test_inc_recv_mute_step()
+    let step = _step
+    _step = _step + 1
     if step == 0 then
       let src: Array[U8] val = [as U8: 'h'; 'e'; 'l'; 'l'; 'o']
       @memcpy(buffer, src.cpointer(), 5)
@@ -418,7 +414,7 @@ primitive \nodoc\ _FBSendOkRecvHelloMute is TCPBackend
       (SocketResultRetry, 0)
     end
 
-  fun sendv(event: AsioEventID,
+  fun ref sendv(event: AsioEventID,
     data: Array[ByteSeq] box,
     from: USize,
     count: USize,
@@ -435,14 +431,16 @@ primitive \nodoc\ _FBSendOkRecvHelloMute is TCPBackend
     end
     (SocketResultOk, total)
 
-primitive \nodoc\ _FBSendOkRecv10Yield is TCPBackend
+class \nodoc\ _FBSendOkRecv10Yield is TCPBackend
   """
   sendv: accepts all bytes.  receive: step 0 copies 10 bytes ('A' repeated)
-  into buffer, step 1+ returns retry.  Uses recv_yield_step counter
-  (separate from _FBSendOkRecv10's recv_10_step) to avoid interference.
-  Reset lori_test_set_recv_yield_step(0) before use.
+  into buffer, step 1+ returns retry.
   """
-  fun listen(the_actor: AsioEventNotify,
+  var _step: USize = 0
+
+  new create() => None
+
+  fun ref listen(the_actor: AsioEventNotify,
     host: String,
     port: String,
     ip_version: IPVersion)
@@ -450,11 +448,11 @@ primitive \nodoc\ _FBSendOkRecv10Yield is TCPBackend
   =>
     AsioEvent.none()
 
-  fun accept(event: AsioEventID): I32 => 0
+  fun ref accept(event: AsioEventID): I32 => 0
 
-  fun close(fd: U32) => @pony_os_socket_close(fd)
+  fun ref close(fd: U32) => @pony_os_socket_close(fd)
 
-  fun connect(the_actor: AsioEventNotify,
+  fun ref connect(the_actor: AsioEventNotify,
     host: String,
     port: String,
     from: String,
@@ -464,23 +462,23 @@ primitive \nodoc\ _FBSendOkRecv10Yield is TCPBackend
   =>
     0
 
-  fun keepalive(fd: U32, secs: U32) => None
+  fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun peername(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun shutdown(fd: U32) => None
+  fun ref shutdown(fd: U32) => None
 
-  fun sockname(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun writev_max(): I32 => 1024
+  fun ref writev_max(): I32 => 1024
 
-  fun receive(event: AsioEventID,
+  fun ref receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
     : (SocketResult, USize)
   =>
-    let step = @lori_test_get_recv_yield_step()
-    @lori_test_inc_recv_yield_step()
+    let step = _step
+    _step = _step + 1
     if step == 0 then
       let src: Array[U8] val = recover val Array[U8].init('A', 10) end
       @memcpy(buffer, src.cpointer(), 10)
@@ -489,7 +487,7 @@ primitive \nodoc\ _FBSendOkRecv10Yield is TCPBackend
       (SocketResultRetry, 0)
     end
 
-  fun sendv(event: AsioEventID,
+  fun ref sendv(event: AsioEventID,
     data: Array[ByteSeq] box,
     from: USize,
     count: USize,
@@ -506,11 +504,13 @@ primitive \nodoc\ _FBSendOkRecv10Yield is TCPBackend
     end
     (SocketResultOk, total)
 
-primitive \nodoc\ _FBSendOkRecvError is TCPBackend
+class \nodoc\ _FBSendOkRecvError is TCPBackend
   """
   sendv: accepts all bytes.  receive: always returns error.
   """
-  fun listen(the_actor: AsioEventNotify,
+  new create() => None
+
+  fun ref listen(the_actor: AsioEventNotify,
     host: String,
     port: String,
     ip_version: IPVersion)
@@ -518,11 +518,11 @@ primitive \nodoc\ _FBSendOkRecvError is TCPBackend
   =>
     AsioEvent.none()
 
-  fun accept(event: AsioEventID): I32 => 0
+  fun ref accept(event: AsioEventID): I32 => 0
 
-  fun close(fd: U32) => @pony_os_socket_close(fd)
+  fun ref close(fd: U32) => @pony_os_socket_close(fd)
 
-  fun connect(the_actor: AsioEventNotify,
+  fun ref connect(the_actor: AsioEventNotify,
     host: String,
     port: String,
     from: String,
@@ -532,24 +532,24 @@ primitive \nodoc\ _FBSendOkRecvError is TCPBackend
   =>
     0
 
-  fun keepalive(fd: U32, secs: U32) => None
+  fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun peername(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun shutdown(fd: U32) => None
+  fun ref shutdown(fd: U32) => None
 
-  fun sockname(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun writev_max(): I32 => 1024
+  fun ref writev_max(): I32 => 1024
 
-  fun receive(event: AsioEventID,
+  fun ref receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
     : (SocketResult, USize)
   =>
     (SocketResultError, 0)
 
-  fun sendv(event: AsioEventID,
+  fun ref sendv(event: AsioEventID,
     data: Array[ByteSeq] box,
     from: USize,
     count: USize,
@@ -571,11 +571,13 @@ primitive \nodoc\ _FBSendOkRecvError is TCPBackend
 // ---------------------------------------------------------------------------
 // Used with TCPConnection[X].client(). The client path calls connect; the
 // connection never reaches _Open, so sendv/receive are stubs.
-primitive \nodoc\ _FBConnect0 is TCPBackend
+class \nodoc\ _FBConnect0 is TCPBackend
   """
   connect: returns 0 (all attempts failed — DNS failure path).
   """
-  fun listen(the_actor: AsioEventNotify,
+  new create() => None
+
+  fun ref listen(the_actor: AsioEventNotify,
     host: String,
     port: String,
     ip_version: IPVersion)
@@ -583,11 +585,11 @@ primitive \nodoc\ _FBConnect0 is TCPBackend
   =>
     AsioEvent.none()
 
-  fun accept(event: AsioEventID): I32 => 0
+  fun ref accept(event: AsioEventID): I32 => 0
 
-  fun close(fd: U32) => @pony_os_socket_close(fd)
+  fun ref close(fd: U32) => @pony_os_socket_close(fd)
 
-  fun connect(the_actor: AsioEventNotify,
+  fun ref connect(the_actor: AsioEventNotify,
     host: String,
     port: String,
     from: String,
@@ -597,24 +599,24 @@ primitive \nodoc\ _FBConnect0 is TCPBackend
   =>
     0
 
-  fun keepalive(fd: U32, secs: U32) => None
+  fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun peername(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun shutdown(fd: U32) => None
+  fun ref shutdown(fd: U32) => None
 
-  fun sockname(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun writev_max(): I32 => 1024
+  fun ref writev_max(): I32 => 1024
 
-  fun receive(event: AsioEventID,
+  fun ref receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
     : (SocketResult, USize)
   =>
     (SocketResultRetry, 0)
 
-  fun sendv(event: AsioEventID,
+  fun ref sendv(event: AsioEventID,
     data: Array[ByteSeq] box,
     from: USize,
     count: USize,
@@ -623,11 +625,13 @@ primitive \nodoc\ _FBConnect0 is TCPBackend
   =>
     (SocketResultRetry, 0)
 
-primitive \nodoc\ _FBConnect1 is TCPBackend
+class \nodoc\ _FBConnect1 is TCPBackend
   """
   connect: returns 1 (one inflight attempt).
   """
-  fun listen(the_actor: AsioEventNotify,
+  new create() => None
+
+  fun ref listen(the_actor: AsioEventNotify,
     host: String,
     port: String,
     ip_version: IPVersion)
@@ -635,11 +639,11 @@ primitive \nodoc\ _FBConnect1 is TCPBackend
   =>
     AsioEvent.none()
 
-  fun accept(event: AsioEventID): I32 => 0
+  fun ref accept(event: AsioEventID): I32 => 0
 
-  fun close(fd: U32) => @pony_os_socket_close(fd)
+  fun ref close(fd: U32) => @pony_os_socket_close(fd)
 
-  fun connect(the_actor: AsioEventNotify,
+  fun ref connect(the_actor: AsioEventNotify,
     host: String,
     port: String,
     from: String,
@@ -649,24 +653,24 @@ primitive \nodoc\ _FBConnect1 is TCPBackend
   =>
     1
 
-  fun keepalive(fd: U32, secs: U32) => None
+  fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun peername(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun shutdown(fd: U32) => None
+  fun ref shutdown(fd: U32) => None
 
-  fun sockname(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun writev_max(): I32 => 1024
+  fun ref writev_max(): I32 => 1024
 
-  fun receive(event: AsioEventID,
+  fun ref receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
     : (SocketResult, USize)
   =>
     (SocketResultRetry, 0)
 
-  fun sendv(event: AsioEventID,
+  fun ref sendv(event: AsioEventID,
     data: Array[ByteSeq] box,
     from: USize,
     count: USize,
@@ -675,11 +679,13 @@ primitive \nodoc\ _FBConnect1 is TCPBackend
   =>
     (SocketResultRetry, 0)
 
-primitive \nodoc\ _FBConnect2 is TCPBackend
+class \nodoc\ _FBConnect2 is TCPBackend
   """
   connect: returns 2 (two inflight attempts).
   """
-  fun listen(the_actor: AsioEventNotify,
+  new create() => None
+
+  fun ref listen(the_actor: AsioEventNotify,
     host: String,
     port: String,
     ip_version: IPVersion)
@@ -687,11 +693,11 @@ primitive \nodoc\ _FBConnect2 is TCPBackend
   =>
     AsioEvent.none()
 
-  fun accept(event: AsioEventID): I32 => 0
+  fun ref accept(event: AsioEventID): I32 => 0
 
-  fun close(fd: U32) => @pony_os_socket_close(fd)
+  fun ref close(fd: U32) => @pony_os_socket_close(fd)
 
-  fun connect(the_actor: AsioEventNotify,
+  fun ref connect(the_actor: AsioEventNotify,
     host: String,
     port: String,
     from: String,
@@ -701,24 +707,24 @@ primitive \nodoc\ _FBConnect2 is TCPBackend
   =>
     2
 
-  fun keepalive(fd: U32, secs: U32) => None
+  fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun peername(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun shutdown(fd: U32) => None
+  fun ref shutdown(fd: U32) => None
 
-  fun sockname(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun writev_max(): I32 => 1024
+  fun ref writev_max(): I32 => 1024
 
-  fun receive(event: AsioEventID,
+  fun ref receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
     : (SocketResult, USize)
   =>
     (SocketResultRetry, 0)
 
-  fun sendv(event: AsioEventID,
+  fun ref sendv(event: AsioEventID,
     data: Array[ByteSeq] box,
     from: USize,
     count: USize,
@@ -727,11 +733,13 @@ primitive \nodoc\ _FBConnect2 is TCPBackend
   =>
     (SocketResultRetry, 0)
 
-primitive \nodoc\ _FBConnect3 is TCPBackend
+class \nodoc\ _FBConnect3 is TCPBackend
   """
   connect: returns 3 (three inflight attempts).
   """
-  fun listen(the_actor: AsioEventNotify,
+  new create() => None
+
+  fun ref listen(the_actor: AsioEventNotify,
     host: String,
     port: String,
     ip_version: IPVersion)
@@ -739,11 +747,11 @@ primitive \nodoc\ _FBConnect3 is TCPBackend
   =>
     AsioEvent.none()
 
-  fun accept(event: AsioEventID): I32 => 0
+  fun ref accept(event: AsioEventID): I32 => 0
 
-  fun close(fd: U32) => @pony_os_socket_close(fd)
+  fun ref close(fd: U32) => @pony_os_socket_close(fd)
 
-  fun connect(the_actor: AsioEventNotify,
+  fun ref connect(the_actor: AsioEventNotify,
     host: String,
     port: String,
     from: String,
@@ -753,24 +761,24 @@ primitive \nodoc\ _FBConnect3 is TCPBackend
   =>
     3
 
-  fun keepalive(fd: U32, secs: U32) => None
+  fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun peername(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun shutdown(fd: U32) => None
+  fun ref shutdown(fd: U32) => None
 
-  fun sockname(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun writev_max(): I32 => 1024
+  fun ref writev_max(): I32 => 1024
 
-  fun receive(event: AsioEventID,
+  fun ref receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
     : (SocketResult, USize)
   =>
     (SocketResultRetry, 0)
 
-  fun sendv(event: AsioEventID,
+  fun ref sendv(event: AsioEventID,
     data: Array[ByteSeq] box,
     from: USize,
     count: USize,
@@ -782,11 +790,13 @@ primitive \nodoc\ _FBConnect3 is TCPBackend
 // ---------------------------------------------------------------------------
 // Listener fake backends
 // ---------------------------------------------------------------------------
-primitive \nodoc\ _FBListenFail is TCPBackend
+class \nodoc\ _FBListenFail is TCPBackend
   """
   listen: returns a null event (failure path).
   """
-  fun listen(the_actor: AsioEventNotify,
+  new create() => None
+
+  fun ref listen(the_actor: AsioEventNotify,
     host: String,
     port: String,
     ip_version: IPVersion)
@@ -794,11 +804,11 @@ primitive \nodoc\ _FBListenFail is TCPBackend
   =>
     AsioEvent.none()
 
-  fun accept(event: AsioEventID): I32 => 0
+  fun ref accept(event: AsioEventID): I32 => 0
 
-  fun close(fd: U32) => @pony_os_socket_close(fd)
+  fun ref close(fd: U32) => @pony_os_socket_close(fd)
 
-  fun connect(the_actor: AsioEventNotify,
+  fun ref connect(the_actor: AsioEventNotify,
     host: String,
     port: String,
     from: String,
@@ -808,24 +818,24 @@ primitive \nodoc\ _FBListenFail is TCPBackend
   =>
     0
 
-  fun keepalive(fd: U32, secs: U32) => None
+  fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun peername(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun shutdown(fd: U32) => None
+  fun ref shutdown(fd: U32) => None
 
-  fun sockname(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun writev_max(): I32 => 1024
+  fun ref writev_max(): I32 => 1024
 
-  fun receive(event: AsioEventID,
+  fun ref receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
     : (SocketResult, USize)
   =>
     (SocketResultRetry, 0)
 
-  fun sendv(event: AsioEventID,
+  fun ref sendv(event: AsioEventID,
     data: Array[ByteSeq] box,
     from: USize,
     count: USize,
@@ -834,13 +844,16 @@ primitive \nodoc\ _FBListenFail is TCPBackend
   =>
     (SocketResultRetry, 0)
 
-primitive \nodoc\ _FBListenOk is TCPBackend
+class \nodoc\ _FBListenOk is TCPBackend
   """
   listen: creates a valid ASIO event from a raw socket.
   accept: step 0 returns a raw socket fd, step 1+ returns 0 (would-block).
-  Reset lori_test_set_accept_step(0) before use.
   """
-  fun listen(the_actor: AsioEventNotify,
+  var _step: USize = 0
+
+  new create() => None
+
+  fun ref listen(the_actor: AsioEventNotify,
     host: String,
     port: String,
     ip_version: IPVersion)
@@ -850,18 +863,18 @@ primitive \nodoc\ _FBListenOk is TCPBackend
     if fd < 0 then return AsioEvent.none() end
     PonyAsio.create_event(the_actor, fd.u32())
 
-  fun accept(event: AsioEventID): I32 =>
-    let step = @lori_test_get_accept_step()
-    @lori_test_inc_accept_step()
+  fun ref accept(event: AsioEventID): I32 =>
+    let step = _step
+    _step = _step + 1
     if step == 0 then
       @socket(I32(2), I32(1), I32(0))
     else
       0
     end
 
-  fun close(fd: U32) => @pony_os_socket_close(fd)
+  fun ref close(fd: U32) => @pony_os_socket_close(fd)
 
-  fun connect(the_actor: AsioEventNotify,
+  fun ref connect(the_actor: AsioEventNotify,
     host: String,
     port: String,
     from: String,
@@ -871,24 +884,24 @@ primitive \nodoc\ _FBListenOk is TCPBackend
   =>
     0
 
-  fun keepalive(fd: U32, secs: U32) => None
+  fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun peername(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun shutdown(fd: U32) => None
+  fun ref shutdown(fd: U32) => None
 
-  fun sockname(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun writev_max(): I32 => 1024
+  fun ref writev_max(): I32 => 1024
 
-  fun receive(event: AsioEventID,
+  fun ref receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
     : (SocketResult, USize)
   =>
     (SocketResultRetry, 0)
 
-  fun sendv(event: AsioEventID,
+  fun ref sendv(event: AsioEventID,
     data: Array[ByteSeq] box,
     from: USize,
     count: USize,
@@ -897,12 +910,14 @@ primitive \nodoc\ _FBListenOk is TCPBackend
   =>
     (SocketResultRetry, 0)
 
-primitive \nodoc\ _FBListenOkMulti is TCPBackend
+class \nodoc\ _FBListenOkMulti is TCPBackend
   """
   listen: creates a valid ASIO event from a raw socket.
   accept: always returns a fresh raw socket fd (never returns 0).
   """
-  fun listen(the_actor: AsioEventNotify,
+  new create() => None
+
+  fun ref listen(the_actor: AsioEventNotify,
     host: String,
     port: String,
     ip_version: IPVersion)
@@ -912,12 +927,12 @@ primitive \nodoc\ _FBListenOkMulti is TCPBackend
     if fd < 0 then return AsioEvent.none() end
     PonyAsio.create_event(the_actor, fd.u32())
 
-  fun accept(event: AsioEventID): I32 =>
+  fun ref accept(event: AsioEventID): I32 =>
     @socket(I32(2), I32(1), I32(0))
 
-  fun close(fd: U32) => @pony_os_socket_close(fd)
+  fun ref close(fd: U32) => @pony_os_socket_close(fd)
 
-  fun connect(the_actor: AsioEventNotify,
+  fun ref connect(the_actor: AsioEventNotify,
     host: String,
     port: String,
     from: String,
@@ -927,24 +942,24 @@ primitive \nodoc\ _FBListenOkMulti is TCPBackend
   =>
     0
 
-  fun keepalive(fd: U32, secs: U32) => None
+  fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun peername(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun shutdown(fd: U32) => None
+  fun ref shutdown(fd: U32) => None
 
-  fun sockname(fd: U32, ip: net.NetAddress ref): Bool => false
+  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
 
-  fun writev_max(): I32 => 1024
+  fun ref writev_max(): I32 => 1024
 
-  fun receive(event: AsioEventID,
+  fun ref receive(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
     : (SocketResult, USize)
   =>
     (SocketResultRetry, 0)
 
-  fun sendv(event: AsioEventID,
+  fun ref sendv(event: AsioEventID,
     data: Array[ByteSeq] box,
     from: USize,
     count: USize,

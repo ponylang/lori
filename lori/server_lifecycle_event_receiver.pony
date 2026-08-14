@@ -1,4 +1,4 @@
-trait ServerLifecycleEventReceiver[TCP: TCPBackend val = RuntimeBackend]
+trait ServerLifecycleEventReceiver[TCP: TCPBackend ref = RuntimeBackend]
   """
   Application-level callbacks for server-side TCP connections.
   One receiver per connection, no chaining.
