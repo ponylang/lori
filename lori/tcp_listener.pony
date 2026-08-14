@@ -1,14 +1,14 @@
 use "collections"
 use net = "net"
 
-class TCPListener[TCP: TCPBackend val = RuntimeBackend]
+class TCPListener[TCP: TCPBackend ref = RuntimeBackend]
   """
   The TCP listener: opens a listening socket, runs the accept loop, and
   enforces the connection limit. A `TCPListenerActor` owns one and delegates to
   it. Create it with `TCPListener(auth, host, port, this)`, using
   `TCPListener.none()` as the field initializer before that.
   """
-  let _tcp: TCP = TCP
+  var _tcp: TCP = TCP
   let _host: String
   let _port: String
   let _limit: (MaxSpawn | None)
@@ -71,16 +71,14 @@ class TCPListener[TCP: TCPBackend val = RuntimeBackend]
       _Unreachable()
     end
 
-  fun local_address(): net.NetAddress =>
+  fun ref local_address(): net.NetAddress =>
     """
     Return the local IP address. If this TCPListener is closed then the
     address returned is invalid.
     """
-    recover
-      let ip: net.NetAddress ref = net.NetAddress
-      _tcp.sockname(_fd, ip)
-      ip
-    end
+    let ip = recover net.NetAddress end
+    _tcp.sockname(_fd, ip)
+    ip
 
   fun ref _event_notify(event: AsioEventID, flags: U32) =>
     if event isnt _event then

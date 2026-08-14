@@ -747,8 +747,6 @@ class \nodoc\ iso _TestFakeRecvData is UnitTest
   fun name(): String => "FakeRecvData"
 
   fun apply(h: TestHelper) =>
-    @lori_test_set_recv_hello_step(0)
-
     h.expect_action("received_hello")
 
     let a = _TestFakeRecvDataActor(h)
@@ -803,8 +801,6 @@ class \nodoc\ iso _TestFakeRecvFramed is UnitTest
   fun name(): String => "FakeRecvFramed"
 
   fun apply(h: TestHelper) =>
-    @lori_test_set_recv_10_step(0)
-
     h.expect_action("received_two_frames")
 
     let a = _TestFakeRecvFramedActor(h)
@@ -865,8 +861,6 @@ class \nodoc\ iso _TestFakeMute is UnitTest
   fun name(): String => "FakeMute"
 
   fun apply(h: TestHelper) =>
-    @lori_test_set_recv_mute_step(0)
-
     h.expect_action("received_after_unmute")
 
     let a = _TestFakeMuteActor(h)
@@ -929,8 +923,6 @@ class \nodoc\ iso _TestFakeYieldReading is UnitTest
   fun name(): String => "FakeYieldReading"
 
   fun apply(h: TestHelper) =>
-    @lori_test_set_recv_yield_step(0)
-
     h.expect_action("yielded_then_resumed")
 
     let a = _TestFakeYieldReadingActor(h)
@@ -1288,7 +1280,7 @@ actor \nodoc\ _TestFakeHardCloseDuringUnconnectedClosingActor
 // ---------------------------------------------------------------------------
 // Listener fake-backend tests
 // ---------------------------------------------------------------------------
-actor \nodoc\ _TestFakeServerStub[TCP: TCPBackend val]
+actor \nodoc\ _TestFakeServerStub[TCP: TCPBackend ref]
   is (TCPConnectionActor[TCP] & ServerLifecycleEventReceiver[TCP])
   """
   Minimal server connection for listener accept tests. Closes the fd via
@@ -1356,8 +1348,6 @@ class \nodoc\ iso _TestFakeAccept is UnitTest
   fun name(): String => "FakeAccept"
 
   fun apply(h: TestHelper) =>
-    @lori_test_set_accept_step(0)
-
     h.expect_action("accepted")
 
     let a = _TestFakeAcceptActor(h)

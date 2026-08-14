@@ -1,6 +1,6 @@
 use "ssl/net"
 
-trait _ConnectionState[TCP: TCPBackend val]
+trait _ConnectionState[TCP: TCPBackend ref]
   """
   One state in the connection lifecycle. `TCPConnection._state` holds the
   current one, and lifecycle-gated operations dispatch through it: each state
@@ -62,7 +62,7 @@ trait _ConnectionState[TCP: TCPBackend val]
     The SSL session reached `SSLReady`. Only the handshake states act.
     """
 
-  fun keepalive(conn: TCPConnection[TCP] box, secs: U32)
+  fun ref keepalive(conn: TCPConnection[TCP] ref, secs: U32)
     """
     Set TCP keepalive, if the socket is open in this state.
     """
@@ -131,7 +131,7 @@ trait _ConnectionState[TCP: TCPBackend val]
     Sends are accepted in this state.
     """
 
-  fun receive(conn: TCPConnection[TCP] box,
+  fun ref receive(conn: TCPConnection[TCP] ref,
     event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
@@ -140,7 +140,7 @@ trait _ConnectionState[TCP: TCPBackend val]
     Read from the socket. Only states that can receive perform it.
     """
 
-class _ConnectionNone[TCP: TCPBackend val] is _ConnectionState[TCP]
+class _ConnectionNone[TCP: TCPBackend ref] is _ConnectionState[TCP]
   fun ref own_event(conn: TCPConnection[TCP] ref, flags: U32) =>
     _Unreachable()
 
@@ -191,7 +191,7 @@ class _ConnectionNone[TCP: TCPBackend val] is _ConnectionState[TCP]
   =>
     _Unreachable()
 
-  fun keepalive(conn: TCPConnection[TCP] box, secs: U32) => None
+  fun ref keepalive(conn: TCPConnection[TCP] ref, secs: U32) => None
 
   fun getsockopt(conn: TCPConnection[TCP] box,
     level: I32,
@@ -240,7 +240,7 @@ class _ConnectionNone[TCP: TCPBackend val] is _ConnectionState[TCP]
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
 
-  fun receive(conn: TCPConnection[TCP] box,
+  fun ref receive(conn: TCPConnection[TCP] ref,
     event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
@@ -249,7 +249,7 @@ class _ConnectionNone[TCP: TCPBackend val] is _ConnectionState[TCP]
     _Unreachable()
     (SocketResultError, 0)
 
-class _ClientConnecting[TCP: TCPBackend val] is _ConnectionState[TCP]
+class _ClientConnecting[TCP: TCPBackend ref] is _ConnectionState[TCP]
   fun ref own_event(conn: TCPConnection[TCP] ref, flags: U32) =>
     _Unreachable()
 
@@ -312,7 +312,7 @@ class _ClientConnecting[TCP: TCPBackend val] is _ConnectionState[TCP]
   =>
     _Unreachable()
 
-  fun keepalive(conn: TCPConnection[TCP] box, secs: U32) => None
+  fun ref keepalive(conn: TCPConnection[TCP] ref, secs: U32) => None
 
   fun getsockopt(conn: TCPConnection[TCP] box,
     level: I32,
@@ -361,7 +361,7 @@ class _ClientConnecting[TCP: TCPBackend val] is _ConnectionState[TCP]
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
 
-  fun receive(conn: TCPConnection[TCP] box,
+  fun ref receive(conn: TCPConnection[TCP] ref,
     event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
@@ -370,7 +370,7 @@ class _ClientConnecting[TCP: TCPBackend val] is _ConnectionState[TCP]
     _Unreachable()
     (SocketResultError, 0)
 
-class _Open[TCP: TCPBackend val] is _ConnectionState[TCP]
+class _Open[TCP: TCPBackend ref] is _ConnectionState[TCP]
   fun ref own_event(conn: TCPConnection[TCP] ref, flags: U32) =>
     conn._dispatch_io_event(flags)
 
@@ -422,7 +422,7 @@ class _Open[TCP: TCPBackend val] is _ConnectionState[TCP]
     // Already open: the handshake completed on the way in.
     None
 
-  fun keepalive(conn: TCPConnection[TCP] box, secs: U32) =>
+  fun ref keepalive(conn: TCPConnection[TCP] ref, secs: U32) =>
     conn._do_keepalive(secs)
 
   fun getsockopt(conn: TCPConnection[TCP] box,
@@ -473,7 +473,7 @@ class _Open[TCP: TCPBackend val] is _ConnectionState[TCP]
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => true
 
-  fun receive(conn: TCPConnection[TCP] box,
+  fun ref receive(conn: TCPConnection[TCP] ref,
     event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
@@ -481,7 +481,7 @@ class _Open[TCP: TCPBackend val] is _ConnectionState[TCP]
   =>
     conn._tcp_ops().receive(event, buffer, size)
 
-class _Closing[TCP: TCPBackend val] is _ConnectionState[TCP]
+class _Closing[TCP: TCPBackend ref] is _ConnectionState[TCP]
   fun ref own_event(conn: TCPConnection[TCP] ref, flags: U32) =>
     // No trailing `_initiate_shutdown()`: the FIN waits on the write queue
     // emptying, and `drained` is where that becomes true.
@@ -536,7 +536,7 @@ class _Closing[TCP: TCPBackend val] is _ConnectionState[TCP]
     // Already open: the handshake completed on the way in.
     None
 
-  fun keepalive(conn: TCPConnection[TCP] box, secs: U32) => None
+  fun ref keepalive(conn: TCPConnection[TCP] ref, secs: U32) => None
 
   fun getsockopt(conn: TCPConnection[TCP] box,
     level: I32,
@@ -585,7 +585,7 @@ class _Closing[TCP: TCPBackend val] is _ConnectionState[TCP]
   fun is_closed(): Bool => true
   fun sends_allowed(): Bool => false
 
-  fun receive(conn: TCPConnection[TCP] box,
+  fun ref receive(conn: TCPConnection[TCP] ref,
     event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
@@ -593,7 +593,7 @@ class _Closing[TCP: TCPBackend val] is _ConnectionState[TCP]
   =>
     conn._tcp_ops().receive(event, buffer, size)
 
-class _UnconnectedClosing[TCP: TCPBackend val] is _ConnectionState[TCP]
+class _UnconnectedClosing[TCP: TCPBackend ref] is _ConnectionState[TCP]
   """
   Draining inflight Happy Eyeballs connections after close() during the
   connecting phase. The failure callback is deferred until all inflight
@@ -651,7 +651,7 @@ class _UnconnectedClosing[TCP: TCPBackend val] is _ConnectionState[TCP]
   =>
     _Unreachable()
 
-  fun keepalive(conn: TCPConnection[TCP] box, secs: U32) => None
+  fun ref keepalive(conn: TCPConnection[TCP] ref, secs: U32) => None
 
   fun getsockopt(conn: TCPConnection[TCP] box,
     level: I32,
@@ -700,7 +700,7 @@ class _UnconnectedClosing[TCP: TCPBackend val] is _ConnectionState[TCP]
   fun is_closed(): Bool => true
   fun sends_allowed(): Bool => false
 
-  fun receive(conn: TCPConnection[TCP] box,
+  fun ref receive(conn: TCPConnection[TCP] ref,
     event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
@@ -709,7 +709,7 @@ class _UnconnectedClosing[TCP: TCPBackend val] is _ConnectionState[TCP]
     _Unreachable()
     (SocketResultError, 0)
 
-class _Closed[TCP: TCPBackend val] is _ConnectionState[TCP]
+class _Closed[TCP: TCPBackend ref] is _ConnectionState[TCP]
   fun ref own_event(conn: TCPConnection[TCP] ref, flags: U32) =>
     None
 
@@ -757,7 +757,7 @@ class _Closed[TCP: TCPBackend val] is _ConnectionState[TCP]
   =>
     _Unreachable()
 
-  fun keepalive(conn: TCPConnection[TCP] box, secs: U32) => None
+  fun ref keepalive(conn: TCPConnection[TCP] ref, secs: U32) => None
 
   fun getsockopt(conn: TCPConnection[TCP] box,
     level: I32,
@@ -806,7 +806,7 @@ class _Closed[TCP: TCPBackend val] is _ConnectionState[TCP]
   fun is_closed(): Bool => true
   fun sends_allowed(): Bool => false
 
-  fun receive(conn: TCPConnection[TCP] box,
+  fun ref receive(conn: TCPConnection[TCP] ref,
     event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
@@ -814,7 +814,7 @@ class _Closed[TCP: TCPBackend val] is _ConnectionState[TCP]
   =>
     (SocketResultError, 0)
 
-class _SSLHandshaking[TCP: TCPBackend val] is _ConnectionState[TCP]
+class _SSLHandshaking[TCP: TCPBackend ref] is _ConnectionState[TCP]
   """
   TCP connected, initial SSL handshake in progress. The application has not
   been notified yet — `_on_connected`/`_on_started` fires only after the
@@ -876,7 +876,7 @@ class _SSLHandshaking[TCP: TCPBackend val] is _ConnectionState[TCP]
       srv._on_started()
     end
 
-  fun keepalive(conn: TCPConnection[TCP] box, secs: U32) => None
+  fun ref keepalive(conn: TCPConnection[TCP] ref, secs: U32) => None
 
   fun getsockopt(conn: TCPConnection[TCP] box,
     level: I32,
@@ -925,7 +925,7 @@ class _SSLHandshaking[TCP: TCPBackend val] is _ConnectionState[TCP]
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
 
-  fun receive(conn: TCPConnection[TCP] box,
+  fun ref receive(conn: TCPConnection[TCP] ref,
     event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
@@ -933,7 +933,7 @@ class _SSLHandshaking[TCP: TCPBackend val] is _ConnectionState[TCP]
   =>
     conn._tcp_ops().receive(event, buffer, size)
 
-class _TLSUpgrading[TCP: TCPBackend val] is _ConnectionState[TCP]
+class _TLSUpgrading[TCP: TCPBackend ref] is _ConnectionState[TCP]
   """
   Established connection upgrading to TLS via `start_tls()`. The application
   has already been notified of the plaintext connection — `_on_tls_ready`
@@ -990,7 +990,7 @@ class _TLSUpgrading[TCP: TCPBackend val] is _ConnectionState[TCP]
     conn._set_state(_Open[TCP])
     s._on_tls_ready()
 
-  fun keepalive(conn: TCPConnection[TCP] box, secs: U32) =>
+  fun ref keepalive(conn: TCPConnection[TCP] ref, secs: U32) =>
     conn._do_keepalive(secs)
 
   fun getsockopt(conn: TCPConnection[TCP] box,
@@ -1041,7 +1041,7 @@ class _TLSUpgrading[TCP: TCPBackend val] is _ConnectionState[TCP]
   fun is_closed(): Bool => false
   fun sends_allowed(): Bool => false
 
-  fun receive(conn: TCPConnection[TCP] box,
+  fun ref receive(conn: TCPConnection[TCP] ref,
     event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)

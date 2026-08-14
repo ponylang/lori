@@ -2,7 +2,7 @@ use net = "net"
 use "collections"
 use "ssl/net"
 
-class TCPConnection[TCP: TCPBackend val = RuntimeBackend]
+class TCPConnection[TCP: TCPBackend ref = RuntimeBackend]
   """
   The TCP connection: all connection state and I/O, including SSL. A
   `TCPConnectionActor` owns one and delegates to it.
@@ -12,7 +12,7 @@ class TCPConnection[TCP: TCPBackend val = RuntimeBackend]
   initializer before that. An open plaintext connection can be upgraded to TLS
   with `start_tls`. See the package documentation for the full lifecycle.
   """
-  let _tcp: TCP = TCP
+  var _tcp: TCP = TCP
   var _state: _ConnectionState[TCP] ref = _ConnectionNone[TCP]
   var _shutdown: Bool = false
   var _throttled: Bool = false
@@ -68,7 +68,7 @@ class TCPConnection[TCP: TCPBackend val = RuntimeBackend]
   var _from: String = ""
   var _ip_version: IPVersion = DualStack
 
-  fun _tcp_ops(): TCP =>
+  fun ref _tcp_ops(): TCP =>
     """
     The TCP operations backend for this connection, used by state classes
     that need to call receive.
@@ -191,7 +191,7 @@ class TCPConnection[TCP: TCPBackend val = RuntimeBackend]
     _enclosing = None
     _lifecycle_event_receiver = None
 
-  fun keepalive(secs: U32) =>
+  fun ref keepalive(secs: U32) =>
     """
     Sets the TCP keepalive timeout to approximately `secs` seconds. Exact
     timing is OS dependent. If `secs` is zero, TCP keepalive is disabled. TCP
@@ -471,27 +471,23 @@ class TCPConnection[TCP: TCPBackend val = RuntimeBackend]
 
     ReadBufferResized
 
-  fun local_address(): net.NetAddress =>
+  fun ref local_address(): net.NetAddress =>
     """
     Return the local IP address. If this TCPConnection is closed then the
     address returned is invalid.
     """
-    recover
-      let ip: net.NetAddress ref = net.NetAddress
-      _tcp.sockname(_fd, ip)
-      ip
-    end
+    let ip = recover net.NetAddress end
+    _tcp.sockname(_fd, ip)
+    ip
 
-  fun remote_address(): net.NetAddress =>
+  fun ref remote_address(): net.NetAddress =>
     """
     Return the remote IP address. If this TCPConnection is closed then the
     address returned is invalid.
     """
-    recover
-      let ip: net.NetAddress ref = net.NetAddress
-      _tcp.peername(_fd, ip)
-      ip
-    end
+    let ip = recover net.NetAddress end
+    _tcp.peername(_fd, ip)
+    ip
 
   fun ref mute() =>
     """
@@ -861,7 +857,7 @@ class TCPConnection[TCP: TCPBackend val = RuntimeBackend]
     """
     _state.start_tls(this, ssl_ctx, host)
 
-  fun _do_keepalive(secs: U32) =>
+  fun ref _do_keepalive(secs: U32) =>
     _tcp.keepalive(_fd, secs)
 
   fun _do_getsockopt(level: I32,

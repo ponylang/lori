@@ -1,4 +1,4 @@
-trait tag TCPConnectionActor[TCP: TCPBackend val = RuntimeBackend]
+trait tag TCPConnectionActor[TCP: TCPBackend ref = RuntimeBackend]
   is AsioEventNotify
   """
   The actor trait a connection actor implements. Provide `_connection()`
