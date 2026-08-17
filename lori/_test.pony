@@ -1,4 +1,5 @@
 use "pony_test"
+use notifier = "notifier"
 
 actor \nodoc\ Main is TestList
   new create(env: Env) =>
@@ -8,6 +9,7 @@ actor \nodoc\ Main is TestList
     None
 
   fun tag tests(test: PonyTest) =>
+    notifier.Main.make().tests(test)
     test(_TestCanListen)
     test(_TestListenerLocalAddress)
     test(_TestMute)
