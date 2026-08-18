@@ -144,6 +144,11 @@ The draw is stable per seed, so a failure replays its *workload* from its number
   slow).
 - `--lldb <path>` — run each seed under lldb so a crash leaves a backtrace.
 
+On macOS the orchestrator draws each workload from a narrower profile automatically
+(no flag), because macOS loopback shares a finite kernel buffer pool a wide workload
+can exhaust — which stalls a send and hangs the run; see `WORKLOAD_PROFILES` (the
+`macos` profile) in `orchestrate_tcp.py` for the lists and why.
+
 A run is a failure only if it crashes, mismatches, or hangs — makes no progress for
 `--no-progress-seconds` (the completed count stops rising). A failure writes
 `bundle-<seed>.json` to `--out`. A healthy run is never failed for running long: one
