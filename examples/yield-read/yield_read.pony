@@ -68,6 +68,8 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _received_count = _received_count + 1
 

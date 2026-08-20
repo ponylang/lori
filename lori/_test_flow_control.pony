@@ -123,6 +123,8 @@ actor \nodoc\ _TestMuteServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_started() =>
     _h.complete_action("server started")
     _tcp_connection.mute()
@@ -273,6 +275,8 @@ actor \nodoc\ _TestUnmuteServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) => None
 
   fun ref _on_started() =>
     _h.complete_action("server started")
@@ -507,6 +511,8 @@ actor \nodoc\ _TestMuteWithFullReadBufferServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) => None
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _muted then
@@ -766,6 +772,8 @@ actor \nodoc\ _TestSSLMuteServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _muted then
       _h.fail("server received data while muted")
@@ -953,6 +961,8 @@ actor \nodoc\ _TestSSLMuteCloseServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _received = _received + 1
 
@@ -1089,6 +1099,8 @@ actor \nodoc\ _TestMuteFromOnSentServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) => None
 
   fun ref _on_started() =>
     match \exhaustive\ _tcp_connection.send("ask")

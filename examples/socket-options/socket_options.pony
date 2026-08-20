@@ -70,6 +70,8 @@ actor SocketOptionsServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_started() =>
     // Disable Nagle for low-latency responses
     _tcp_connection.set_nodelay(true)

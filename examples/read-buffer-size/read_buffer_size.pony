@@ -75,6 +75,8 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _control_phase then
       let cmd = String.from_array(consume data)

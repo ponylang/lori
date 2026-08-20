@@ -70,6 +70,8 @@ actor IP4Echoer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_closed() =>
     _out.print("Server: connection closed.")
 

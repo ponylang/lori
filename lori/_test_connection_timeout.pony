@@ -147,6 +147,8 @@ actor \nodoc\ _TestConnectionTimeoutCancelServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
 class \nodoc\ iso _TestSSLConnectionTimeoutFires is UnitTest
   """
   Test that the connection timeout fires during SSL handshake. Connects an
@@ -264,6 +266,8 @@ actor \nodoc\ _TestSSLConnectionTimeoutFiresServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
 class \nodoc\ iso _TestSSLConnectionTimeoutCancelledOnConnect is UnitTest
   """
   Test that the connect timer is cancelled when an SSL handshake completes.
@@ -374,6 +378,8 @@ actor \nodoc\ _TestSSLConnectionTimeoutCancelSSLServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) => None
 
 class \nodoc\ iso _TestCloseWhileConnectingWithTimeout is UnitTest
   """

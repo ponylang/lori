@@ -58,6 +58,8 @@ actor \nodoc\ _TestReadBufferConstructorSizeServer is
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_started() =>
     // set_read_buffer_minimum to 256 should succeed (lowering the minimum)
     match \exhaustive\ MakeReadBufferSize(256)
@@ -138,6 +140,8 @@ actor \nodoc\ _TestSetReadBufferMinSuccessServer is
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_started() =>
     // Setting minimum to 512 should succeed and grow the buffer
     match \exhaustive\ MakeReadBufferSize(512)
@@ -214,6 +218,8 @@ actor \nodoc\ _TestSetReadBufferMinBelowBufferSizeServer is
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) => None
 
   fun ref _on_started() =>
     // Set buffer_until to 100
@@ -305,6 +311,8 @@ actor \nodoc\ _TestResizeReadBufferSuccessServer is
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_started() =>
     // Resize to larger
     match \exhaustive\ MakeReadBufferSize(4096)
@@ -385,6 +393,8 @@ actor \nodoc\ _TestResizeReadBufferBelowBufferSizeServer is
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) => None
 
   fun ref _on_started() =>
     // Set buffer_until to 200
@@ -467,6 +477,8 @@ actor \nodoc\ _TestResizeReadBufferBelowMinServer is
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) => None
 
   fun ref _on_started() =>
     // Resize to 256 — this should lower the minimum from 1024 to 256
@@ -562,6 +574,8 @@ actor \nodoc\ _TestBufferSizeAboveMinServer is
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_started() =>
     // buffer_until(256) should fail because minimum is 128
     match MakeBufferSize(256)
@@ -630,6 +644,8 @@ actor \nodoc\ _TestBufferSizeAtMinServer is
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) => None
 
   fun ref _on_started() =>
     // buffer_until(256) should succeed (equals minimum)

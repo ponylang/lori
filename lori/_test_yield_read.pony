@@ -111,6 +111,8 @@ actor \nodoc\ _TestYieldReadServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   be mark() =>
     _marked = true
 
@@ -264,6 +266,8 @@ actor \nodoc\ _TestSSLYieldReadServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) => None
 
   be mark() =>
     _marked = true

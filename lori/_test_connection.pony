@@ -124,6 +124,8 @@ actor \nodoc\ _TestPonger is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _pings_to_receive > 0 then
       _tcp_connection.send("Pong")
@@ -265,6 +267,8 @@ actor \nodoc\ _TestBasicBufferUntilServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _received_count = _received_count + 1
 
@@ -340,6 +344,8 @@ actor \nodoc\ _TestDoNothingServerActor
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) => None
 
 class \nodoc\ iso _TestListenerLocalAddress is UnitTest
   """
@@ -493,6 +499,8 @@ actor \nodoc\ _TestHardCloseDuringReceiveServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     // Hard close from inside the read callback (see the class docstring).
     _closed_in_receive = true
@@ -614,6 +622,8 @@ actor \nodoc\ _TestHardCloseAfterFramedReceiveServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _received_count = _received_count + 1
     if _received_count == 1 then
@@ -676,6 +686,8 @@ actor \nodoc\ _TestFakeRecvErrorActor
   fun ref _connection(): TCPConnection[_FBSendOkRecvError] =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _h.fail("_on_received should not fire when receive errors")
     _h.complete(false)
@@ -726,6 +738,8 @@ actor \nodoc\ _TestFakeRecvRetryActor
 
   fun ref _connection(): TCPConnection[_FBSendOkRecvRetry] =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) => None
 
   fun ref _on_started() =>
     _tcp_connection.mute()
@@ -778,6 +792,8 @@ actor \nodoc\ _TestFakeRecvDataActor
 
   fun ref _connection(): TCPConnection[_FBSendOkRecvHello] =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) => None
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let s = String.from_iso_array(consume data)
@@ -838,6 +854,8 @@ actor \nodoc\ _TestFakeRecvFramedActor
   fun ref _connection(): TCPConnection[_FBSendOkRecv10] =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _received_count = _received_count + 1
     _h.assert_eq[USize](
@@ -893,6 +911,8 @@ actor \nodoc\ _TestFakeMuteActor
 
   fun ref _connection(): TCPConnection[_FBSendOkRecvHelloMute] =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) => None
 
   fun ref _on_started() =>
     _tcp_connection.mute()
@@ -960,6 +980,8 @@ actor \nodoc\ _TestFakeYieldReadingActor
 
   fun ref _connection(): TCPConnection[_FBSendOkRecv10Yield] =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) => None
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _received_count = _received_count + 1
@@ -1298,6 +1320,8 @@ actor \nodoc\ _TestFakeServerStub[TCP: TCPBackend ref]
 
   fun ref _connection(): TCPConnection[TCP] =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) => None
 
   fun ref _on_started() =>
     _tcp_connection.mute()

@@ -50,6 +50,8 @@ actor \nodoc\ _TestSocketOptionsServer is
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_started() =>
     // set_nodelay: enable and disable should both succeed
     _h.assert_eq[U32](

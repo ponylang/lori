@@ -82,6 +82,8 @@ actor \nodoc\ _TestIdleTimeoutServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_started() =>
     match MakeIdleTimeout(5_000)
     | let t: IdleTimeout =>
@@ -203,6 +205,8 @@ actor \nodoc\ _TestIdleTimeoutResetServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_started() =>
     match MakeIdleTimeout(5_000)
     | let t: IdleTimeout =>
@@ -312,6 +316,8 @@ actor \nodoc\ _TestIdleTimeoutDisableServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) => None
 
   fun ref _on_started() =>
     match MakeIdleTimeout(5_000)
@@ -445,6 +451,8 @@ actor \nodoc\ _TestSSLIdleTimeoutServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
   fun ref _on_started() =>
     match MakeIdleTimeout(5_000)
     | let t: IdleTimeout =>
@@ -575,6 +583,8 @@ actor \nodoc\ _TestSSLIdleTimeoutNotArmedServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
 class \nodoc\ iso _TestSSLIdleTimeoutDeferredArm is UnitTest
   """
   Test the deferred-arm path: an SSL client configures an idle timeout
@@ -680,6 +690,8 @@ actor \nodoc\ _TestSSLIdleTimeoutDeferredArmServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) => None
+
 class \nodoc\ iso _TestIdleTimeoutRearms is UnitTest
   """
   Test that the idle timeout fires again on a connection that stays idle.
@@ -766,6 +778,8 @@ actor \nodoc\ _TestIdleTimeoutRearmsServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) => None
 
   fun ref _on_started() =>
     match \exhaustive\ MakeIdleTimeout(1_000)
@@ -878,6 +892,8 @@ actor \nodoc\ _TestIdleTimeoutNoRearmServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) => None
 
   fun ref _on_started() =>
     match \exhaustive\ MakeIdleTimeout(1_000)
