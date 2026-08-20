@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 
+- Add notifier-based TCP API subpackage ([PR #371](https://github.com/ponylang/lori/pull/371))
 
 ### Changed
 
