@@ -14,6 +14,14 @@ IPv4-only echo server with a built-in client. Shows how to use the `ip_version` 
 
 Client and server exchanging messages in a loop. Adds a `ClientLifecycleEventReceiver` client that connects, sends "Ping", and responds to every "Pong" — showing both sides of a TCP conversation.
 
+## [notifier-echo-server](notifier-echo-server/)
+
+Notifier API version of the echo server. Same behavior as `echo-server`, but with `TCPListenNotify` and `ServerTCPConnectionNotify` traits instead of implementing `TCPListenerActor` and `ServerLifecycleEventReceiver` yourself. No user-defined actors — lori's concrete `TCPListener` and `ServerTCPConnection` actors handle all I/O plumbing.
+
+## [notifier-ping-pong](notifier-ping-pong/)
+
+Notifier API version of infinite ping-pong. Same behavior as `infinite-ping-pong`, but with `TCPListenNotify`, `ClientTCPConnectionNotify`, and `ServerTCPConnectionNotify` traits. Shows both sides of a TCP conversation through the notifier API, with `buffer_until()` framing on both ends.
+
 ## [framed-protocol](framed-protocol/)
 
 Length-prefixed message framing with `buffer_until()`. Each message has a 4-byte big-endian length header followed by a variable-length payload. Both sides use `buffer_until()` to switch between reading the header and reading the payload, demonstrating how to build a protocol parser on top of lori's read chunking.

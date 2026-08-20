@@ -617,4 +617,12 @@ them to the actors that need them. The echo server example above shows the
 typical pattern: `Main` creates a `TCPListenAuth`, the listener creates a
 `TCPServerAuth` from it, and each accepted connection receives that
 `TCPServerAuth`.
+
+## Notifier API
+
+The `lori/notifier` subpackage provides an alternative API shaped like the
+standard library's `net` package. Instead of implementing actor traits and
+delegating to a `TCPConnection` class, you hand a notifier object to a concrete
+actor and the actor calls you back. See the
+[notifier package](/lori/notifier--index/) documentation for details.
 """
