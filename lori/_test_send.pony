@@ -2738,14 +2738,14 @@ actor \nodoc\ _TestSendDeliveredServer
       end
       k = k + 1
     end
-    _h.log("peer=" + bytes.string() + " reached_os=" + reached_os.string()
-      + " on_sent=" + _sent_ids.size().string()
-      + " on_send_failed=" + _failed_ids.size().string())
+    _h.log("peer=" + bytes.string() + " reached_os=" + reached_os.string() +
+      " on_sent=" + _sent_ids.size().string() +
+      " on_send_failed=" + _failed_ids.size().string())
     _h.assert_true(
       _sent_ids.size() >= reached_os,
-      "the peer holds " + bytes.string() + " bytes, so " + reached_os.string()
-        + " sends reached the OS, but only " + _sent_ids.size().string()
-        + " reported _on_sent")
+      "the peer holds " + bytes.string() + " bytes, so " + reached_os.string() +
+        " sends reached the OS, but only " + _sent_ids.size().string() +
+        " reported _on_sent")
     _h.complete_action("split verified")
 
   be dispose() =>

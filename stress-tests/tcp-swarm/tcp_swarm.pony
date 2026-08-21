@@ -310,8 +310,8 @@ primitive _MakeConfig
       else
         return recover val
           ValidationFailure(
-            "--write-shape must be 'write' or 'writev', got '" + write_shape
-              + "'")
+            "--write-shape must be 'write' or 'writev', got '" + write_shape +
+              "'")
         end
       end
 
@@ -324,15 +324,16 @@ primitive _MakeConfig
       if expect_frame > read_buffer_size then
         return recover val
           ValidationFailure(
-            "--expect (" + expect_frame.string() + ") must not exceed "
-              + "--read-buffer-size (" + read_buffer_size.string() + ")")
+            "--expect (" + expect_frame.string() + ") must not exceed " +
+              "--read-buffer-size (" + read_buffer_size.string() + ")")
         end
       end
       if (target_total % expect_frame) != 0 then
         return recover val
           ValidationFailure(
-            "--expect (" + expect_frame.string() + ") must divide payload-size "
-              + "* messages (" + target_total.string() + ")")
+            "--expect (" + expect_frame.string() +
+              ") must divide payload-size * messages (" +
+              target_total.string() + ")")
         end
       end
     end
@@ -554,9 +555,9 @@ actor Spawner
     _try_finish()
 
   fun ref _try_finish() =>
-    if (not _finished)
-      and (_spawned >= _config.connections)
-      and (_inflight == 0)
+    if (not _finished) and
+      (_spawned >= _config.connections) and
+      (_inflight == 0)
     then
       _finished = true
       // A final heartbeat with the true completed count before the timer stops:
@@ -583,8 +584,8 @@ actor Spawner
     // FAIL line below repeats `connect_failed=`, so a FAIL emitted first would
     // be misread. (orchestrate_tcp.py: parse_result)
     @printf(
-      ("RESULT connections=%zu spawned=%zu completed=%zu failed=%zu "
-        + "verified=%zu mismatched=%zu\n").cstring(),
+      ("RESULT connections=%zu spawned=%zu completed=%zu failed=%zu " +
+        "verified=%zu mismatched=%zu\n").cstring(),
       _config.connections,
       _spawned,
       _completed,
@@ -601,8 +602,8 @@ actor Spawner
     else
       let truncated = (_completed - _verified) - _mismatched
       @printf(
-        ("FAIL: %zu of %zu connections did not verify "
-          + "(connect_failed=%zu truncated=%zu mismatched=%zu)\n").cstring(),
+        ("FAIL: %zu of %zu connections did not verify " +
+          "(connect_failed=%zu truncated=%zu mismatched=%zu)\n").cstring(),
         _config.connections - _verified,
         _config.connections,
         _failed,
@@ -819,8 +820,8 @@ actor SwarmClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
     if _closing then
       return
     end
-    while (_messages_sent < _config.messages)
-      and _tcp_connection.is_writeable()
+    while (_messages_sent < _config.messages) and
+      _tcp_connection.is_writeable()
     do
       if _config.use_writev then
         _tcp_connection.send(_Keystream.make_chunks(
@@ -952,8 +953,8 @@ primitive _Unreachable
   fun apply(loc: SourceLoc = __loc) =>
     @fprintf(
       @pony_os_stderr(),
-      ("Reached unreachable code at %s:%s\n"
-        + "Please open an issue at https://github.com/ponylang/lori/issues\n")
+      ("Reached unreachable code at %s:%s\n" +
+        "Please open an issue at https://github.com/ponylang/lori/issues\n")
         .cstring(),
       loc.file().cstring(),
       loc.line().string().cstring())

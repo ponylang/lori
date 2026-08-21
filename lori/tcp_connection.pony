@@ -998,9 +998,9 @@ class TCPConnection[TCP: TCPBackend ref = RuntimeBackend]
     `_close_notify_then_shutdown()` sends the alert when the write queue
     drains, then calls back into this method for FIN.
     """
-    if _shutdown
-      or (_inflight_connections > 0)
-      or _has_pending_writes()
+    if _shutdown or
+      (_inflight_connections > 0) or
+      _has_pending_writes()
     then
       return
     end
@@ -1320,8 +1320,8 @@ class TCPConnection[TCP: TCPBackend ref = RuntimeBackend]
       end
     if needs_grow then
       _read_buffer.undefined(_read_buffer_size)
-    elseif (_bytes_in_read_buffer == 0)
-      and (_read_buffer_size > _read_buffer_min)
+    elseif (_bytes_in_read_buffer == 0) and
+      (_read_buffer_size > _read_buffer_min)
     then
       _read_buffer_size = _read_buffer_min
       _read_buffer =

@@ -80,8 +80,8 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
     end
 
     if (_received_count % 10) == 0 then
-      _out.print("Server: received " + _received_count.string()
-        + " messages, yielding...")
+      _out.print("Server: received " + _received_count.string() +
+        " messages, yielding...")
       return YieldReading
     end
 

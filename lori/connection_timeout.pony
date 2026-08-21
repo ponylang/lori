@@ -19,9 +19,9 @@ primitive ConnectionTimeoutValidator is Validator[U64]
     elseif value > _max_millis() then
       recover val
         ValidationFailure(
-          "connection timeout must be at most "
-            + _max_millis().string()
-            + " milliseconds")
+          "connection timeout must be at most " +
+            _max_millis().string() +
+            " milliseconds")
       end
     else
       ValidationSuccess

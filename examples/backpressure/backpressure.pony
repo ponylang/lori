@@ -104,8 +104,8 @@ actor Flood is (TCPConnectionActor & ClientLifecycleEventReceiver)
     _tcp_connection
 
   fun ref _on_connected() =>
-    _out.print("Flood: connected, sending " + _total_to_send.string()
-      + " chunks of " + _chunk.size().string() + " bytes...")
+    _out.print("Flood: connected, sending " + _total_to_send.string() +
+      " chunks of " + _chunk.size().string() + " bytes...")
     // Defer first send batch to a subsequent turn so backpressure goes
     // through the normal ASIO event path.
     _resume_sends()
@@ -135,9 +135,9 @@ actor Flood is (TCPConnectionActor & ClientLifecycleEventReceiver)
 
   fun ref _on_throttled() =>
     _throttle_count = _throttle_count + 1
-    _out.print("Flood: throttled (#" + _throttle_count.string()
-      + ") — " + _sends_accepted.string() + "/" + _total_to_send.string()
-      + " chunks accepted")
+    _out.print("Flood: throttled (#" + _throttle_count.string() +
+      ") — " + _sends_accepted.string() + "/" + _total_to_send.string() +
+      " chunks accepted")
 
   fun ref _on_unthrottled() =>
     _out.print("Flood: unthrottled, resuming sends")
@@ -155,9 +155,9 @@ actor Flood is (TCPConnectionActor & ClientLifecycleEventReceiver)
   fun ref _on_sent(token: SendToken) =>
     _sends_confirmed = _sends_confirmed + 1
     if _sends_confirmed == _total_to_send then
-      _out.print("Flood: all " + _total_to_send.string()
-        + " sends confirmed by OS. Throttled "
-        + _throttle_count.string() + " time(s).")
+      _out.print("Flood: all " + _total_to_send.string() +
+        " sends confirmed by OS. Throttled " +
+        _throttle_count.string() + " time(s).")
       _tcp_connection.close()
     end
 

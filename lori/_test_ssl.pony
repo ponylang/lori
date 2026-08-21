@@ -1504,8 +1504,8 @@ actor \nodoc\ _TestSSLLargePayloadServer
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if data.size() != 1000 then
-      _h.fail("frame " + _frames.string() + " was " + data.size().string()
-        + " bytes, wanted 1000")
+      _h.fail("frame " + _frames.string() + " was " + data.size().string() +
+        " bytes, wanted 1000")
       _h.complete(false)
       return KeepReading
     end
@@ -1513,8 +1513,8 @@ actor \nodoc\ _TestSSLLargePayloadServer
     let want = _frames.u8()
     for b in (consume data).values() do
       if b != want then
-        _h.fail("frame " + _frames.string() + " holds byte " + b.string()
-          + ", wanted " + want.string())
+        _h.fail("frame " + _frames.string() + " holds byte " + b.string() +
+          ", wanted " + want.string())
         _h.complete(false)
         return KeepReading
       end

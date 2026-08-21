@@ -95,8 +95,8 @@ actor SocketOptionsServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
         OSSockOpt.sol_socket(), OSSockOpt.so_sndbuf())
 
     if (rcv_errno == 0) and (snd_errno == 0) then
-      _out.print("Server: rcvbuf=" + rcv_size.string()
-        + " sndbuf=" + snd_size.string())
+      _out.print("Server: rcvbuf=" + rcv_size.string() +
+        " sndbuf=" + snd_size.string())
     else
       _out.print("Server: failed to read buffer sizes")
     end
