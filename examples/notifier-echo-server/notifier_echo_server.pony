@@ -55,6 +55,11 @@ class EchoNotify is notifier.ServerTCPConnectionNotify
   new create(out: OutStream) =>
     _out = out
 
+  fun ref on_start_failure(conn: notifier.ServerTCPConnection ref,
+    reason: StartFailureReason)
+  =>
+    None
+
   fun ref on_received(conn: notifier.ServerTCPConnection ref,
     data: Array[U8] iso): ReadAction
   =>

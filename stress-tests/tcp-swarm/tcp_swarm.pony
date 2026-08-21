@@ -690,6 +690,9 @@ actor EchoServer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _set_framing() =>
     if _config.expect_frame > 0 then
       // Unreachable branches: expect_frame is > 0 here (guarded above) and

@@ -45,3 +45,7 @@ class \nodoc\ _TestNDListenNotify is TCPListenNotify
     _h.complete_action("closed")
 
 class \nodoc\ _TestNDServerNotify is ServerTCPConnectionNotify
+  fun ref on_start_failure(conn: ServerTCPConnection ref,
+    reason: lori.StartFailureReason)
+  =>
+    None

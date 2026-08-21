@@ -61,6 +61,11 @@ use "lori"
 use "lori/notifier"
 
 class Echo is ServerTCPConnectionNotify
+  fun ref on_start_failure(conn: ServerTCPConnection ref,
+    reason: StartFailureReason)
+  =>
+    None
+
   fun ref on_received(conn: ServerTCPConnection ref, data: Array[U8] iso):
     ReadAction
   =>
