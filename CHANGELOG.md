@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file. This projec
 - Rename PonyTCP to RuntimeBackend ([PR #366](https://github.com/ponylang/lori/pull/366))
 - Change RuntimeBackend from a primitive to a class ([PR #369](https://github.com/ponylang/lori/pull/369))
 - Several TCPConnection and TCPListener methods now require a ref receiver ([PR #369](https://github.com/ponylang/lori/pull/369))
+- Require explicit start-failure handling for server connections ([PR #377](https://github.com/ponylang/lori/pull/377))
 
 ## [0.18.1] - 2026-08-06
 
