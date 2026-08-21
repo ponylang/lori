@@ -70,6 +70,9 @@ actor \nodoc\ _TestSendTokenClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
   fun ref _on_connected() =>
     _h.complete_action("client connected")
     match \exhaustive\ _tcp_connection.send("hello")
@@ -177,6 +180,9 @@ actor \nodoc\ _TestSendAfterCloseClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     _h.complete_action("client connected")
@@ -286,6 +292,9 @@ actor \nodoc\ _TestSendvClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     _h.complete_action("client connected")
@@ -405,6 +414,9 @@ actor \nodoc\ _TestSendvEmptyClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
   fun ref _on_connected() =>
     _h.complete_action("client connected")
     match \exhaustive\ _tcp_connection.send(
@@ -492,6 +504,9 @@ actor \nodoc\ _TestSendvMixedEmptyClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     _h.complete_action("client connected")

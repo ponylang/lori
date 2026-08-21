@@ -82,6 +82,9 @@ actor \nodoc\ _TestPinger is (TCPConnectionActor & ClientLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
   fun ref _on_connected() =>
     if _pings_to_send > 0 then
       _tcp_connection.send("Ping")
@@ -208,6 +211,9 @@ actor \nodoc\ _TestBasicBufferUntilClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     _h.complete_action("client connected")
@@ -475,6 +481,9 @@ actor \nodoc\ _TestHardCloseDuringReceiveClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
   fun ref _on_connected() =>
     // Give the server data so its `_on_received` fires.
     match \exhaustive\ _tcp_connection.send("ping")
@@ -595,6 +604,9 @@ actor \nodoc\ _TestHardCloseAfterFramedReceiveClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     // Two 4-byte frames in a single send, so both land in one server read.
@@ -1101,6 +1113,9 @@ actor \nodoc\ _TestFakeConnectInflightActor
   fun ref _connection(): TCPConnection[_FBConnect3] =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
   fun ref _on_connecting(inflight_connections: U32) =>
     if inflight_connections == 3 then
       _h.complete_action("on_connecting_3")
@@ -1148,6 +1163,9 @@ actor \nodoc\ _TestFakeSendWhileConnectingActor
   fun ref _connection(): TCPConnection[_FBConnect1] =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
   fun ref _on_connecting(inflight_connections: U32) =>
     match \exhaustive\ _tcp_connection.send("aaa")
     | SendAccepted =>
@@ -1194,6 +1212,9 @@ actor \nodoc\ _TestFakeSendWhileUnconnectedClosingActor
 
   fun ref _connection(): TCPConnection[_FBConnect1] =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connecting(inflight_connections: U32) =>
     _tcp_connection.close()

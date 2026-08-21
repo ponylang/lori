@@ -73,6 +73,9 @@ actor \nodoc\ _TestTimerFiresClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
   fun ref _on_connected() =>
     _h.complete_action("client connected")
 
@@ -185,6 +188,9 @@ actor \nodoc\ _TestTimerCancelClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
 actor \nodoc\ _TestTimerCancelServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
@@ -319,6 +325,9 @@ actor \nodoc\ _TestTimerNotResetByIOClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     _tcp_connection.send("ping")
@@ -485,6 +494,9 @@ actor \nodoc\ _TestSetTimerAlreadyActiveClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
 actor \nodoc\ _TestSetTimerAlreadyActiveServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
@@ -609,6 +621,9 @@ actor \nodoc\ _TestTimerRearmClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
 actor \nodoc\ _TestTimerRearmServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
@@ -716,6 +731,9 @@ actor \nodoc\ _TestTimerCancelWrongTokenClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
 actor \nodoc\ _TestTimerCancelWrongTokenServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
@@ -832,6 +850,9 @@ actor \nodoc\ _TestTimerHardCloseClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
 actor \nodoc\ _TestTimerHardCloseServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
@@ -951,6 +972,9 @@ actor \nodoc\ _TestTimerSetDuringClosingClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
 actor \nodoc\ _TestTimerSetDuringClosingServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
@@ -1239,6 +1263,9 @@ actor \nodoc\ _TestSetTimerNotOpenSSLServerClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
 actor \nodoc\ _TestSetTimerNotOpenSSLServerConn
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
@@ -1356,6 +1383,9 @@ actor \nodoc\ _TestTimerSurvivesCloseClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     match \exhaustive\ MakeTimerDuration(2_000)

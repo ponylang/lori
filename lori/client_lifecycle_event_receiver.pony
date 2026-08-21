@@ -2,6 +2,10 @@ trait ClientLifecycleEventReceiver[TCP: TCPBackend ref = RuntimeBackend]
   """
   Application-level callbacks for client-side TCP connections.
   One receiver per connection, no chaining.
+
+  Every callback has a default implementation except `_on_connection_failure`,
+  which must be implemented because ignoring a failed connection is never
+  correct.
   """
   fun ref _connection(): TCPConnection[TCP]
 
@@ -21,7 +25,7 @@ trait ClientLifecycleEventReceiver[TCP: TCPBackend ref = RuntimeBackend]
     """
     None
 
-  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+  fun ref _on_connection_failure(reason: ConnectionFailureReason)
     """
     Called when a connection fails to open. For SSL connections, this is
     also called when the SSL handshake fails before _on_connected would
@@ -36,7 +40,6 @@ trait ClientLifecycleEventReceiver[TCP: TCPBackend ref = RuntimeBackend]
     `ConnectionFailedTimerError` (the connect timer's ASIO event
     subscription failed).
     """
-    None
 
   fun ref _on_closed() =>
     """

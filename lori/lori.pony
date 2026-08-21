@@ -249,6 +249,9 @@ actor MyStartTLSClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
   fun ref _on_connected() =>
     // Send protocol-specific upgrade request over plaintext
     _tcp_connection.send("STARTTLS")

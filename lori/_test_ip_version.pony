@@ -44,6 +44,9 @@ actor \nodoc\ _TestIP4Pinger
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
   fun ref _on_connected() =>
     if _pings_to_send > 0 then
       _tcp_connection.send("Ping")
@@ -181,6 +184,9 @@ actor \nodoc\ _TestIP6Pinger
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     if _pings_to_send > 0 then
