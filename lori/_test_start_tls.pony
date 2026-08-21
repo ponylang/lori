@@ -66,6 +66,9 @@ actor \nodoc\ _TestStartTLSClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
   fun ref _on_connected() =>
     _tcp_connection.send("STARTTLS")
 
@@ -248,6 +251,9 @@ actor \nodoc\ _TestStartTLSPreconditionsNotConnectedClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
   fun ref _on_connected() =>
     _tcp_connection.close()
     match _tcp_connection.start_tls(_sslctx)
@@ -286,6 +292,9 @@ actor \nodoc\ _TestStartTLSPreconditionsAlreadyTLSClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     // First start_tls sets _ssl
@@ -329,6 +338,9 @@ actor \nodoc\ _TestStartTLSPreconditionsNotReadyClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     _tcp_connection.mute()
@@ -447,6 +459,9 @@ actor \nodoc\ _TestStartTLSSendDuringUpgradeClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     // Initiate TLS upgrade
@@ -573,6 +588,9 @@ actor \nodoc\ _TestStartTLSHandshakeFailureClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     _tcp_connection.send("STARTTLS")
@@ -734,6 +752,9 @@ actor \nodoc\ _TestStartTLSIsWriteableClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
   fun ref _on_connected() =>
     // Initiate TLS upgrade
     match \exhaustive\ _tcp_connection.start_tls(_sslctx, "localhost")
@@ -856,6 +877,9 @@ actor \nodoc\ _TestStartTLSAuthFailureClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     _tcp_connection.send("STARTTLS")
@@ -1036,6 +1060,9 @@ actor \nodoc\ _TestSetTimerAfterTLSUpgradeClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     _tcp_connection.send("STARTTLS")
@@ -1262,6 +1289,9 @@ actor \nodoc\ _TestStartTLSHardCloseClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     _tcp_connection.send("STARTTLS")

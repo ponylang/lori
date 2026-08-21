@@ -78,6 +78,9 @@ actor \nodoc\ _TestYieldReadClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
   fun ref _on_connected() =>
     // One send, so all twenty messages come out of a single TCP read. Twenty
     // separate sends could arrive as separate reads, and a broken yield would

@@ -127,6 +127,9 @@ actor Client is (TCPConnectionActor & ClientLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
   fun ref _on_connected() =>
     _tcp_connection.send("Ping")
 

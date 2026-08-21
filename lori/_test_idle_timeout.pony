@@ -65,6 +65,9 @@ actor \nodoc\ _TestIdleTimeoutClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
 actor \nodoc\ _TestIdleTimeoutServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
@@ -162,6 +165,9 @@ actor \nodoc\ _TestIdleTimeoutResetClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     _tcp_connection.send("ping")
@@ -301,6 +307,9 @@ actor \nodoc\ _TestIdleTimeoutDisableClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
 actor \nodoc\ _TestIdleTimeoutDisableServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
@@ -435,6 +444,9 @@ actor \nodoc\ _TestSSLIdleTimeoutClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
 actor \nodoc\ _TestSSLIdleTimeoutServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
@@ -674,6 +686,9 @@ actor \nodoc\ _TestSSLIdleTimeoutDeferredArmClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
   fun ref _on_idle_timeout() =>
     _h.complete(true)
 
@@ -766,6 +781,9 @@ actor \nodoc\ _TestIdleTimeoutRearmsClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
 actor \nodoc\ _TestIdleTimeoutRearmsServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
@@ -875,6 +893,9 @@ actor \nodoc\ _TestIdleTimeoutNoRearmClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     // Never read: the server's FIN goes unanswered and it stays in _Closing.

@@ -63,6 +63,9 @@ actor \nodoc\ _TestSSLPinger
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
   fun ref _on_connected() =>
     if _pings_to_send > 0 then
       _tcp_connection.send("Ping")
@@ -260,6 +263,9 @@ actor \nodoc\ _TestSSLSendvClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     _h.complete_action("client connected")
@@ -569,6 +575,9 @@ actor \nodoc\ _TestSSLHandshakeFailurePlainClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
   fun ref _on_connected() =>
     _tcp_connection.send("XXXXXXXXXX")
     _tcp_connection.close()
@@ -655,6 +664,9 @@ actor \nodoc\ _TestSSLTransitionToOpenClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     match \exhaustive\ _tcp_connection.send("test")
@@ -820,6 +832,9 @@ actor \nodoc\ _TestSSLIsWriteablePlainClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
 class \nodoc\ iso _TestSSLHardCloseDuringReceive is UnitTest
   """
   Test that hard_close() from inside _on_received on an SSL connection stops
@@ -912,6 +927,9 @@ actor \nodoc\ _TestSSLHardCloseReceiveClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     // Two buffers, so two TLS records, encrypted and flushed together.
@@ -1046,6 +1064,9 @@ actor \nodoc\ _TestSSLHardCloseOnConnectedClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
   fun ref _on_connected() =>
     _tcp_connection.hard_close()
 
@@ -1169,6 +1190,9 @@ actor \nodoc\ _TestSSLHardCloseOnStartedClient
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
 actor \nodoc\ _TestSSLHardCloseOnStartedServer
   is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
@@ -1284,6 +1308,9 @@ actor \nodoc\ _TestSSLCloseReceiveClient
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
 
   fun ref _on_connected() =>
     // Two buffers, so two TLS records, encrypted and flushed together.
