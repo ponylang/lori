@@ -109,6 +109,9 @@ actor \nodoc\ _TestBackpressureDrainServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_started() =>
     _h.complete_action("server started")
     // Frame incoming messages: "ready" is 5 bytes
@@ -323,6 +326,9 @@ actor \nodoc\ _TestWriteOnlyEventReadRecoveryServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     _h.complete_action("server started")
@@ -542,6 +548,9 @@ actor \nodoc\ _TestReadableEventWriteRecoveryServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     _h.complete_action("server started")

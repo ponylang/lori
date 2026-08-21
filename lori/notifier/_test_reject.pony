@@ -106,3 +106,7 @@ class \nodoc\ _TestNRCSecondClientNotify is ClientTCPConnectionNotify
     _h.complete(false)
 
 class \nodoc\ _TestNRCServerNotify is ServerTCPConnectionNotify
+  fun ref on_start_failure(conn: ServerTCPConnection ref,
+    reason: lori.StartFailureReason)
+  =>
+    None

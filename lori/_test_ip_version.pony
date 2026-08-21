@@ -87,6 +87,9 @@ actor \nodoc\ _TestIP4Ponger
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _pings_to_receive > 0 then
       _tcp_connection.send("Pong")
@@ -221,6 +224,9 @@ actor \nodoc\ _TestIP6Ponger
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _pings_to_receive > 0 then

@@ -120,6 +120,9 @@ actor \nodoc\ _TestStartTLSServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let msg = String.from_array(consume data)
     if msg == "STARTTLS" then
@@ -620,6 +623,9 @@ actor \nodoc\ _TestStartTLSHandshakeFailureServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _awaiting_client_hello then
       // Client sent a ClientHello — respond with garbage to break the
@@ -908,6 +914,9 @@ actor \nodoc\ _TestStartTLSAuthFailureServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let msg = String.from_array(consume data)
     if msg == "STARTTLS" then
@@ -1098,6 +1107,9 @@ actor \nodoc\ _TestSetTimerAfterTLSUpgradeServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let msg = String.from_array(consume data)
@@ -1303,6 +1315,9 @@ actor \nodoc\ _TestStartTLSHardCloseServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     let msg = String.from_array(consume data)

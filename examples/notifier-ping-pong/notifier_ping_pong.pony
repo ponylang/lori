@@ -85,6 +85,11 @@ class PongNotify is notifier.ServerTCPConnectionNotify
   new create(out: OutStream) =>
     _out = out
 
+  fun ref on_start_failure(conn: notifier.ServerTCPConnection ref,
+    reason: StartFailureReason)
+  =>
+    None
+
   fun ref on_accepted(conn: notifier.ServerTCPConnection ref) =>
     match MakeBufferSize(4)
     | let e: BufferSize => conn.buffer_until(e)

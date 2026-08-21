@@ -13,8 +13,9 @@ trait ServerTCPConnectionNotify
   callable from any callback. Behaviors like `write` are also callable but
   execute on the next turn.
 
-  Every callback has a default implementation. Override the ones your
-  application cares about.
+  Every callback has a default implementation except `on_start_failure`,
+  which must be implemented because ignoring a server-side start failure
+  is never correct.
   """
   fun ref on_accepted(conn: ServerTCPConnection ref) =>
     """
@@ -85,12 +86,10 @@ trait ServerTCPConnectionNotify
 
   fun ref on_start_failure(conn: ServerTCPConnection ref,
     reason: lori.StartFailureReason)
-  =>
     """
     Called when a server connection fails to start — for example, an SSL
     handshake failure before `on_accepted` would have fired.
     """
-    None
 
   fun ref on_tls_ready(conn: ServerTCPConnection ref) =>
     """

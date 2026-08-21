@@ -63,6 +63,11 @@ class \nodoc\ _TestNPPServerNotify is ServerTCPConnectionNotify
     _pings_to_receive = pings_to_receive
     _h = h
 
+  fun ref on_start_failure(conn: ServerTCPConnection ref,
+    reason: lori.StartFailureReason)
+  =>
+    None
+
   fun ref on_accepted(conn: ServerTCPConnection ref) =>
     match lori.MakeBufferSize(4)
     | let e: lori.BufferSize => conn.buffer_until(e)

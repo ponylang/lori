@@ -108,6 +108,9 @@ actor \nodoc\ _TestSSLPonger
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if _pings_to_receive > 0 then
       _tcp_connection.send("Pong")
@@ -305,6 +308,9 @@ actor \nodoc\ _TestSSLSendvServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _h.assert_eq[String]("SSL Hello World", String.from_array(consume data))
     _h.complete_action("data verified")
@@ -401,6 +407,9 @@ actor \nodoc\ _TestSSLHandshakeFailurePlainServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     _tcp_connection.send("XXXXXXXXXX")
@@ -674,6 +683,9 @@ actor \nodoc\ _TestSSLTransitionToOpenServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
 class \nodoc\ iso _TestSSLIsWriteableDuringHandshake is UnitTest
   """
   Test that is_writeable() returns false during the initial SSL handshake
@@ -772,6 +784,9 @@ actor \nodoc\ _TestSSLIsWriteableServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   be check_writeable() =>
     _h.assert_false(
@@ -921,6 +936,9 @@ actor \nodoc\ _TestSSLHardCloseReceiveServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     // hard_close() below disposes the SSL session and fires _on_closed. The
     // client's second record is still in that session, so a read loop that
@@ -1056,6 +1074,9 @@ actor \nodoc\ _TestSSLHardCloseOnConnectedServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
 class \nodoc\ iso _TestSSLHardCloseOnStarted is UnitTest
   """
   Test that hard_close() from inside _on_started on an SSL server is safe.
@@ -1165,6 +1186,9 @@ actor \nodoc\ _TestSSLHardCloseOnStartedServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     _tcp_connection.hard_close()
@@ -1283,6 +1307,9 @@ actor \nodoc\ _TestSSLCloseReceiveServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _receives = _receives + 1
@@ -1444,6 +1471,9 @@ actor \nodoc\ _TestSSLLargePayloadServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     if data.size() != 1000 then

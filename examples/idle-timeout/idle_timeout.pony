@@ -63,6 +63,9 @@ actor IdleTimeoutEchoer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_started() =>
     _out.print("Connection established. 10-second idle timeout active.")
     match MakeIdleTimeout(10_000)

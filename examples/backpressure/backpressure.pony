@@ -62,6 +62,9 @@ actor Sink is (TCPConnectionActor & ServerLifecycleEventReceiver)
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _bytes_received = _bytes_received + data.size()
     KeepReading

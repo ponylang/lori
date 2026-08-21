@@ -104,18 +104,16 @@ trait ServerLifecycleEventReceiver[TCP: TCPBackend ref = RuntimeBackend]
     """
     None
 
-  fun ref _on_start_failure(reason: StartFailureReason) =>
+  fun ref _on_start_failure(reason: StartFailureReason)
     """
     Called when a server connection fails to start. This covers failures
     that occur before _on_started would have fired, such as an SSL
     handshake failure. The application was never notified of the connection
     via _on_started.
 
-    The `reason` parameter identifies the cause of the failure. Currently
-    the only reason is `StartFailedSSL` (SSL session creation or handshake
-    failure).
+    The `reason` parameter identifies the cause of the failure.
+    `StartFailedSSL` indicates SSL session creation or handshake failure.
     """
-    None
 
   fun ref _on_tls_ready() =>
     """

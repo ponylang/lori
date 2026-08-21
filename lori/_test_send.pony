@@ -108,6 +108,9 @@ actor \nodoc\ _TestSendTokenServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
 class \nodoc\ iso _TestSendAfterClose is UnitTest
   """
   Test that send() returns SendErrorNotConnected after the connection has been
@@ -212,6 +215,9 @@ actor \nodoc\ _TestSendAfterCloseServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
 class \nodoc\ iso _TestSendv is UnitTest
   """
@@ -322,6 +328,9 @@ actor \nodoc\ _TestSendvServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _h.assert_eq[String]("Hello, world!", String.from_array(consume data))
@@ -509,6 +518,9 @@ actor \nodoc\ _TestSendvMixedEmptyServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _h.assert_eq[String]("Helloworld", String.from_array(consume data))
     _h.complete_action("data verified")
@@ -639,6 +651,9 @@ actor \nodoc\ _TestSendPerTokenServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     // Frame the client's "ready" (5 bytes).
@@ -848,6 +863,9 @@ actor \nodoc\ _TestSendSSLLargeSingleSendServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_started() =>
     _tcp_connection.set_so_rcvbuf(4096)
 
@@ -985,6 +1003,9 @@ actor \nodoc\ _TestSendMidFlightDropServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     match MakeBufferSize(5)
@@ -1238,6 +1259,9 @@ actor \nodoc\ _TestSendSSLPerTokenServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _assert_accepted(r: SendResult) =>
     match \exhaustive\ r
     | SendAccepted => None
@@ -1439,6 +1463,9 @@ actor \nodoc\ _TestSendSSLMidFlightDropServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _assert_accepted(r: SendResult) =>
     match \exhaustive\ r
@@ -1678,6 +1705,9 @@ actor \nodoc\ _TestSendGracefulCloseServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_started() =>
     match MakeBufferSize(5)
     | let b: BufferSize => _tcp_connection.buffer_until(b)
@@ -1901,6 +1931,9 @@ actor \nodoc\ _TestSendSSLGracefulCloseServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _assert_accepted(r: SendResult) =>
     match \exhaustive\ r
     | SendAccepted => None
@@ -2095,6 +2128,9 @@ actor \nodoc\ _TestSendCloseFromThrottledServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_started() =>
     match MakeBufferSize(5)
     | let b: BufferSize => _tcp_connection.buffer_until(b)
@@ -2248,6 +2284,9 @@ actor \nodoc\ _TestSendHardCloseFromThrottledServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     match MakeBufferSize(5)
@@ -2425,6 +2464,9 @@ actor \nodoc\ _TestSendSSLHardCloseFromThrottledServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     match MakeBufferSize(5)
@@ -2619,6 +2661,9 @@ actor \nodoc\ _TestSendDeliveredServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     match MakeBufferSize(5)
@@ -2944,6 +2989,9 @@ actor \nodoc\ _TestSendCloseFromAcceptedServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _h.assert_eq[String]("payload", String.from_array(consume data))
     _h.complete_action("server saw payload")
@@ -3065,6 +3113,9 @@ actor \nodoc\ _TestSendCloseFromSentServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _h.assert_eq[String]("payload", String.from_array(consume data))
@@ -3409,6 +3460,9 @@ actor \nodoc\ _TestSendOnSentPrecedesServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_started() =>
     match MakeBufferSize(5)
     | let b: BufferSize => _tcp_connection.buffer_until(b)
@@ -3594,6 +3648,9 @@ actor \nodoc\ _TestSendThrottleSuppressedServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     match MakeBufferSize(5)
@@ -3789,6 +3846,9 @@ actor \nodoc\ _TestSendKeepsDeliveredServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _received.append(String.from_array(consume data))
     if _received == "AAAABBBB" then
@@ -3906,6 +3966,9 @@ actor \nodoc\ _TestSendPrecedesReceivedServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_received(data: Array[U8] iso): ReadAction =>
     _received = _received + 1
     if _received == 1 then
@@ -3971,6 +4034,9 @@ actor \nodoc\ _TestFakeSendOkActor
 
   fun ref _connection(): TCPConnection[_FBSendOkRecvRetry] =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     _tcp_connection.mute()
@@ -4041,6 +4107,9 @@ actor \nodoc\ _TestFakeSendMultipleTokenOrderActor
 
   fun ref _connection(): TCPConnection[_FBSendOkRecvRetry] =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     _tcp_connection.mute()
@@ -4118,6 +4187,9 @@ actor \nodoc\ _TestFakeSendOnClosedActor
   fun ref _connection(): TCPConnection[_FBSendOkRecvRetry] =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_started() =>
     _tcp_connection.mute()
     _tcp_connection.hard_close()
@@ -4188,6 +4260,9 @@ actor \nodoc\ _TestFakeSendErrorActor
 
   fun ref _connection(): TCPConnection[_FBSendErrorRecvRetry] =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     _tcp_connection.mute()
@@ -4264,6 +4339,9 @@ actor \nodoc\ _TestFakeSendFailedAfterClosedActor
 
   fun ref _connection(): TCPConnection[_FBSendStepRecvRetryFailed] =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     _tcp_connection.mute()
@@ -4345,6 +4423,9 @@ actor \nodoc\ _TestFakeGracefulCloseActor
 
   fun ref _connection(): TCPConnection[_FBSendOkRecvRetry] =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     _tcp_connection.mute()

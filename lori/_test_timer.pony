@@ -94,6 +94,9 @@ actor \nodoc\ _TestTimerFiresServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_started() =>
     match \exhaustive\ MakeTimerDuration(2_000)
     | let d: TimerDuration =>
@@ -200,6 +203,9 @@ actor \nodoc\ _TestTimerCancelServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     match \exhaustive\ MakeTimerDuration(5_000)
@@ -367,6 +373,9 @@ actor \nodoc\ _TestTimerNotResetByIOServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_started() =>
     match \exhaustive\ MakeTimerDuration(3_000)
     | let d: TimerDuration =>
@@ -493,6 +502,9 @@ actor \nodoc\ _TestSetTimerAlreadyActiveServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_started() =>
     match \exhaustive\ MakeTimerDuration(5_000)
     | let d: TimerDuration =>
@@ -615,6 +627,9 @@ actor \nodoc\ _TestTimerRearmServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_started() =>
     _set_one_second_timer()
 
@@ -718,6 +733,9 @@ actor \nodoc\ _TestTimerCancelWrongTokenServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     match \exhaustive\ MakeTimerDuration(5_000)
@@ -833,6 +851,9 @@ actor \nodoc\ _TestTimerHardCloseServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_started() =>
     match MakeTimerDuration(5_000)
     | let d: TimerDuration =>
@@ -947,6 +968,9 @@ actor \nodoc\ _TestTimerSetDuringClosingServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     _tcp_connection.close()
@@ -1104,6 +1128,9 @@ actor \nodoc\ _TestSetTimerNotOpenSSLServer
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
 class \nodoc\ iso _TestSetTimerNotOpenDuringSSLHandshakeServer is UnitTest
   """
   Test that set_timer returns SetTimerNotOpen during initial SSL handshake
@@ -1256,6 +1283,9 @@ actor \nodoc\ _TestSetTimerNotOpenSSLServerConn
   fun ref _connection(): TCPConnection =>
     _tcp_connection
 
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
   fun ref _on_started() =>
     _h.fail("SSL handshake should not complete against plain TCP client")
     _h.complete(false)
@@ -1364,6 +1394,9 @@ actor \nodoc\ _TestTimerSurvivesCloseServer
 
   fun ref _connection(): TCPConnection =>
     _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
 
   fun ref _on_started() =>
     // Mute so we never read the client's FIN, preventing the close
