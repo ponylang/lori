@@ -538,8 +538,8 @@ actor \nodoc\ _TestMuteWithFullReadBufferServer
     end
 
     if data.size() != 4 then
-      _h.fail("message was " + data.size().string()
-        + " bytes; buffer_until(4) is not framing")
+      _h.fail("message was " + data.size().string() +
+        " bytes; buffer_until(4) is not framing")
       _h.complete(false)
       return KeepReading
     end
@@ -552,8 +552,8 @@ actor \nodoc\ _TestMuteWithFullReadBufferServer
       // assumed — the test is worthless if it never built the state.
       let free = _tcp_connection._read_buffer_free_space()
       if free != 0 then
-        _h.fail("muting with " + free.string()
-          + " bytes free in the read buffer; wanted a full one")
+        _h.fail("muting with " + free.string() +
+          " bytes free in the read buffer; wanted a full one")
         _h.complete(false)
         return KeepReading
       end
@@ -580,8 +580,8 @@ actor \nodoc\ _TestMuteWithFullReadBufferServer
       let want = ((_bytes_received + i) % 256).u8()
       let got = try d(i)? else _Unreachable(); 0 end
       if got != want then
-        _h.fail("byte " + (_bytes_received + i).string() + " was "
-          + got.string() + ", wanted " + want.string())
+        _h.fail("byte " + (_bytes_received + i).string() + " was " +
+          got.string() + ", wanted " + want.string())
         _h.complete(false)
         return KeepReading
       end
@@ -591,8 +591,8 @@ actor \nodoc\ _TestMuteWithFullReadBufferServer
     _bytes_received = _bytes_received + d.size()
     if _bytes_received >= 1024 then
       if _bytes_received > 1024 then
-        _h.fail("received " + _bytes_received.string()
-          + " bytes, wanted 1024")
+        _h.fail("received " + _bytes_received.string() +
+          " bytes, wanted 1024")
         _h.complete(false)
       else
         _done = true
@@ -790,8 +790,8 @@ actor \nodoc\ _TestSSLMuteServer
     let got: String val = String.from_iso_array(consume data)
     let want = try _chunks(_received - 1)? else "" end
     if got != want then
-      _h.fail("message " + _received.string() + " was '" + got + "', wanted '"
-        + want + "'")
+      _h.fail("message " + _received.string() + " was '" + got + "', wanted '" +
+        want + "'")
       _h.complete(false)
       return KeepReading
     end
@@ -815,8 +815,8 @@ actor \nodoc\ _TestSSLMuteServer
       if _unmutes == _mute_on.size() then
         _h.complete(true)
       else
-        _h.fail("all messages arrived after " + _unmutes.string()
-          + " unmutes, wanted " + _mute_on.size().string())
+        _h.fail("all messages arrived after " + _unmutes.string() +
+          " unmutes, wanted " + _mute_on.size().string())
         _h.complete(false)
       end
     end
@@ -972,8 +972,8 @@ actor \nodoc\ _TestSSLMuteCloseServer
     _received = _received + 1
 
     if _received > 1 then
-      _h.fail("message " + _received.string()
-        + " was delivered; mute should have held it and close dropped it")
+      _h.fail("message " + _received.string() +
+        " was delivered; mute should have held it and close dropped it")
       return KeepReading
     end
 

@@ -116,8 +116,8 @@ actor Sender is (TCPConnectionActor & ClientLifecycleEventReceiver)
     _tcp_connection
 
   fun ref _on_connected() =>
-    _out.print("Sender: connected, sending " + _messages.size().string()
-      + " messages")
+    _out.print("Sender: connected, sending " + _messages.size().string() +
+      " messages")
     for msg in _messages.values() do
       match \exhaustive\ _tcp_connection.send(msg)
       | SendAccepted => None
@@ -140,15 +140,15 @@ actor Sender is (TCPConnectionActor & ClientLifecycleEventReceiver)
       end
 
     _outstanding(token.id) = msg
-    _out.print("  sent '" + msg + "' (token " + token.id.string()
-      + "), awaiting _on_sent")
+    _out.print("  sent '" + msg + "' (token " + token.id.string() +
+      "), awaiting _on_sent")
 
   fun ref _on_sent(token: SendToken) =>
     try
       (_, let msg) = _outstanding.remove(token.id)?
-      _out.print("_on_sent: '" + msg + "' (token " + token.id.string()
-        + ") reached the OS; " + _outstanding.size().string()
-        + " still outstanding")
+      _out.print("_on_sent: '" + msg + "' (token " + token.id.string() +
+        ") reached the OS; " + _outstanding.size().string() +
+        " still outstanding")
     end
     _maybe_close()
 
@@ -167,8 +167,8 @@ actor Sender is (TCPConnectionActor & ClientLifecycleEventReceiver)
   fun ref _on_send_failed(token: SendToken) =>
     try
       (_, let msg) = _outstanding.remove(token.id)?
-      _out.print("_on_send_failed: '" + msg + "' (token " + token.id.string()
-        + ") did not reach the OS before the connection closed")
+      _out.print("_on_send_failed: '" + msg + "' (token " + token.id.string() +
+        ") did not reach the OS before the connection closed")
     end
 
   fun ref _on_connection_failure(reason: ConnectionFailureReason) =>

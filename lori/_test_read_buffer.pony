@@ -416,8 +416,8 @@ actor \nodoc\ _TestResizeReadBufferBelowBufferSizeServer is
       | let _: ReadBufferResizeBelowBufferSize => None
       | let _: ReadBufferResizeBelowUsed =>
         _h.fail(
-          "should be ReadBufferResizeBelowBufferSize, "
-          + "not ReadBufferResizeBelowUsed")
+          "should be ReadBufferResizeBelowBufferSize, " +
+          "not ReadBufferResizeBelowUsed")
       end
     | let _: ValidationFailure =>
       _h.fail("MakeReadBufferSize(100) should succeed")

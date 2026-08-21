@@ -143,8 +143,8 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
     _tcp_connection
 
   fun ref _on_connected() =>
-    _out.print("Client: connected, sending " + _messages.size().string()
-      + " framed messages...")
+    _out.print("Client: connected, sending " + _messages.size().string() +
+      " framed messages...")
     for msg in _messages.values() do
       _send_framed(msg)
     end
@@ -186,11 +186,11 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
       try
         let expected = _messages(_messages_received - 1)?
         if payload == expected then
-          _out.print("Client: echo " + _messages_received.string()
-            + "/" + _messages.size().string() + ": \"" + payload + "\"")
+          _out.print("Client: echo " + _messages_received.string() +
+            "/" + _messages.size().string() + ": \"" + payload + "\"")
         else
-          _out.print("Client: mismatch! expected \"" + expected
-            + "\" got \"" + payload + "\"")
+          _out.print("Client: mismatch! expected \"" + expected +
+            "\" got \"" + payload + "\"")
         end
       end
 
@@ -200,8 +200,8 @@ actor FramedClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
       end
 
       if _messages_received == _messages.size() then
-        _out.print("Client: all " + _messages.size().string()
-          + " messages echoed successfully")
+        _out.print("Client: all " + _messages.size().string() +
+          " messages echoed successfully")
         _tcp_connection.close()
       end
     end

@@ -102,8 +102,8 @@ actor \nodoc\ _TestSocketOptionsServer is
       "getsockopt_u32 SO_RCVBUF errno should be 0")
     _h.assert_true(
       gen_get_size >= 16384,
-      "getsockopt_u32 SO_RCVBUF should return >= 16384, got "
-        + gen_get_size.string())
+      "getsockopt_u32 SO_RCVBUF should return >= 16384, got " +
+        gen_get_size.string())
 
     // setsockopt/getsockopt: set SO_SNDBUF via raw bytes, read back via
     // raw bytes.
@@ -127,8 +127,8 @@ actor \nodoc\ _TestSocketOptionsServer is
       let raw_get_size = (consume raw_get_bytes).read_u32(0)?
       _h.assert_true(
         raw_get_size >= 16384,
-        "getsockopt SO_SNDBUF should return >= 16384, got "
-          + raw_get_size.string())
+        "getsockopt SO_SNDBUF should return >= 16384, got " +
+          raw_get_size.string())
     else
       _h.fail("getsockopt SO_SNDBUF returned too few bytes")
     end

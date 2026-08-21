@@ -19,9 +19,9 @@ primitive IdleTimeoutValidator is Validator[U64]
     elseif value > _max_millis() then
       recover val
         ValidationFailure(
-          "idle timeout must be at most "
-            + _max_millis().string()
-            + " milliseconds")
+          "idle timeout must be at most " +
+            _max_millis().string() +
+            " milliseconds")
       end
     else
       ValidationSuccess

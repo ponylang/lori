@@ -96,8 +96,8 @@ actor Server is (TCPConnectionActor & ServerLifecycleEventReceiver)
         _control_phase = false
       end
     else
-      _out.print("Server: received " + data.size().string()
-        + " bytes of bulk data")
+      _out.print("Server: received " + data.size().string() +
+        " bytes of bulk data")
       _tcp_connection.close()
     end
     KeepReading

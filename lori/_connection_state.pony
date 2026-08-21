@@ -378,8 +378,8 @@ class _Open[TCP: TCPBackend ref] is _ConnectionState[TCP]
     event: AsioEventID,
     flags: U32)
   =>
-    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
-      or AsioEvent.readable(flags))
+    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags) or
+      AsioEvent.readable(flags))
     then
       return
     end
@@ -491,8 +491,8 @@ class _Closing[TCP: TCPBackend ref] is _ConnectionState[TCP]
     event: AsioEventID,
     flags: U32)
   =>
-    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
-      or AsioEvent.readable(flags))
+    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags) or
+      AsioEvent.readable(flags))
     then
       return
     end
@@ -607,8 +607,8 @@ class _UnconnectedClosing[TCP: TCPBackend ref] is _ConnectionState[TCP]
     event: AsioEventID,
     flags: U32)
   =>
-    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
-      or AsioEvent.readable(flags))
+    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags) or
+      AsioEvent.readable(flags))
     then
       return
     end
@@ -717,8 +717,8 @@ class _Closed[TCP: TCPBackend ref] is _ConnectionState[TCP]
     event: AsioEventID,
     flags: U32)
   =>
-    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
-      or AsioEvent.readable(flags))
+    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags) or
+      AsioEvent.readable(flags))
     then
       return
     end
@@ -827,8 +827,8 @@ class _SSLHandshaking[TCP: TCPBackend ref] is _ConnectionState[TCP]
     event: AsioEventID,
     flags: U32)
   =>
-    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
-      or AsioEvent.readable(flags))
+    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags) or
+      AsioEvent.readable(flags))
     then
       return
     end
@@ -946,8 +946,8 @@ class _TLSUpgrading[TCP: TCPBackend ref] is _ConnectionState[TCP]
     event: AsioEventID,
     flags: U32)
   =>
-    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags)
-      or AsioEvent.readable(flags))
+    if not (AsioEvent.errored(flags) or AsioEvent.writeable(flags) or
+      AsioEvent.readable(flags))
     then
       return
     end

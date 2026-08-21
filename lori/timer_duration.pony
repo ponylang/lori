@@ -19,9 +19,9 @@ primitive TimerDurationValidator is Validator[U64]
     elseif value > _max_millis() then
       recover val
         ValidationFailure(
-          "timer duration must be at most "
-            + _max_millis().string()
-            + " milliseconds")
+          "timer duration must be at most " +
+            _max_millis().string() +
+            " milliseconds")
       end
     else
       ValidationSuccess
