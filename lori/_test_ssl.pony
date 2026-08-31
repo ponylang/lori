@@ -2,6 +2,7 @@ use "constrained_types"
 use "files"
 use "pony_test"
 use "ssl/net"
+use "time"
 
 class \nodoc\ iso _TestSSLPingPong is UnitTest
   """
@@ -1526,3 +1527,535 @@ actor \nodoc\ _TestSSLLargePayloadServer
       _h.complete(true)
     end
     KeepReading
+
+class \nodoc\ iso _TestSSLSendDuringHandshake is UnitTest
+  """
+  Test that send() returns SendErrorNotConnected during the initial SSL
+  handshake (state: _SSLHandshaking). A plain TCP client connects to an SSL
+  server; the server enters _SSLHandshaking but the handshake never completes
+  because the client doesn't speak TLS. The server calls try_send() on itself
+  from its constructor; both _finish_initialization and try_send are
+  self-sends, so FIFO ordering guarantees try_send fires in _SSLHandshaking.
+  """
+  fun name(): String => "SSLSendDuringHandshake"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9766"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("send blocked during handshake")
+
+    let listener =
+      _TestSSLSendDuringHandshakeListener(
+        port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSSLSendDuringHandshakeListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSSLSendDuringHandshakePlainClient | None) = None
+  var _server: (_TestSSLSendDuringHandshakeServer | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSSLSendDuringHandshakeServer =>
+    let server = _TestSSLSendDuringHandshakeServer(_sslctx, fd, _h)
+    _server = server
+    server
+
+  fun ref _on_closed() =>
+    try (_server as _TestSSLSendDuringHandshakeServer).dispose() end
+    try
+      (_client as _TestSSLSendDuringHandshakePlainClient).dispose()
+    end
+
+  fun ref _on_listening() =>
+    _client = _TestSSLSendDuringHandshakePlainClient(_port, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSSLSendDuringHandshakeListener")
+
+actor \nodoc\ _TestSSLSendDuringHandshakeServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  """
+  SSL server whose handshake stalls because the peer is a plain TCP client.
+  The constructor calls try_send() after creating the ssl_server
+  TCPConnection; both _finish_initialization and try_send are self-sends,
+  so FIFO ordering guarantees try_send fires in _SSLHandshaking.
+  """
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
+    try_send()
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    None
+
+  be try_send() =>
+    match \exhaustive\ _tcp_connection.send("test")
+    | SendErrorNotConnected =>
+      _h.complete_action("send blocked during handshake")
+    | SendAccepted =>
+      _h.fail("send() should not be accepted during SSL handshake")
+    | let _: SendError =>
+      _h.fail("Expected SendErrorNotConnected, got other SendError")
+    end
+    _tcp_connection.hard_close()
+
+  fun ref _on_started() =>
+    _h.fail("SSL handshake should not complete against plain TCP client")
+
+actor \nodoc\ _TestSSLSendDuringHandshakePlainClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(port: String, h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(h.env.root),
+        "localhost",
+        port,
+        "",
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
+
+class \nodoc\ iso _TestSSLCloseDuringHandshake is UnitTest
+  """
+  Test that close() during the initial SSL handshake (state: _SSLHandshaking)
+  routes through hard_close() and fires _on_connection_failure with
+  ConnectionFailedSSL. An SSL client connects to a plain TCP server; TCP
+  connects but the handshake stalls. A Pony timer fires after 1 second and
+  calls close() on the connection. The connection timeout is a safety net.
+  """
+  fun name(): String => "SSLCloseDuringHandshake"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9767"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("close during handshake")
+
+    let listener =
+      _TestSSLCloseDuringHandshakeListener(
+        port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(15_000_000_000)
+
+actor \nodoc\ _TestSSLCloseDuringHandshakeListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSSLCloseDuringHandshakeClient | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestDoNothingServerActor =>
+    _TestDoNothingServerActor(fd, _h)
+
+  fun ref _on_closed() =>
+    try (_client as _TestSSLCloseDuringHandshakeClient).dispose() end
+
+  fun ref _on_listening() =>
+    _client =
+      _TestSSLCloseDuringHandshakeClient(_port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSSLCloseDuringHandshakeListener")
+
+actor \nodoc\ _TestSSLCloseDuringHandshakeClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  let _timers: Timers
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _h = h
+    _timers = Timers
+
+    match \exhaustive\ MakeConnectionTimeout(10_000)
+    | let ct: ConnectionTimeout =>
+      _tcp_connection =
+        TCPConnection.ssl_client(
+          TCPConnectAuth(_h.env.root),
+          sslctx,
+          "localhost",
+          port,
+          "",
+          this,
+          this
+          where connection_timeout = ct)
+    | let _: ValidationFailure =>
+      _h.fail("MakeConnectionTimeout(10_000) should succeed")
+    end
+
+    let client: _TestSSLCloseDuringHandshakeClient tag = this
+    let timer =
+      Timer(
+        object iso is TimerNotify
+          let _c: _TestSSLCloseDuringHandshakeClient tag = client
+          fun ref apply(timer: Timer, count: U64): Bool =>
+            _c.try_close()
+            false
+        end,
+        1_000_000_000,
+        0)
+    _timers(consume timer)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _h.fail("SSL handshake should not complete against plain TCP server")
+    _h.complete(false)
+
+  be try_close() =>
+    _tcp_connection.close()
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _timers.dispose()
+    match reason
+    | ConnectionFailedSSL =>
+      _h.complete_action("close during handshake")
+    | ConnectionFailedTimeout =>
+      _h.fail("Connection timed out before close() fired")
+      _h.complete(false)
+    else
+      _h.fail("Expected ConnectionFailedSSL")
+      _h.complete(false)
+    end
+
+class \nodoc\ iso _TestSSLHardCloseDuringHandshake is UnitTest
+  """
+  Test that hard_close() during the initial SSL handshake (state:
+  _SSLHandshaking) fires _on_connection_failure with ConnectionFailedSSL.
+  An SSL client connects to a plain TCP server; TCP connects but the
+  handshake stalls. A Pony timer fires after 1 second and calls hard_close().
+  The connection timeout is a safety net.
+  """
+  fun name(): String => "SSLHardCloseDuringHandshake"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9768"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("hard close during handshake")
+
+    let listener =
+      _TestSSLHardCloseDuringHandshakeListener(
+        port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(15_000_000_000)
+
+actor \nodoc\ _TestSSLHardCloseDuringHandshakeListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSSLHardCloseDuringHandshakeClient | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestDoNothingServerActor =>
+    _TestDoNothingServerActor(fd, _h)
+
+  fun ref _on_closed() =>
+    try (_client as _TestSSLHardCloseDuringHandshakeClient).dispose() end
+
+  fun ref _on_listening() =>
+    _client =
+      _TestSSLHardCloseDuringHandshakeClient(_port, _sslctx, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail("Unable to open _TestSSLHardCloseDuringHandshakeListener")
+
+actor \nodoc\ _TestSSLHardCloseDuringHandshakeClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+  let _timers: Timers
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _h = h
+    _timers = Timers
+
+    match \exhaustive\ MakeConnectionTimeout(10_000)
+    | let ct: ConnectionTimeout =>
+      _tcp_connection =
+        TCPConnection.ssl_client(
+          TCPConnectAuth(_h.env.root),
+          sslctx,
+          "localhost",
+          port,
+          "",
+          this,
+          this
+          where connection_timeout = ct)
+    | let _: ValidationFailure =>
+      _h.fail("MakeConnectionTimeout(10_000) should succeed")
+    end
+
+    let client: _TestSSLHardCloseDuringHandshakeClient tag = this
+    let timer =
+      Timer(
+        object iso is TimerNotify
+          let _c: _TestSSLHardCloseDuringHandshakeClient tag = client
+          fun ref apply(timer: Timer, count: U64): Bool =>
+            _c.try_hard_close()
+            false
+        end,
+        1_000_000_000,
+        0)
+    _timers(consume timer)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connected() =>
+    _h.fail("SSL handshake should not complete against plain TCP server")
+    _h.complete(false)
+
+  be try_hard_close() =>
+    _tcp_connection.hard_close()
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    _timers.dispose()
+    match reason
+    | ConnectionFailedSSL =>
+      _h.complete_action("hard close during handshake")
+    | ConnectionFailedTimeout =>
+      _h.fail("Connection timed out before hard_close() fired")
+      _h.complete(false)
+    else
+      _h.fail("Expected ConnectionFailedSSL")
+      _h.complete(false)
+    end
+
+class \nodoc\ iso _TestSSLServerHardCloseDuringHandshake is UnitTest
+  """
+  Test that hard_close() on an SSL server during the initial SSL handshake
+  (state: _SSLHandshaking) fires _on_start_failure with StartFailedSSL.
+  A plain TCP client connects to an SSL server; the server enters
+  _SSLHandshaking but the handshake never completes. The server calls
+  try_hard_close() on itself from its constructor; both _finish_initialization
+  and try_hard_close are self-sends, so FIFO ordering guarantees
+  try_hard_close fires in _SSLHandshaking.
+  """
+  fun name(): String => "SSLServerHardCloseDuringHandshake"
+
+  fun apply(h: TestHelper) ? =>
+    let port = "9769"
+    let file_auth = FileAuth(h.env.root)
+    let sslctx =
+      recover
+        SSLContext
+          .> set_authority(
+            FilePath(file_auth, "assets/cert.pem"))?
+          .> set_cert(
+            FilePath(file_auth, "assets/cert.pem"),
+            FilePath(file_auth, "assets/key.pem"))?
+          .> set_client_verify(false)
+          .> set_server_verify(false)
+      end
+
+    h.expect_action("server hard close during handshake")
+
+    let listener =
+      _TestSSLServerHardCloseHandshakeListener(
+        port, consume sslctx, h)
+    h.dispose_when_done(listener)
+
+    h.long_test(5_000_000_000)
+
+actor \nodoc\ _TestSSLServerHardCloseHandshakeListener is TCPListenerActor
+  let _port: String
+  let _sslctx: SSLContext val
+  var _tcp_listener: TCPListener = TCPListener.none()
+  let _h: TestHelper
+  var _client: (_TestSSLServerHardCloseHandshakePlainClient | None) = None
+  var _server: (_TestSSLServerHardCloseHandshakeServer | None) = None
+
+  new create(port: String, sslctx: SSLContext val, h: TestHelper) =>
+    _port = port
+    _sslctx = sslctx
+    _h = h
+    _tcp_listener =
+      TCPListener(
+        TCPListenAuth(_h.env.root),
+        "localhost",
+        _port,
+        this)
+
+  fun ref _listener(): TCPListener =>
+    _tcp_listener
+
+  fun ref _on_accept(fd: U32): _TestSSLServerHardCloseHandshakeServer =>
+    let server =
+      _TestSSLServerHardCloseHandshakeServer(_sslctx, fd, _h)
+    _server = server
+    server
+
+  fun ref _on_closed() =>
+    try
+      (_server as _TestSSLServerHardCloseHandshakeServer).dispose()
+    end
+    try
+      (_client as _TestSSLServerHardCloseHandshakePlainClient).dispose()
+    end
+
+  fun ref _on_listening() =>
+    _client =
+      _TestSSLServerHardCloseHandshakePlainClient(_port, _h)
+
+  fun ref _on_listen_failure() =>
+    _h.fail(
+      "Unable to open _TestSSLServerHardCloseHandshakeListener")
+
+actor \nodoc\ _TestSSLServerHardCloseHandshakeServer
+  is (TCPConnectionActor & ServerLifecycleEventReceiver)
+  """
+  SSL server whose handshake stalls because the peer is a plain TCP client.
+  The constructor calls try_hard_close() after creating the ssl_server
+  TCPConnection; both _finish_initialization and try_hard_close are
+  self-sends, so FIFO ordering guarantees try_hard_close fires in
+  _SSLHandshaking.
+  """
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(sslctx: SSLContext val, fd: U32, h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.ssl_server(
+        TCPServerAuth(_h.env.root),
+        sslctx,
+        fd,
+        this,
+        this)
+    try_hard_close()
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_start_failure(reason: StartFailureReason) =>
+    match \exhaustive\ reason
+    | StartFailedSSL =>
+      _h.complete_action("server hard close during handshake")
+    end
+
+  be try_hard_close() =>
+    _tcp_connection.hard_close()
+
+  fun ref _on_started() =>
+    _h.fail("SSL handshake should not complete against plain TCP client")
+
+actor \nodoc\ _TestSSLServerHardCloseHandshakePlainClient
+  is (TCPConnectionActor & ClientLifecycleEventReceiver)
+  var _tcp_connection: TCPConnection = TCPConnection.none()
+  let _h: TestHelper
+
+  new create(port: String, h: TestHelper) =>
+    _h = h
+    _tcp_connection =
+      TCPConnection.client(
+        TCPConnectAuth(h.env.root),
+        "localhost",
+        port,
+        "",
+        this,
+        this)
+
+  fun ref _connection(): TCPConnection =>
+    _tcp_connection
+
+  fun ref _on_connection_failure(reason: ConnectionFailureReason) =>
+    None
