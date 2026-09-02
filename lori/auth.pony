@@ -37,3 +37,11 @@ primitive TCPServerAuth
   """
   new create(from: (AmbientAuth | NetAuth | TCPAuth | TCPListenAuth)) =>
     None
+
+primitive UDPAuth
+  """
+  Authority to use UDP. Made from `AmbientAuth` or `NetAuth`. Passed to
+  `UDPSocket`.
+  """
+  new create(from: (AmbientAuth | NetAuth)) =>
+    None

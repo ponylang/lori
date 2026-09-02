@@ -1,6 +1,6 @@
 # Examples
 
-Ordered from simplest to most involved. The plain TCP examples come first; the SSL variants follow.
+Ordered from simplest to most involved. The plain TCP examples come first, then the UDP example, then the SSL variants.
 
 ## [echo-server](echo-server/)
 
@@ -60,6 +60,10 @@ Socket option tuning with dedicated convenience methods (`set_nodelay()`, `set_s
 ## [read-buffer-size](read-buffer-size/)
 
 Configurable read buffer sizing with two phases. A server starts with a small 128-byte buffer for a control phase, then switches to an 8192-byte buffer for bulk transfer after receiving a command. Demonstrates `set_read_buffer_minimum()` and `resize_read_buffer()` for tuning buffer allocation at runtime, and the `read_buffer_size` constructor parameter for setting the initial size.
+
+## [udp-echo-server](udp-echo-server/)
+
+Minimal UDP echo server. A single actor binds a UDP socket and echoes every received datagram back to its sender. Shows the two building blocks of a lori UDP application: `UDPSocketActor` for event plumbing and `UDPLifecycleEventReceiver` for application callbacks.
 
 ## [net-ssl-echo-server](net-ssl-echo-server/)
 

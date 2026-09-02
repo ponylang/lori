@@ -116,6 +116,21 @@ actor \nodoc\ Main is TestList
     // Windows loopback won't trigger (it buffers far beyond SO_SNDBUF/RCVBUF).
     // The drain and write-only re-arm logic they cover is platform-neutral.
 
+    // UDP tests
+    test(_TestUDPBindFailure)
+    test(_TestUDPFakeSendOk)
+    test(_TestUDPFakeSendWouldBlock)
+    test(_TestUDPFakeSendError)
+    test(_TestUDPFakeSendNotOpen)
+    test(_TestUDPFakeRecvData)
+    test(_TestUDPFakeCloseFromReceived)
+    test(_TestUDPFakeRecvError)
+    test(_TestUDPFakeYieldReading)
+    test(_TestUDPFakeBudget)
+    test(_TestUDPDisposeInitRace)
+    test(_TestUDPSocketState)
+    test(_TestUDPEcho)
+
     // Fake-backend tests (no real sockets for I/O)
     test(_TestFakeSendOk)
     test(_TestFakeSendMultipleTokenOrder)

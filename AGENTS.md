@@ -1,6 +1,6 @@
 # Lori
 
-A Pony TCP networking library. It reworks the standard library's `net` package around a different split: the connection logic lives in a plain `class` (`TCPConnection`, `TCPListener`) that the user's `actor` holds and delegates to, rather than being baked into a single actor.
+A Pony networking library. It reworks the standard library's `net` package around a different split: the connection logic lives in a plain `class` (`TCPConnection`, `TCPListener`, `UDPSocket`) that the user's `actor` holds and delegates to, rather than being baked into a single actor.
 
 <!-- contributor-only -->
 ## Contributing with an AI assistant
@@ -78,6 +78,20 @@ _UnconnectedClosing → _Closed            (drained, or hard_close)
 ```
 
 Design: Discussion #219.
+
+### UDP lifecycle
+
+`UDPSocket` uses the same state-object pattern with three states.
+
+```
+_UDPNone    → _UDPOpen   (bind succeeded)
+            → _UDPClosed (bind failed, or dispose/init race)
+_UDPOpen    → _UDPClosed (close or error)
+```
+
+The dispose/init race: `_finish_initialization` is a self→self behavior. If `dispose()` arrives first, `_UDPNone.close()` transitions to `_UDPClosed`, and `_finish_initialization` checks for that and skips the bind.
+
+Design: Discussion #384.
 
 ## Traps
 
