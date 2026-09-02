@@ -1,0 +1,144 @@
+name: UDP stress tests
+
+on:
+  schedule:
+    - cron: "30 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  packages: read
+
+jobs:
+  x86_64-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+
+    name: Linux
+    container:
+      image: ghcr.io/ponylang/shared-docker-ci-standard-builder-with-libressl-4.2.1:nightly
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+      - name: Build
+        run: make stress-tests config=debug ssl=libressl
+      - name: Run UDP flood
+        run: |
+          python3 stress-tests/udp-flood/orchestrate_udp.py \
+            --binary build/debug/udp-flood \
+            --start ${{ github.run_id }} \
+            --budget-seconds 3000 --timeout-seconds 5400 \
+            --out rt-stress-out
+      - name: Upload failure bundles
+        if: ${{ failure() || cancelled() }}
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: udp-flood-bundles-linux
+          path: rt-stress-out/*.json
+          if-no-files-found: ignore
+      - name: Send alert on failure
+        if: ${{ failure() || cancelled() }}
+        uses: zulip/github-actions-zulip/send-message@bd8ec52de371d139ae8313661b7d8318c19266aa
+        with:
+          api-key: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_API_KEY }}
+          email: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_EMAIL }}
+          organization-url: 'https://ponylang.zulipchat.com/'
+          to: notifications
+          type: stream
+          topic: ${{ github.repository }} scheduled job failure
+          content: ${{ github.server_url}}/${{ github.repository }}/actions/runs/${{ github.run_id }} failed.
+
+  macos:
+    runs-on: macos-26
+    timeout-minutes: 200
+
+    name: MacOS
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+      - name: Install pony tools
+        run: bash .ci-scripts/macOS-install-nightly-pony-tools.bash
+      - name: Configure networking
+        run: bash .ci-scripts/macOS-configure-networking.bash
+      - name: Build
+        run: |
+          export PATH=/Users/runner/.local/share/ponyup/bin/:$PATH
+          make ci config=debug ssl=libressl
+      - name: Run UDP flood
+        run: |
+          python3 stress-tests/udp-flood/orchestrate_udp.py \
+            --binary build/debug/udp-flood \
+            --start ${{ github.run_id }} \
+            --budget-seconds 3000 --timeout-seconds 5400 \
+            --out rt-stress-out
+      - name: Upload failure bundles
+        if: ${{ failure() || cancelled() }}
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: udp-flood-bundles-macos
+          path: rt-stress-out/*.json
+          if-no-files-found: ignore
+      - name: Send alert on failure
+        if: ${{ failure() || cancelled() }}
+        uses: zulip/github-actions-zulip/send-message@bd8ec52de371d139ae8313661b7d8318c19266aa
+        with:
+          api-key: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_API_KEY }}
+          email: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_EMAIL }}
+          organization-url: 'https://ponylang.zulipchat.com/'
+          to: notifications
+          type: stream
+          topic: ${{ github.repository }} scheduled job failure
+          content: ${{ github.server_url}}/${{ github.repository }}/actions/runs/${{ github.run_id }} failed.
+
+  windows:
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 200
+
+    name: Windows
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+      - name: Tune Windows Networking
+        run: .ci-scripts\windows-configure-networking.ps1
+      - name: Install Pony tools
+        run: .ci-scripts\windows-install-pony-tools.ps1 nightlies
+      - name: Cache LibreSSL libs
+        id: cache-libressl
+        uses: actions/cache@v5.0.3
+        with:
+          path: |
+            ssl.lib
+            crypto.lib
+            tls.lib
+          key: libressl-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.ci-scripts/windows-install-libressl.ps1') }}
+      - name: Install LibreSSL
+        if: steps.cache-libressl.outputs.cache-hit != 'true'
+        run: .ci-scripts\windows-install-libressl.ps1
+      - name: Build
+        run: |
+          $env:PATH = 'C:\ponyc\bin;' + $env:PATH;
+          .\make.ps1 -Command stress-tests -Config Debug 2>&1;
+      - name: Run UDP flood
+        run: |
+          python stress-tests\udp-flood\orchestrate_udp.py `
+            --binary build\debug\udp-flood.exe `
+            --start ${{ github.run_id }} `
+            --budget-seconds 3000 --timeout-seconds 5400 `
+            --out rt-stress-out
+      - name: Upload failure bundles
+        if: ${{ failure() || cancelled() }}
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: udp-flood-bundles-windows
+          path: rt-stress-out/*.json
+          if-no-files-found: ignore
+      - name: Send alert on failure
+        if: ${{ failure() || cancelled() }}
+        uses: zulip/github-actions-zulip/send-message@bd8ec52de371d139ae8313661b7d8318c19266aa
+        with:
+          api-key: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_API_KEY }}
+          email: ${{ secrets.ZULIP_SCHEDULED_JOB_FAILURE_EMAIL }}
+          organization-url: 'https://ponylang.zulipchat.com/'
+          to: notifications
+          type: stream
+          topic: ${{ github.repository }} scheduled job failure
+          content: ${{ github.server_url}}/${{ github.repository }}/actions/runs/${{ github.run_id }} failed.
