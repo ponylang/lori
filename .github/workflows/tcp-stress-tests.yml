@@ -1,4 +1,4 @@
-name: Stress tests
+name: TCP stress tests
 
 on:
   schedule:
