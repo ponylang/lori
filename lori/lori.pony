@@ -1,12 +1,15 @@
 """
 # Lori Package
 
-Lori is a TCP networking library that separates connection logic from actor
+Lori is a networking library that separates connection logic from actor
 scheduling. Unlike the standard library's `net` package, which bakes connection
-handling into a single actor, lori puts the TCP state machine in a plain
-[`TCPConnection`](/lori/lori-TCPConnection/) class that your actor delegates to.
-This separation gives you control over how your actor is structured while lori
-handles the low-level I/O.
+handling into a single actor, lori puts the I/O state machine in a plain class
+that your actor delegates to. This separation gives you control over how your
+actor is structured while lori handles the low-level I/O.
+
+Lori covers TCP and UDP.
+
+## TCP
 
 To build a TCP application with lori, you implement an actor that mixes in two
 traits: [`TCPConnectionActor`](/lori/lori-TCPConnectionActor/) (which wires up
@@ -602,6 +605,90 @@ Server-side constructors (`server`, `ssl_server`) don't need this parameter —
 they accept an already-connected fd whose protocol version was determined by the
 listener.
 
+## UDP
+
+UDP follows the same class-in-actor split. [`UDPSocket`](/lori/lori-UDPSocket/)
+is a plain class that your actor holds and delegates to. Your actor implements
+[`UDPSocketActor`](/lori/lori-UDPSocketActor/) and
+[`UDPLifecycleEventReceiver`](/lori/lori-UDPLifecycleEventReceiver/).
+
+### UDP Echo Server
+
+```pony
+use "lori"
+use net = "net"
+
+actor Main
+  new create(env: Env) =>
+    UDPEchoServer(UDPAuth(env.root), "", "9999", env.out)
+
+actor UDPEchoServer is (UDPSocketActor & UDPLifecycleEventReceiver)
+  var _udp: UDPSocket = UDPSocket.none()
+  let _out: OutStream
+
+  new create(auth: UDPAuth, host: String, port: String, out: OutStream) =>
+    _out = out
+    _udp = UDPSocket(auth, host, port, this, this)
+
+  fun ref _socket(): UDPSocket =>
+    _udp
+
+  fun ref _on_bound() =>
+    _out.print("Echo server bound.")
+
+  fun ref _on_bind_failure() =>
+    _out.print("Failed to bind UDP socket.")
+
+  fun ref _on_received(data: Array[U8] iso, from: net.NetAddress val)
+    : ReadAction
+  =>
+    match _udp.send_to(consume data, from)
+    | SendToOk => None
+    | let e: SendToFailure =>
+      _out.print("send failed")
+    end
+    KeepReading
+
+  fun ref _on_closed() =>
+    _out.print("Socket closed.")
+```
+
+### UDP Sending
+
+`send_to` returns a four-variant union:
+
+```pony
+match _udp.send_to(consume data, from)
+| SendToOk =>
+  // Datagram handed to the OS.
+  None
+| SendToWouldBlock =>
+  // OS send buffer full. Datagram NOT sent.
+  None
+| SendToNotOpen =>
+  // Socket is not bound or already closed.
+  None
+| SendToError =>
+  // Other sendto error. Datagram NOT sent. Socket stays open.
+  None
+end
+```
+
+UDP sends are synchronous and all-or-nothing. There are no send tokens, no
+queuing, and no backpressure callbacks. The caller decides what to do when a
+send fails.
+
+### Read Yielding
+
+`_on_received` returns a [`ReadAction`](/lori/lori-ReadAction/), the same as
+TCP. Return [`YieldReading`](/lori/lori-YieldReading/) to stop after this
+datagram and give other actors a turn. The read loop also yields after
+processing a buffer's worth of bytes or the per-turn datagram ceiling
+(256 by default), whichever comes first.
+
+Unlike TCP, there is no `mute()`/`unmute()`. Datagrams that arrive while the
+read loop is yielded may be dropped by the kernel.
+
 ## Auth Hierarchy
 
 Lori uses Pony's object capability model for authorization. Each operation
@@ -617,9 +704,11 @@ token can create a less powerful one:
   or `TCPAuth`) — open a client connection
 - [`TCPServerAuth`](/lori/lori-TCPServerAuth/) (from `AmbientAuth`, `NetAuth`,
   `TCPAuth`, or `TCPListenAuth`) — handle an accepted server connection
+- [`UDPAuth`](/lori/lori-UDPAuth/) (from `AmbientAuth` or `NetAuth`) — bind a
+  UDP socket
 
 In practice, `Main` creates the auth tokens it needs from `env.root` and passes
-them to the actors that need them. The echo server example above shows the
+them to the actors that need them. The TCP echo server example above shows the
 typical pattern: `Main` creates a `TCPListenAuth`, the listener creates a
 `TCPServerAuth` from it, and each accepted connection receives that
 `TCPServerAuth`.
