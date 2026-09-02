@@ -1,25 +1,30 @@
 """
 # Notifier Package
 
-A convenience layer over lori for straightforward TCP applications. You write
-a notifier class with the callbacks you care about, hand it to an actor, and
-the actor handles the rest — connection setup, calling your notifier when data
-arrives or the connection state changes, and cleanup.
+A convenience layer over lori for straightforward TCP and UDP applications. You
+write a notifier class with the callbacks you care about, hand it to an actor,
+and the actor handles the rest — connection setup, calling your notifier when
+data arrives or the connection state changes, and cleanup.
 
 Lori's native API gives you full control: you build your own actor, mix in
-traits, and manage a `TCPConnection` class directly. That control matters when
-you need synchronous send results, custom actor structure, or multiple
-connections per actor. The notifier layer trades that control for less code:
-three concrete actors and three notifier traits cover the common cases without
-any actor boilerplate.
+traits, and manage a `TCPConnection` or `UDPSocket` class directly. That
+control matters when you need custom actor structure or multiple sockets per
+actor. The notifier layer trades that control for less code: concrete actors
+and notifier traits cover the common cases without any actor boilerplate.
 
 ## Actors and notifiers
+
+### TCP
 
 - `ClientTCPConnection` + `ClientTCPConnectionNotify` —
   client connections
 - `ServerTCPConnection` + `ServerTCPConnectionNotify` —
   server connections
 - `TCPListener` + `TCPListenNotify` — listeners
+
+### UDP
+
+- `UDPSocket` + `UDPSocketNotify` — UDP sockets
 
 The actors are concrete — only the notifiers are traits.
 
@@ -76,6 +81,8 @@ actor Main
 
 ## What the notifier layer changes
 
+### TCP
+
 **`write`/`writev` are fire-and-forget behaviors.** Lori's native `send()`
 is synchronous and returns a result the caller can act on immediately. The
 notifier's `write` is a behavior — it queues the data for the next turn. The
@@ -91,10 +98,19 @@ the next turn. For an immediate one-shot pause within `on_received`, return
 `ClientTCPConnection` or `TCPListener` to create an SSL-enabled connection
 or listener.
 
+### UDP
+
+**`send_to` is synchronous from callbacks; `write_to` is fire-and-forget
+from outside.** Lori's native `send_to` is always synchronous — the socket
+class is `ref`. The notifier preserves this within callbacks: `sock.send_to`
+returns a `SendToResult` that the notifier can match on. For external callers
+(other actors sending via a behavior), `write_to` is a fire-and-forget
+behavior — it calls `send_to` internally and discards the result.
+
 ## Naming
 
-`TCPListener` exists in both `lori` and `lori/notifier`. When using both
-packages, qualify the import:
+`TCPListener` and `UDPSocket` exist in both `lori` and `lori/notifier`. When
+using both packages, qualify the import:
 
 ```pony
 use "lori"
@@ -105,5 +121,11 @@ let l1: TCPListener = ...
 
 // notifier's actor-based listener
 let l2: notifier.TCPListener = ...
+
+// lori's class-based UDP socket
+let u1: UDPSocket = ...
+
+// notifier's actor-based UDP socket
+let u2: notifier.UDPSocket = ...
 ```
 """

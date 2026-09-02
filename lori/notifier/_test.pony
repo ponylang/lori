@@ -14,3 +14,5 @@ actor \nodoc\ Main is TestList
     test(_TestNotifierBufferUntil)
     test(_TestNotifierDispose)
     test(_TestNotifierRejectConnection)
+    test(_TestNotifierUDPEcho)
+    test(_TestNotifierUDPDispose)

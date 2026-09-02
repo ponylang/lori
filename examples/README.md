@@ -65,6 +65,10 @@ Configurable read buffer sizing with two phases. A server starts with a small 12
 
 Minimal UDP echo server. A single actor binds a UDP socket and echoes every received datagram back to its sender. Shows the two building blocks of a lori UDP application: `UDPSocketActor` for event plumbing and `UDPLifecycleEventReceiver` for application callbacks.
 
+## [notifier-udp-echo-server](notifier-udp-echo-server/)
+
+Notifier API version of the UDP echo server. Same behavior as `udp-echo-server`, but with a `UDPSocketNotify` trait instead of implementing `UDPSocketActor` and `UDPLifecycleEventReceiver` yourself. No user-defined actors — lori's concrete `UDPSocket` actor handles all I/O plumbing.
+
 ## [net-ssl-echo-server](net-ssl-echo-server/)
 
 SSL version of the echo server. Demonstrates how to set up an `SSLContext` and use `TCPConnection.ssl_server` — the only change from the plain echo server is the constructor call and SSL context setup.
