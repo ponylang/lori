@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 
+- Add UDP socket support ([PR #385](https://github.com/ponylang/lori/pull/385))
 
 ### Changed
 
