@@ -513,7 +513,7 @@ actor FloodClient is (UDPSocketActor & UDPLifecycleEventReceiver)
     _server_addr = server_addr
     _udp =
       UDPSocket(
-        udp_auth, "", "0", this, this, config.read_buffer()
+        udp_auth, config.host, "0", this, this, config.read_buffer()
         where max_datagrams_per_turn = config.max_datagrams_per_turn)
 
   fun ref _socket(): UDPSocket => _udp
