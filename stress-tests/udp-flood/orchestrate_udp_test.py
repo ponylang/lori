@@ -44,17 +44,21 @@ def test_clamp_run():
     over = 0
     burst_over = 0
     for seed in range(1000):
-        w = o.resolve_config(seed, 8)["workload"]
+        w = o.resolve_config(seed, 64)["workload"]
         c, d, p = w["clients"], w["datagrams"], max(1, w["payload-size"])
+        b = w["batch-size"]
         if (c * d > o.RUN_MAX_ROUND_TRIPS) or (c * d * p > o.RUN_MAX_BYTES):
             over += 1
-        if c * w["batch-size"] * p > o.MAX_BURST_BYTES:
+        if (c * b * p > o.MAX_BURST_BYTES) or (c * b > o.MAX_BURST_DATAGRAMS):
             burst_over += 1
     check("clamp: no drawn seed exceeds the ceilings", over == 0)
     check("clamp: no drawn seed exceeds the burst ceiling", burst_over == 0)
 
 
 def test_resolve_config_coverage():
+    # Use max_threads=64 so the thread/client clamp does not mask profile
+    # coverage.  The burst clamp still reduces clients for large payloads,
+    # but every profile client value survives for at least some payloads.
     payloads = set()
     batches = set()
     clients = set()
@@ -63,7 +67,7 @@ def test_resolve_config_coverage():
     noscale = pin = pinasio = noblock = 0
     invariants = True
     for seed in range(500):
-        c = o.resolve_config(seed, 8)
+        c = o.resolve_config(seed, 64)
         w, r = c["workload"], c["runtime"]
         payloads.add(w["payload-size"])
         batches.add(w["batch-size"])
@@ -74,10 +78,9 @@ def test_resolve_config_coverage():
         pin += 1 if r.get("ponypin") else 0
         pinasio += 1 if r.get("ponypinasio") else 0
         noblock += 1 if r.get("ponynoblock") else 0
-        # Read buffer must be at least payload size.
         if w["read-buffer-size"] < w["payload-size"]:
             invariants = False
-        if not (1 <= r["ponymaxthreads"] <= 8):
+        if not (1 <= r["ponymaxthreads"] <= 64):
             invariants = False
         if r.get("ponypinasio") and not r.get("ponypin"):
             invariants = False
@@ -86,8 +89,8 @@ def test_resolve_config_coverage():
           payloads == set(dp["payload_sizes"]))
     check("all drawn batch sizes appear (burst clamp may add others)",
           set(dp["batch_sizes"]).issubset(batches))
-    check("all client counts appear",
-          clients == set(dp["clients"]))
+    check("all client counts appear (some clamped by burst cap)",
+          set(dp["clients"]).issubset(clients))
     check("all read buffer sizes appear",
           set(dp["read_buffer_sizes"]).issubset(rbufs))
     check("all max-datagrams-per-turn values appear",
@@ -104,11 +107,11 @@ def test_burst_clamp():
     # With many clients and large payloads, the batch is clamped.
     clamped = 0
     for seed in range(500):
-        w = o.resolve_config(seed, 8)["workload"]
+        w = o.resolve_config(seed, 64)["workload"]
         c, b, p = w["clients"], w["batch-size"], max(1, w["payload-size"])
-        burst = c * b * p
-        check_ok = burst <= o.MAX_BURST_BYTES
-        if not check_ok:
+        byte_ok = (c * b * p) <= o.MAX_BURST_BYTES
+        dgram_ok = (c * b) <= o.MAX_BURST_DATAGRAMS
+        if not (byte_ok and dgram_ok):
             clamped = -1
             break
         if b < max(o.DEFAULT_PROFILE["batch_sizes"]):
@@ -128,29 +131,30 @@ def test_read_buffer_at_least_payload():
     check("read buffer >= payload size for all seeds", ok)
 
 
-def test_ponymaxthreads_is_last_and_host_dependent():
-    stable = True
+def test_host_dependent_clamping():
+    runtime_stable = True
     differed = 0
     bounded_low = True
     exceeded_low = False
     for seed in range(200):
         a = o.resolve_config(seed, 4)
         b = o.resolve_config(seed, 64)
-        if a["workload"] != b["workload"]:
-            stable = False
+        # Runtime flags other than ponymaxthreads are drawn the same
+        # regardless of core count (the RNG sequence is identical).
         ra = dict(a["runtime"])
         rb = dict(b["runtime"])
         ta = ra.pop("ponymaxthreads", None)
         tb = rb.pop("ponymaxthreads", None)
         if ra != rb:
-            stable = False
+            runtime_stable = False
         if ta != tb:
             differed += 1
         if not (1 <= ta <= 4):
             bounded_low = False
         if tb > 4:
             exceeded_low = True
-    check("only ponymaxthreads varies with the core count", stable)
+    check("runtime flags (except threads) are stable across core counts",
+          runtime_stable)
     check("ponymaxthreads is bounded by the (smaller) core count", bounded_low)
     check("ponymaxthreads genuinely differs across core counts",
           differed > 0 and exceeded_low)
@@ -490,7 +494,7 @@ def main():
     for fn in (test_resolve_config_deterministic, test_clamp_run,
                test_resolve_config_coverage, test_burst_clamp,
                test_read_buffer_at_least_payload,
-               test_ponymaxthreads_is_last_and_host_dependent,
+               test_host_dependent_clamping,
                test_resolve_seeds, test_validate_args,
                test_build_argv, test_parse_result, test_lldb_argv,
                test_lldb_exit_code, test_watchdog_kill_reason,

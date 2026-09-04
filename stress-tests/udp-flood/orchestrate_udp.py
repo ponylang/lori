@@ -55,7 +55,12 @@ WORKLOAD_PROFILES = {"default": DEFAULT_PROFILE}
 
 RUN_MAX_ROUND_TRIPS = 500_000        # clients * datagrams
 RUN_MAX_BYTES = 2_000_000_000        # ~2 GB moved per run
-MAX_BURST_BYTES = 2_000_000          # initial burst (clients * batch * payload)
+MAX_BURST_BYTES = 64_000             # initial burst (clients * batch * payload);
+                                     # must fit in the server's UDP receive buffer
+                                     # (Windows default ~64 KB is the floor)
+MAX_BURST_DATAGRAMS = 200            # per-datagram kernel overhead (~700 bytes on
+                                     # Linux) limits how many fit regardless of
+                                     # payload size
 MIN_DATAGRAMS = 10
 
 
@@ -116,8 +121,28 @@ def resolve_config(master_seed, max_threads, profile="default"):
     # Post-draw clamp.
     workload["clients"], workload["datagrams"] = clamp_run(
         workload["clients"], workload["datagrams"], payload)
-    max_burst_batch = max(1, MAX_BURST_BYTES // (workload["clients"] * payload))
+
+    # UDP drops on localhost when actors can't drain receive buffers fast
+    # enough: the kernel drops datagrams and the echo oracle hangs.  Keep
+    # clients ≤ 1.5× the available threads; reduce clients when needed.
+    max_safe_clients = max(1, max_threads * 3 // 2)
+    if workload["clients"] > max_safe_clients:
+        workload["clients"] = max_safe_clients
+
+    # The initial burst (all clients sending their first batch simultaneously)
+    # must fit in the server's UDP receive buffer -- both the byte volume and
+    # the datagram count (each datagram costs ~700 bytes of kernel SKB
+    # overhead regardless of payload).  Reduce clients first when even
+    # batch=1 would overflow, then clamp the batch size.
+    per = max(1, payload)
+    if workload["clients"] * per > MAX_BURST_BYTES:
+        workload["clients"] = max(1, MAX_BURST_BYTES // per)
+    max_burst_batch = max(1, min(
+        MAX_BURST_BYTES // (workload["clients"] * per),
+        MAX_BURST_DATAGRAMS // max(1, workload["clients"])))
     workload["batch-size"] = min(workload["batch-size"], max_burst_batch)
+
+    min_threads = max(2, workload["clients"] * 2 // 3)
 
     runtime = {}
     if rng.random() < 0.5:
@@ -128,7 +153,8 @@ def resolve_config(master_seed, max_threads, profile="default"):
             runtime["ponypinasio"] = True
     if rng.random() < 0.5:
         runtime["ponynoblock"] = True
-    runtime["ponymaxthreads"] = rng.randint(1, max_threads)  # LAST
+    runtime["ponymaxthreads"] = rng.randint(
+        min(min_threads, max_threads), max_threads)  # LAST
 
     return {"master_seed": master_seed, "workload": workload, "runtime": runtime}
 
@@ -458,10 +484,10 @@ def main():
     selector.add_argument("--seeds", default=None,
                           help="run this comma-separated list of seeds")
     selector.add_argument("--replay", type=int, default=None,
-                          help="reproduce this seed's WORKLOAD exactly; note "
-                               "--ponymaxthreads is re-drawn against the local "
-                               "core count, so the runtime backdrop can differ "
-                               "across hosts")
+                          help="reproduce this seed's draw; note that "
+                               "--ponymaxthreads and --clients are clamped "
+                               "against the local core count, so the config "
+                               "can differ across hosts")
     selector.add_argument("--budget-seconds", type=int, default=None,
                           help="run seeds from --start until this many seconds "
                                "pass")
