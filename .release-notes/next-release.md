@@ -33,3 +33,7 @@ actor UDPEchoServer is (UDPSocketActor & UDPLifecycleEventReceiver)
 
 `UDPAuth` is made from `AmbientAuth` or `NetAuth`.
 
+## Update to work with ponyc 0.70.0
+
+Updated for compatibility with ponyc 0.70.0.
+
