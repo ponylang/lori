@@ -9,8 +9,11 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 
+- Add NetAddress, DNS, and DNSAuth ([PR #395](https://github.com/ponylang/lori/pull/395))
 
 ### Changed
+
+- Drop use net = "net" in favor of lori's own NetAddress and DNS ([PR #395](https://github.com/ponylang/lori/pull/395))
 
 
 ## [0.20.0] - 2026-09-04

@@ -38,6 +38,15 @@ primitive TCPServerAuth
   new create(from: (AmbientAuth | NetAuth | TCPAuth | TCPListenAuth)) =>
     None
 
+primitive DNSAuth
+  """
+  Authority to perform DNS resolution. Made from `AmbientAuth` or `NetAuth`.
+  Passed to `DNS` methods and optionally to `NetAddress.name()` for reverse
+  lookup.
+  """
+  new create(from: (AmbientAuth | NetAuth)) =>
+    None
+
 primitive UDPAuth
   """
   Authority to use UDP. Made from `AmbientAuth` or `NetAuth`. Passed to

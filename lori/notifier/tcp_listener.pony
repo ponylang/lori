@@ -1,5 +1,4 @@
 use lori = ".."
-use net = "net"
 use "ssl/net"
 
 actor TCPListener is lori.TCPListenerActor
@@ -75,7 +74,7 @@ actor TCPListener is lori.TCPListenerActor
     _notify.on_closed(this)
 
   // --- Synchronous methods ---------------------------------------------------
-  fun ref local_address(): net.NetAddress =>
+  fun ref local_address(): lori.NetAddress =>
     """
     Return the local IP address the listener is bound to.
     """

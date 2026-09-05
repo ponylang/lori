@@ -10,15 +10,13 @@ use @pony_os_listen_udp6[AsioEventID](the_actor: AsioEventNotify,
 use @pony_os_recvfrom[U8](event: AsioEventID,
   buffer: Pointer[U8] tag,
   size: USize,
-  from: net.NetAddress tag,
+  from: NetAddress tag,
   count_out: Pointer[USize])
 use @pony_os_sendto[U8](fd: U32,
   data: Pointer[U8] tag,
   size: USize,
-  to: net.NetAddress box,
+  to: NetAddress box,
   count_out: Pointer[USize])
-
-use net = "net"
 
 class UDPRuntimeBackend is UDPBackend
   """
@@ -48,13 +46,13 @@ class UDPRuntimeBackend is UDPBackend
   fun ref recvfrom(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
-    : (SocketResult, USize, net.NetAddress iso^)
+    : (SocketResult, USize, NetAddress iso^)
   =>
     """
     Read one datagram via `@pony_os_recvfrom`.
     """
     var count: USize = 0
-    let from = recover iso net.NetAddress end
+    let from = recover iso NetAddress end
     let result =
       SocketResultDecoder(
         @pony_os_recvfrom(event, buffer, size, from, addressof count))
@@ -62,12 +60,12 @@ class UDPRuntimeBackend is UDPBackend
 
   fun ref sendto(fd: U32,
     data: ByteSeq,
-    to: net.NetAddress box)
+    to: NetAddress box)
     : SocketResult
   =>
     var count: USize = 0
     SocketResultDecoder(
       @pony_os_sendto(fd, data.cpointer(), data.size(), to, addressof count))
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool =>
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool =>
     @pony_os_sockname(fd, ip)

@@ -1,5 +1,3 @@
-use net = "net"
-
 class UDPSocket[UDP: UDPBackend ref = UDPRuntimeBackend]
   """
   A UDP socket: bind, send datagrams, receive datagrams, and close. A
@@ -56,7 +54,7 @@ class UDPSocket[UDP: UDPBackend ref = UDPRuntimeBackend]
     _enclosing = None
     _ler = None
 
-  fun ref send_to(data: ByteSeq, to: net.NetAddress box): SendToResult =>
+  fun ref send_to(data: ByteSeq, to: NetAddress box): SendToResult =>
     """
     Send one datagram to `to`. Returns `SendToOk` when the datagram was
     handed to the OS. UDP sends are synchronous and all-or-nothing: the
@@ -70,12 +68,12 @@ class UDPSocket[UDP: UDPBackend ref = UDPRuntimeBackend]
     """
     _state.close(this)
 
-  fun ref local_address(): net.NetAddress =>
+  fun ref local_address(): NetAddress =>
     """
     Return the local IP address. If the socket is closed the address returned
     is invalid.
     """
-    let ip = recover net.NetAddress end
+    let ip = recover NetAddress end
     _udp.sockname(_fd, ip)
     ip
 
@@ -232,7 +230,7 @@ class UDPSocket[UDP: UDPBackend ref = UDPRuntimeBackend]
       _Unreachable()
     end
 
-  fun ref _do_send_to(data: ByteSeq, to: net.NetAddress box): SendToResult =>
+  fun ref _do_send_to(data: ByteSeq, to: NetAddress box): SendToResult =>
     match \exhaustive\ _udp.sendto(_fd, data, to)
     | SocketResultOk => SendToOk
     | SocketResultRetry => SendToWouldBlock

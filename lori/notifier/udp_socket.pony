@@ -1,5 +1,4 @@
 use lori = ".."
-use net = "net"
 
 actor UDPSocket is (lori.UDPSocketActor & lori.UDPLifecycleEventReceiver)
   """
@@ -39,7 +38,7 @@ actor UDPSocket is (lori.UDPSocketActor & lori.UDPLifecycleEventReceiver)
     _udp
 
   // --- Behaviors -------------------------------------------------------------
-  be write_to(data: ByteSeq, to: net.NetAddress val) =>
+  be write_to(data: ByteSeq, to: lori.NetAddress val) =>
     """
     Send a datagram. Fire-and-forget: the send is silently dropped if the
     socket is not open. Use `send_to` from within a callback when the result
@@ -48,7 +47,7 @@ actor UDPSocket is (lori.UDPSocketActor & lori.UDPLifecycleEventReceiver)
     _udp.send_to(data, to)
 
   // --- Synchronous methods ---------------------------------------------------
-  fun ref send_to(data: ByteSeq, to: net.NetAddress box): lori.SendToResult =>
+  fun ref send_to(data: ByteSeq, to: lori.NetAddress box): lori.SendToResult =>
     """
     Send one datagram to `to`. Returns `SendToOk` when the datagram was
     handed to the OS. UDP sends are synchronous and all-or-nothing.
@@ -64,7 +63,7 @@ actor UDPSocket is (lori.UDPSocketActor & lori.UDPLifecycleEventReceiver)
     """
     _udp.close()
 
-  fun ref local_address(): net.NetAddress =>
+  fun ref local_address(): lori.NetAddress =>
     """
     Return the local IP address the socket is bound to.
     """
@@ -125,7 +124,7 @@ actor UDPSocket is (lori.UDPSocketActor & lori.UDPLifecycleEventReceiver)
   fun ref _on_bind_failure() =>
     _notify.on_bind_failure(this)
 
-  fun ref _on_received(data: Array[U8] iso, from: net.NetAddress val)
+  fun ref _on_received(data: Array[U8] iso, from: lori.NetAddress val)
     : lori.ReadAction
   =>
     _notify.on_received(this, consume data, from)

@@ -1,5 +1,4 @@
 use lori = ".."
-use net = "net"
 
 trait UDPSocketNotify
   """
@@ -22,7 +21,7 @@ trait UDPSocketNotify
 
   fun ref on_received(sock: UDPSocket ref,
     data: Array[U8] iso,
-    from: net.NetAddress val)
+    from: lori.NetAddress val)
     : lori.ReadAction
   =>
     """

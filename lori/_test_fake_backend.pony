@@ -1,5 +1,4 @@
 use "pony_test"
-use net = "net"
 
 // FFI: memcpy for writing into Pointer[U8] tag buffers in fake receive
 use @memcpy[Pointer[None]](dst: Pointer[None] tag, src: Pointer[None] tag,
@@ -54,11 +53,11 @@ class \nodoc\ _FBSendOkRecvRetry is TCPBackend
 
   fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref peername(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref shutdown(fd: U32) => None
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref writev_max(): I32 => 1024
 
@@ -116,11 +115,11 @@ class \nodoc\ _FBSendErrorRecvRetry is TCPBackend
 
   fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref peername(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref shutdown(fd: U32) => None
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref writev_max(): I32 => 1024
 
@@ -173,11 +172,11 @@ class \nodoc\ _FBSendStepRecvRetryFailed is TCPBackend
 
   fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref peername(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref shutdown(fd: U32) => None
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref writev_max(): I32 => 1024
 
@@ -245,11 +244,11 @@ class \nodoc\ _FBSendOkRecvHello is TCPBackend
 
   fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref peername(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref shutdown(fd: U32) => None
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref writev_max(): I32 => 1024
 
@@ -318,11 +317,11 @@ class \nodoc\ _FBSendOkRecv10 is TCPBackend
 
   fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref peername(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref shutdown(fd: U32) => None
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref writev_max(): I32 => 1024
 
@@ -391,11 +390,11 @@ class \nodoc\ _FBSendOkRecvHelloMute is TCPBackend
 
   fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref peername(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref shutdown(fd: U32) => None
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref writev_max(): I32 => 1024
 
@@ -464,11 +463,11 @@ class \nodoc\ _FBSendOkRecv10Yield is TCPBackend
 
   fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref peername(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref shutdown(fd: U32) => None
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref writev_max(): I32 => 1024
 
@@ -534,11 +533,11 @@ class \nodoc\ _FBSendOkRecvError is TCPBackend
 
   fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref peername(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref shutdown(fd: U32) => None
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref writev_max(): I32 => 1024
 
@@ -601,11 +600,11 @@ class \nodoc\ _FBConnect0 is TCPBackend
 
   fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref peername(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref shutdown(fd: U32) => None
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref writev_max(): I32 => 1024
 
@@ -655,11 +654,11 @@ class \nodoc\ _FBConnect1 is TCPBackend
 
   fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref peername(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref shutdown(fd: U32) => None
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref writev_max(): I32 => 1024
 
@@ -709,11 +708,11 @@ class \nodoc\ _FBConnect2 is TCPBackend
 
   fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref peername(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref shutdown(fd: U32) => None
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref writev_max(): I32 => 1024
 
@@ -763,11 +762,11 @@ class \nodoc\ _FBConnect3 is TCPBackend
 
   fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref peername(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref shutdown(fd: U32) => None
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref writev_max(): I32 => 1024
 
@@ -820,11 +819,11 @@ class \nodoc\ _FBListenFail is TCPBackend
 
   fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref peername(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref shutdown(fd: U32) => None
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref writev_max(): I32 => 1024
 
@@ -886,11 +885,11 @@ class \nodoc\ _FBListenOk is TCPBackend
 
   fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref peername(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref shutdown(fd: U32) => None
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref writev_max(): I32 => 1024
 
@@ -944,11 +943,11 @@ class \nodoc\ _FBListenOkMulti is TCPBackend
 
   fun ref keepalive(fd: U32, secs: U32) => None
 
-  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref peername(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref shutdown(fd: U32) => None
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
   fun ref writev_max(): I32 => 1024
 

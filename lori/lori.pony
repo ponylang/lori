@@ -616,7 +616,6 @@ is a plain class that your actor holds and delegates to. Your actor implements
 
 ```pony
 use "lori"
-use net = "net"
 
 actor Main
   new create(env: Env) =>
@@ -639,7 +638,7 @@ actor UDPEchoServer is (UDPSocketActor & UDPLifecycleEventReceiver)
   fun ref _on_bind_failure() =>
     _out.print("Failed to bind UDP socket.")
 
-  fun ref _on_received(data: Array[U8] iso, from: net.NetAddress val)
+  fun ref _on_received(data: Array[U8] iso, from: NetAddress val)
     : ReadAction
   =>
     match _udp.send_to(consume data, from)
@@ -704,6 +703,8 @@ token can create a less powerful one:
   or `TCPAuth`) — open a client connection
 - [`TCPServerAuth`](/lori/lori-TCPServerAuth/) (from `AmbientAuth`, `NetAuth`,
   `TCPAuth`, or `TCPListenAuth`) — handle an accepted server connection
+- [`DNSAuth`](/lori/lori-DNSAuth/) (from `AmbientAuth` or `NetAuth`) — DNS
+  resolution
 - [`UDPAuth`](/lori/lori-UDPAuth/) (from `AmbientAuth` or `NetAuth`) — bind a
   UDP socket
 

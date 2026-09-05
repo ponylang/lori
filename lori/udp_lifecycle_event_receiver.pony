@@ -1,5 +1,3 @@
-use net = "net"
-
 trait UDPLifecycleEventReceiver[UDP: UDPBackend ref = UDPRuntimeBackend]
   """
   Application-level callbacks for a UDP socket. One receiver per socket, no
@@ -19,7 +17,7 @@ trait UDPLifecycleEventReceiver[UDP: UDPBackend ref = UDPRuntimeBackend]
     bind failure is never correct.
     """
 
-  fun ref _on_received(data: Array[U8] iso, from: net.NetAddress val)
+  fun ref _on_received(data: Array[U8] iso, from: NetAddress val)
     : ReadAction
   =>
     """

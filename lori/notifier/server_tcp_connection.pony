@@ -1,5 +1,4 @@
 use lori = ".."
-use net = "net"
 use "ssl/net"
 
 actor ServerTCPConnection is
@@ -140,13 +139,13 @@ actor ServerTCPConnection is
     """
     _tcp_connection.keepalive(secs)
 
-  fun ref local_address(): net.NetAddress =>
+  fun ref local_address(): lori.NetAddress =>
     """
     Return the local IP address.
     """
     _tcp_connection.local_address()
 
-  fun ref remote_address(): net.NetAddress =>
+  fun ref remote_address(): lori.NetAddress =>
     """
     Return the remote IP address.
     """

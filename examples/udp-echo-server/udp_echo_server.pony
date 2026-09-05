@@ -10,7 +10,6 @@ Send a datagram with any UDP tool (e.g. `echo hello | nc -u localhost 7690`)
 and see it echoed back.
 """
 use "../../lori"
-use net = "net"
 
 actor Main
   new create(env: Env) =>
@@ -37,7 +36,7 @@ actor UDPEchoServer is (UDPSocketActor & UDPLifecycleEventReceiver)
     _out.print("Couldn't bind UDP socket. " +
       "Perhaps try another network interface?")
 
-  fun ref _on_received(data: Array[U8] iso, from: net.NetAddress val)
+  fun ref _on_received(data: Array[U8] iso, from: NetAddress val)
     : ReadAction
   =>
     _out.print("Datagram received. Echoing it back.")

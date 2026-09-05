@@ -1,5 +1,4 @@
 use "pony_test"
-use net = "net"
 
 primitive \nodoc\ _FakeUDPFd
   """
@@ -32,18 +31,18 @@ class \nodoc\ _FBUDPBindFail is UDPBackend
   fun ref recvfrom(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
-    : (SocketResult, USize, net.NetAddress iso^)
+    : (SocketResult, USize, NetAddress iso^)
   =>
-    (SocketResultError, 0, recover iso net.NetAddress end)
+    (SocketResultError, 0, recover iso NetAddress end)
 
   fun ref sendto(fd: U32,
     data: ByteSeq,
-    to: net.NetAddress box)
+    to: NetAddress box)
     : SocketResult
   =>
     SocketResultError
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
 class \nodoc\ _FBUDPSendOk is UDPBackend
   """
@@ -73,18 +72,18 @@ class \nodoc\ _FBUDPSendOk is UDPBackend
   fun ref recvfrom(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
-    : (SocketResult, USize, net.NetAddress iso^)
+    : (SocketResult, USize, NetAddress iso^)
   =>
-    (SocketResultRetry, 0, recover iso net.NetAddress end)
+    (SocketResultRetry, 0, recover iso NetAddress end)
 
   fun ref sendto(fd: U32,
     data: ByteSeq,
-    to: net.NetAddress box)
+    to: NetAddress box)
     : SocketResult
   =>
     SocketResultOk
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
 class \nodoc\ _FBUDPSendWouldBlock is UDPBackend
   """
@@ -114,18 +113,18 @@ class \nodoc\ _FBUDPSendWouldBlock is UDPBackend
   fun ref recvfrom(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
-    : (SocketResult, USize, net.NetAddress iso^)
+    : (SocketResult, USize, NetAddress iso^)
   =>
-    (SocketResultRetry, 0, recover iso net.NetAddress end)
+    (SocketResultRetry, 0, recover iso NetAddress end)
 
   fun ref sendto(fd: U32,
     data: ByteSeq,
-    to: net.NetAddress box)
+    to: NetAddress box)
     : SocketResult
   =>
     SocketResultRetry
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
 class \nodoc\ _FBUDPSendError is UDPBackend
   """
@@ -155,18 +154,18 @@ class \nodoc\ _FBUDPSendError is UDPBackend
   fun ref recvfrom(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
-    : (SocketResult, USize, net.NetAddress iso^)
+    : (SocketResult, USize, NetAddress iso^)
   =>
-    (SocketResultRetry, 0, recover iso net.NetAddress end)
+    (SocketResultRetry, 0, recover iso NetAddress end)
 
   fun ref sendto(fd: U32,
     data: ByteSeq,
-    to: net.NetAddress box)
+    to: NetAddress box)
     : SocketResult
   =>
     SocketResultError
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
 class \nodoc\ _FBUDPRecvHello is UDPBackend
   """
@@ -199,25 +198,25 @@ class \nodoc\ _FBUDPRecvHello is UDPBackend
   fun ref recvfrom(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
-    : (SocketResult, USize, net.NetAddress iso^)
+    : (SocketResult, USize, NetAddress iso^)
   =>
     if _step == 0 then
       _step = 1
       let msg = "hello"
       @memcpy(buffer, msg.cpointer(), msg.size())
-      (SocketResultOk, msg.size(), recover iso net.NetAddress end)
+      (SocketResultOk, msg.size(), recover iso NetAddress end)
     else
-      (SocketResultRetry, 0, recover iso net.NetAddress end)
+      (SocketResultRetry, 0, recover iso NetAddress end)
     end
 
   fun ref sendto(fd: U32,
     data: ByteSeq,
-    to: net.NetAddress box)
+    to: NetAddress box)
     : SocketResult
   =>
     SocketResultOk
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
 // Test classes
 class \nodoc\ iso _TestUDPBindFailure is UnitTest
@@ -270,7 +269,7 @@ actor \nodoc\ _TestUDPFakeSendOkActor[UDP: UDPBackend ref]
   fun ref _socket(): UDPSocket[UDP] => _udp
 
   fun ref _on_bound() =>
-    let dest = recover val net.NetAddress end
+    let dest = recover val NetAddress end
     match \exhaustive\ _udp.send_to("test", dest)
     | SendToOk =>
       _udp.close()
@@ -308,7 +307,7 @@ actor \nodoc\ _TestUDPFakeSendWouldBlockActor[UDP: UDPBackend ref]
   fun ref _socket(): UDPSocket[UDP] => _udp
 
   fun ref _on_bound() =>
-    let dest = recover val net.NetAddress end
+    let dest = recover val NetAddress end
     match _udp.send_to("test", dest)
     | SendToWouldBlock =>
       _udp.close()
@@ -346,7 +345,7 @@ actor \nodoc\ _TestUDPFakeSendErrorActor[UDP: UDPBackend ref]
   fun ref _socket(): UDPSocket[UDP] => _udp
 
   fun ref _on_bound() =>
-    let dest = recover val net.NetAddress end
+    let dest = recover val NetAddress end
     match _udp.send_to("test", dest)
     | SendToError =>
       _udp.close()
@@ -391,7 +390,7 @@ actor \nodoc\ _TestUDPFakeSendNotOpenActor[UDP: UDPBackend ref]
     _h.complete(false)
 
   fun ref _on_closed() =>
-    let dest = recover val net.NetAddress end
+    let dest = recover val NetAddress end
     match _udp.send_to("test", dest)
     | SendToNotOpen =>
       _h.complete(true)
@@ -428,7 +427,7 @@ actor \nodoc\ _TestUDPFakeRecvDataActor[UDP: UDPBackend ref]
     _h.fail("Bind failed")
     _h.complete(false)
 
-  fun ref _on_received(data: Array[U8] iso, from: net.NetAddress val)
+  fun ref _on_received(data: Array[U8] iso, from: NetAddress val)
     : ReadAction
   =>
     let s = String.from_array(consume data)
@@ -468,7 +467,7 @@ actor \nodoc\ _TestUDPFakeCloseFromReceivedActor[UDP: UDPBackend ref]
     _h.fail("Bind failed")
     _h.complete(false)
 
-  fun ref _on_received(data: Array[U8] iso, from: net.NetAddress val)
+  fun ref _on_received(data: Array[U8] iso, from: NetAddress val)
     : ReadAction
   =>
     if _received then
@@ -526,7 +525,7 @@ actor \nodoc\ _TestUDPEchoServer
     _h.fail("Server bind failed")
     _h.complete(false)
 
-  fun ref _on_received(data: Array[U8] iso, from: net.NetAddress val)
+  fun ref _on_received(data: Array[U8] iso, from: NetAddress val)
     : ReadAction
   =>
     _udp.send_to(consume data, from)
@@ -542,11 +541,11 @@ actor \nodoc\ _TestUDPEchoClient
   is (UDPSocketActor & UDPLifecycleEventReceiver)
   var _udp: UDPSocket = UDPSocket.none()
   let _h: TestHelper
-  let _server_addr: net.NetAddress val
+  let _server_addr: NetAddress val
 
   new create(auth: UDPAuth,
     host: String,
-    server_addr: net.NetAddress val,
+    server_addr: NetAddress val,
     h: TestHelper)
   =>
     _h = h
@@ -562,7 +561,7 @@ actor \nodoc\ _TestUDPEchoClient
     _h.fail("Client bind failed")
     _h.complete(false)
 
-  fun ref _on_received(data: Array[U8] iso, from: net.NetAddress val)
+  fun ref _on_received(data: Array[U8] iso, from: NetAddress val)
     : ReadAction
   =>
     let s = String.from_array(consume data)
@@ -601,18 +600,18 @@ class \nodoc\ _FBUDPRecvError is UDPBackend
   fun ref recvfrom(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
-    : (SocketResult, USize, net.NetAddress iso^)
+    : (SocketResult, USize, NetAddress iso^)
   =>
-    (SocketResultError, 0, recover iso net.NetAddress end)
+    (SocketResultError, 0, recover iso NetAddress end)
 
   fun ref sendto(fd: U32,
     data: ByteSeq,
-    to: net.NetAddress box)
+    to: NetAddress box)
     : SocketResult
   =>
     SocketResultOk
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
 class \nodoc\ _FBUDPRecvAlways is UDPBackend
   """
@@ -643,20 +642,20 @@ class \nodoc\ _FBUDPRecvAlways is UDPBackend
   fun ref recvfrom(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
-    : (SocketResult, USize, net.NetAddress iso^)
+    : (SocketResult, USize, NetAddress iso^)
   =>
     let msg = "x"
     @memcpy(buffer, msg.cpointer(), msg.size())
-    (SocketResultOk, 1, recover iso net.NetAddress end)
+    (SocketResultOk, 1, recover iso NetAddress end)
 
   fun ref sendto(fd: U32,
     data: ByteSeq,
-    to: net.NetAddress box)
+    to: NetAddress box)
     : SocketResult
   =>
     SocketResultOk
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool => false
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool => false
 
 class \nodoc\ iso _TestUDPFakeRecvError is UnitTest
   """
@@ -683,7 +682,7 @@ actor \nodoc\ _TestUDPFakeRecvErrorActor[UDP: UDPBackend ref]
   fun ref _on_bound() =>
     _udp.read_again()
     _h.assert_true(_udp.is_open())
-    let dest = recover val net.NetAddress end
+    let dest = recover val NetAddress end
     match \exhaustive\ _udp.send_to("test", dest)
     | SendToOk =>
       _udp.close()
@@ -733,7 +732,7 @@ actor \nodoc\ _TestUDPFakeYieldReadingActor[UDP: UDPBackend ref]
     _h.fail("Bind failed")
     _h.complete(false)
 
-  fun ref _on_received(data: Array[U8] iso, from: net.NetAddress val)
+  fun ref _on_received(data: Array[U8] iso, from: NetAddress val)
     : ReadAction
   =>
     if not _read_again_called then
@@ -786,7 +785,7 @@ actor \nodoc\ _TestUDPFakeBudgetActor[UDP: UDPBackend ref]
     _h.fail("Bind failed")
     _h.complete(false)
 
-  fun ref _on_received(data: Array[U8] iso, from: net.NetAddress val)
+  fun ref _on_received(data: Array[U8] iso, from: NetAddress val)
     : ReadAction
   =>
     _total_received = _total_received + 1
