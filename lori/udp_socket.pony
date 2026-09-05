@@ -223,6 +223,7 @@ class UDPSocket[UDP: UDPBackend ref = UDPRuntimeBackend]
         | SocketResultRetry =>
           return
         | SocketResultError =>
+          _queue_read()
           return
         end
       end
