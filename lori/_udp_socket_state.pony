@@ -1,5 +1,3 @@
-use net = "net"
-
 trait _UDPSocketState[UDP: UDPBackend ref]
   """
   One state in the UDP socket lifecycle. `UDPSocket._state` holds the current
@@ -9,7 +7,7 @@ trait _UDPSocketState[UDP: UDPBackend ref]
 
   fun ref send_to(sock: UDPSocket[UDP] ref,
     data: ByteSeq,
-    to: net.NetAddress box)
+    to: NetAddress box)
     : SendToResult
 
   fun ref close(sock: UDPSocket[UDP] ref)
@@ -52,7 +50,7 @@ class _UDPNone[UDP: UDPBackend ref] is _UDPSocketState[UDP]
 
   fun ref send_to(sock: UDPSocket[UDP] ref,
     data: ByteSeq,
-    to: net.NetAddress box)
+    to: NetAddress box)
     : SendToResult
   =>
     SendToNotOpen
@@ -106,7 +104,7 @@ class _UDPOpen[UDP: UDPBackend ref] is _UDPSocketState[UDP]
 
   fun ref send_to(sock: UDPSocket[UDP] ref,
     data: ByteSeq,
-    to: net.NetAddress box)
+    to: NetAddress box)
     : SendToResult
   =>
     sock._do_send_to(data, to)
@@ -160,7 +158,7 @@ class _UDPClosed[UDP: UDPBackend ref] is _UDPSocketState[UDP]
 
   fun ref send_to(sock: UDPSocket[UDP] ref,
     data: ByteSeq,
-    to: net.NetAddress box)
+    to: NetAddress box)
     : SendToResult
   =>
     SendToNotOpen

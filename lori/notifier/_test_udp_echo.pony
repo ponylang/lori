@@ -1,5 +1,4 @@
 use lori = ".."
-use net = "net"
 use "pony_test"
 
 class \nodoc\ iso _TestNotifierUDPEcho is UnitTest
@@ -45,7 +44,7 @@ class \nodoc\ _TestNUEServerNotify is UDPSocketNotify
 
   fun ref on_received(sock: UDPSocket ref,
     data: Array[U8] iso,
-    from: net.NetAddress val)
+    from: lori.NetAddress val)
     : lori.ReadAction
   =>
     sock.send_to(consume data, from)
@@ -57,10 +56,10 @@ class \nodoc\ _TestNUEServerNotify is UDPSocketNotify
     end
 
 class \nodoc\ _TestNUEClientNotify is UDPSocketNotify
-  let _server_addr: net.NetAddress val
+  let _server_addr: lori.NetAddress val
   let _h: TestHelper
 
-  new create(server_addr: net.NetAddress val, h: TestHelper) =>
+  new create(server_addr: lori.NetAddress val, h: TestHelper) =>
     _server_addr = server_addr
     _h = h
 
@@ -73,7 +72,7 @@ class \nodoc\ _TestNUEClientNotify is UDPSocketNotify
 
   fun ref on_received(sock: UDPSocket ref,
     data: Array[U8] iso,
-    from: net.NetAddress val)
+    from: lori.NetAddress val)
     : lori.ReadAction
   =>
     let s = String.from_array(consume data)

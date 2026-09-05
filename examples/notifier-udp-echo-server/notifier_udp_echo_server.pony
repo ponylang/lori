@@ -11,7 +11,6 @@ and see it echoed back.
 """
 use "../../lori"
 use notifier = "../../lori/notifier"
-use net = "net"
 
 actor Main
   new create(env: Env) =>
@@ -40,7 +39,7 @@ class UDPEchoNotify is notifier.UDPSocketNotify
 
   fun ref on_received(sock: notifier.UDPSocket ref,
     data: Array[U8] iso,
-    from: net.NetAddress val)
+    from: NetAddress val)
     : ReadAction
   =>
     _out.print("Datagram received. Echoing it back.")

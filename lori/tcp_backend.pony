@@ -1,5 +1,3 @@
-use net = "net"
-
 trait ref TCPBackend
   """
   The TCP operations a connection and listener need from the runtime.
@@ -50,7 +48,7 @@ trait ref TCPBackend
     Enable TCP keepalive on `fd` with an interval of `secs` seconds.
     """
 
-  fun ref peername(fd: U32, ip: net.NetAddress tag): Bool
+  fun ref peername(fd: U32, ip: NetAddress tag): Bool
     """
     Fill `ip` with the remote address of `fd`. Returns true on
     success.
@@ -72,7 +70,7 @@ trait ref TCPBackend
     Shut down the write side of `fd`.
     """
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool
     """
     Fill `ip` with the local address of `fd`. Returns true on
     success.

@@ -24,7 +24,7 @@ use @pony_os_listen_tcp4[AsioEventID](the_actor: AsioEventNotify,
 use @pony_os_listen_tcp6[AsioEventID](the_actor: AsioEventNotify,
   host: Pointer[U8] tag,
   port: Pointer[U8] tag)
-use @pony_os_peername[Bool](fd: U32, ip: net.NetAddress tag)
+use @pony_os_peername[Bool](fd: U32, ip: NetAddress tag)
 use @pony_os_recv[U8](event: AsioEventID,
   buffer: Pointer[U8] tag,
   size: USize,
@@ -35,10 +35,8 @@ use @pony_os_sendv[U8](ev: AsioEventID,
   count_out: Pointer[USize])
 use @pony_os_socket_close[None](fd: U32)
 use @pony_os_socket_shutdown[None](fd: U32)
-use @pony_os_sockname[Bool](fd: U32, ip: net.NetAddress tag)
+use @pony_os_sockname[Bool](fd: U32, ip: NetAddress tag)
 use @pony_os_writev_max[I32]()
-
-use net = "net"
 
 class RuntimeBackend is TCPBackend
   """
@@ -103,7 +101,7 @@ class RuntimeBackend is TCPBackend
   fun keepalive(fd: U32, secs: U32) =>
     @pony_os_keepalive(fd, secs)
 
-  fun peername(fd: U32, ip: net.NetAddress tag): Bool =>
+  fun peername(fd: U32, ip: NetAddress tag): Bool =>
     @pony_os_peername(fd, ip)
 
   fun receive(event: AsioEventID,
@@ -126,7 +124,7 @@ class RuntimeBackend is TCPBackend
   fun shutdown(fd: U32) =>
     @pony_os_socket_shutdown(fd)
 
-  fun sockname(fd: U32, ip: net.NetAddress tag): Bool =>
+  fun sockname(fd: U32, ip: NetAddress tag): Bool =>
     @pony_os_sockname(fd, ip)
 
   fun sendv(event: AsioEventID,

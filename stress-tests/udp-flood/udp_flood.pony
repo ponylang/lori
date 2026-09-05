@@ -43,7 +43,6 @@ use "../../lori"
 use "cli"
 use "constrained_types"
 use "time"
-use net = "net"
 
 use @printf[I32](fmt: Pointer[U8] tag, ...)
 use @fprintf[I32](stream: Pointer[U8] tag, fmt: Pointer[U8] tag, ...)
@@ -315,7 +314,7 @@ actor Spawner
     _config = config
     _udp_auth = udp_auth
 
-  be server_ready(server: FloodServer, addr: net.NetAddress val) =>
+  be server_ready(server: FloodServer, addr: NetAddress val) =>
     _server = server
     if not _started then
       _started = true
@@ -411,8 +410,8 @@ actor FloodServer is (UDPSocketActor & UDPLifecycleEventReceiver)
   let _spawner: Spawner
   let _config: _Config
   var _udp: UDPSocket = UDPSocket.none()
-  embed _stash: Array[(Array[U8] val, net.NetAddress val)]
-    = Array[(Array[U8] val, net.NetAddress val)]
+  embed _stash: Array[(Array[U8] val, NetAddress val)]
+    = Array[(Array[U8] val, NetAddress val)]
   var _drain_scheduled: Bool = false
 
   new create(spawner: Spawner, config: _Config, udp_auth: UDPAuth) =>
@@ -434,7 +433,7 @@ actor FloodServer is (UDPSocketActor & UDPLifecycleEventReceiver)
   fun ref _on_bind_failure() =>
     _spawner.server_bind_failed()
 
-  fun ref _on_received(data: Array[U8] iso, from: net.NetAddress val)
+  fun ref _on_received(data: Array[U8] iso, from: NetAddress val)
     : ReadAction
   =>
     let d: Array[U8] val = consume data
@@ -493,7 +492,7 @@ actor FloodClient is (UDPSocketActor & UDPLifecycleEventReceiver)
   let _config: _Config
   var _udp: UDPSocket = UDPSocket.none()
   let _seed: U64
-  let _server_addr: net.NetAddress val
+  let _server_addr: NetAddress val
   var _send_cursor: USize = 0
   var _batch_sent: USize = 0
   var _recv_cursor: USize = 0
@@ -505,7 +504,7 @@ actor FloodClient is (UDPSocketActor & UDPLifecycleEventReceiver)
     config: _Config,
     id: USize,
     udp_auth: UDPAuth,
-    server_addr: net.NetAddress val)
+    server_addr: NetAddress val)
   =>
     _spawner = spawner
     _config = config
@@ -560,7 +559,7 @@ actor FloodClient is (UDPSocketActor & UDPLifecycleEventReceiver)
       _pump()
     end
 
-  fun ref _on_received(data: Array[U8] iso, from: net.NetAddress val)
+  fun ref _on_received(data: Array[U8] iso, from: NetAddress val)
     : ReadAction
   =>
     let n = data.size()

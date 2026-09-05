@@ -1,4 +1,3 @@
-use net = "net"
 use "collections"
 use "ssl/net"
 
@@ -471,21 +470,21 @@ class TCPConnection[TCP: TCPBackend ref = RuntimeBackend]
 
     ReadBufferResized
 
-  fun ref local_address(): net.NetAddress =>
+  fun ref local_address(): NetAddress =>
     """
     Return the local IP address. If this TCPConnection is closed then the
     address returned is invalid.
     """
-    let ip = recover net.NetAddress end
+    let ip = recover NetAddress end
     _tcp.sockname(_fd, ip)
     ip
 
-  fun ref remote_address(): net.NetAddress =>
+  fun ref remote_address(): NetAddress =>
     """
     Return the remote IP address. If this TCPConnection is closed then the
     address returned is invalid.
     """
-    let ip = recover net.NetAddress end
+    let ip = recover NetAddress end
     _tcp.peername(_fd, ip)
     ip
 

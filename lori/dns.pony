@@ -1,0 +1,90 @@
+use @pony_os_addrinfo[Pointer[U8]](family: U32, host: Pointer[U8] tag,
+  service: Pointer[U8] tag)
+use @pony_os_getaddr[None](addr: Pointer[None] tag, ipaddr: NetAddress tag)
+use @pony_os_nextaddr[Pointer[U8]](addr: Pointer[None] tag)
+use @freeaddrinfo[None](addr: Pointer[None] tag)
+use @pony_os_host_ip4[Bool](host: Pointer[U8] tag)
+use @pony_os_host_ip6[Bool](host: Pointer[U8] tag)
+
+primitive DNS
+  """
+  Synchronous DNS resolution. Wraps `getaddrinfo` for forward lookups and
+  provides IP-literal detection via `is_ip4`/`is_ip6`.
+  """
+  fun apply(auth: DNSAuth, host: String, service: String)
+    : Array[NetAddress] iso^
+  =>
+    """
+    All IPv4 and IPv6 addresses for a host and service.
+    """
+    _resolve(auth, 0, host, service)
+
+  fun ip4(auth: DNSAuth, host: String, service: String)
+    : Array[NetAddress] iso^
+  =>
+    """
+    All IPv4 addresses for a host and service.
+    """
+    _resolve(auth, 1, host, service)
+
+  fun ip6(auth: DNSAuth, host: String, service: String)
+    : Array[NetAddress] iso^
+  =>
+    """
+    All IPv6 addresses for a host and service.
+    """
+    _resolve(auth, 2, host, service)
+
+  fun broadcast_ip4(auth: DNSAuth, service: String)
+    : Array[NetAddress] iso^
+  =>
+    """
+    Link-local IPv4 broadcast address.
+    """
+    ip4(auth, "255.255.255.255", service)
+
+  fun broadcast_ip6(auth: DNSAuth, service: String)
+    : Array[NetAddress] iso^
+  =>
+    """
+    The IPv6 all-nodes multicast address (FF02::1). IPv6 has no broadcast;
+    the all-nodes group is the closest equivalent.
+    """
+    ip6(auth, "FF02::1", service)
+
+  fun is_ip4(host: String): Bool =>
+    """
+    `true` when `host` is a literal IPv4 address.
+    """
+    @pony_os_host_ip4(host.cstring())
+
+  fun is_ip6(host: String): Bool =>
+    """
+    `true` when `host` is a literal IPv6 address.
+    """
+    @pony_os_host_ip6(host.cstring())
+
+  fun _resolve(
+    auth: DNSAuth,
+    family: U32,
+    host: String,
+    service: String)
+    : Array[NetAddress] iso^
+  =>
+    var list = recover Array[NetAddress] end
+    var result = @pony_os_addrinfo(family, host.cstring(), service.cstring())
+
+    if not result.is_null() then
+      var addr = result
+
+      while not addr.is_null() do
+        let ip = recover NetAddress end
+        @pony_os_getaddr(addr, ip)
+        list.push(consume ip)
+        addr = @pony_os_nextaddr(addr)
+      end
+
+      @freeaddrinfo(result)
+    end
+
+    list

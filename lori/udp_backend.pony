@@ -1,5 +1,3 @@
-use net = "net"
-
 trait ref UDPBackend
   """
   The UDP operations a socket needs from the runtime. `UDPRuntimeBackend` is
@@ -26,7 +24,7 @@ trait ref UDPBackend
   fun ref recvfrom(event: AsioEventID,
     buffer: Pointer[U8] tag,
     size: USize)
-    : (SocketResult, USize, net.NetAddress iso^)
+    : (SocketResult, USize, NetAddress iso^)
     """
     Receive one datagram into `buffer`. Returns the tri-state socket result,
     the number of bytes received, and the sender address.
@@ -34,7 +32,7 @@ trait ref UDPBackend
 
   fun ref sendto(fd: U32,
     data: ByteSeq,
-    to: net.NetAddress box)
+    to: NetAddress box)
     : SocketResult
     """
     Send one datagram. Returns `SocketResultOk` on success,
@@ -42,7 +40,7 @@ trait ref UDPBackend
     on failure. No byte count: POSIX datagram `sendto` is all-or-nothing.
     """
 
-  fun ref sockname(fd: U32, ip: net.NetAddress tag): Bool
+  fun ref sockname(fd: U32, ip: NetAddress tag): Bool
     """
     Fill `ip` with the local address of `fd`. Returns true on success.
     """

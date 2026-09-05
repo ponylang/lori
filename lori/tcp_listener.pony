@@ -1,5 +1,4 @@
 use "collections"
-use net = "net"
 
 class TCPListener[TCP: TCPBackend ref = RuntimeBackend]
   """
@@ -71,12 +70,12 @@ class TCPListener[TCP: TCPBackend ref = RuntimeBackend]
       _Unreachable()
     end
 
-  fun ref local_address(): net.NetAddress =>
+  fun ref local_address(): NetAddress =>
     """
     Return the local IP address. If this TCPListener is closed then the
     address returned is invalid.
     """
-    let ip = recover net.NetAddress end
+    let ip = recover NetAddress end
     _tcp.sockname(_fd, ip)
     ip
 
