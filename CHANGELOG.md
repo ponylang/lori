@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 
+- Fix UDP socket not receiving after transient recvfrom errors ([PR #396](https://github.com/ponylang/lori/pull/396))
 
 ### Added
 
@@ -14,7 +15,6 @@ All notable changes to this project will be documented in this file. This projec
 ### Changed
 
 - Drop use net = "net" in favor of lori's own NetAddress and DNS ([PR #395](https://github.com/ponylang/lori/pull/395))
-
 
 ## [0.20.0] - 2026-09-04
 
