@@ -659,8 +659,8 @@ class \nodoc\ _FBUDPRecvAlways is UDPBackend
 
 class \nodoc\ iso _TestUDPFakeRecvError is UnitTest
   """
-  recvfrom returning SocketResultError stops reading but keeps the socket
-  open. Verified by a successful send_to after the error.
+  recvfrom returning SocketResultError exits the read loop and defers to
+  _read_again. The socket stays open.
   """
   fun name(): String => "UDPFakeRecvError"
 
@@ -672,6 +672,7 @@ actor \nodoc\ _TestUDPFakeRecvErrorActor[UDP: UDPBackend ref]
   is (UDPSocketActor[UDP] & UDPLifecycleEventReceiver[UDP])
   var _udp: UDPSocket[UDP] = UDPSocket[UDP].none()
   let _h: TestHelper
+  var _read_again_called: Bool = false
 
   new create(h: TestHelper) =>
     _h = h
@@ -679,8 +680,8 @@ actor \nodoc\ _TestUDPFakeRecvErrorActor[UDP: UDPBackend ref]
 
   fun ref _socket(): UDPSocket[UDP] => _udp
 
-  fun ref _on_bound() =>
-    _udp.read_again()
+  be _read_again() =>
+    _read_again_called = true
     _h.assert_true(_udp.is_open())
     let dest = recover val NetAddress end
     match \exhaustive\ _udp.send_to("test", dest)
@@ -691,11 +692,15 @@ actor \nodoc\ _TestUDPFakeRecvErrorActor[UDP: UDPBackend ref]
       _h.complete(false)
     end
 
+  fun ref _on_bound() =>
+    _udp.read_again()
+
   fun ref _on_bind_failure() =>
     _h.fail("Bind failed")
     _h.complete(false)
 
   fun ref _on_closed() =>
+    _h.assert_true(_read_again_called)
     _h.complete(true)
 
 class \nodoc\ iso _TestUDPFakeYieldReading is UnitTest
