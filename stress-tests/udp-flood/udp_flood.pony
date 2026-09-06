@@ -404,8 +404,10 @@ class _HeartbeatTimer is TimerNotify
 actor FloodServer is (UDPSocketActor & UDPLifecycleEventReceiver)
   """
   Echo server. Echoes each received datagram back to its sender. When
-  `send_to` returns `SendToWouldBlock`, the datagram is stashed and a
-  deferred `_drain_stash` behavior retries it.
+  `send_to` returns `SendToWouldBlock` or `SendToError`, the datagram is
+  stashed and a deferred `_drain_stash` behavior retries it. On loopback,
+  `SendToError` is typically transient (ECONNREFUSED from a stale ICMP
+  error queued on the socket); retrying clears the error and succeeds.
   """
   let _spawner: Spawner
   let _config: _Config
@@ -443,10 +445,9 @@ actor FloodServer is (UDPSocketActor & UDPLifecycleEventReceiver)
     else
       match \exhaustive\ _udp.send_to(d, from)
       | SendToOk => None
-      | SendToWouldBlock =>
+      | SendToWouldBlock | SendToError =>
         _stash.push((d, from))
         _schedule_drain()
-      | SendToError => None
       | SendToNotOpen => None
       end
     end
@@ -466,11 +467,9 @@ actor FloodServer is (UDPSocketActor & UDPLifecycleEventReceiver)
         match \exhaustive\ _udp.send_to(d, f)
         | SendToOk =>
           try _stash.shift()? else _Unreachable() end
-        | SendToWouldBlock =>
+        | SendToWouldBlock | SendToError =>
           _schedule_drain()
           return
-        | SendToError =>
-          try _stash.shift()? else _Unreachable() end
         | SendToNotOpen =>
           try _stash.shift()? else _Unreachable() end
         end
