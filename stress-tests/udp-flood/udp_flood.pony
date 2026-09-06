@@ -401,11 +401,26 @@ class _HeartbeatTimer is TimerNotify
     _spawner.heartbeat_tick()
     true
 
+class _StallTimer is TimerNotify
+  """
+  Detects a stalled client and closes it instead of letting it hang.
+  """
+  let _client: FloodClient
+
+  new iso create(client: FloodClient) =>
+    _client = client
+
+  fun ref apply(timer: Timer, count: U64): Bool =>
+    _client.stall_check()
+    true
+
 actor FloodServer is (UDPSocketActor & UDPLifecycleEventReceiver)
   """
   Echo server. Echoes each received datagram back to its sender. When
-  `send_to` returns `SendToWouldBlock`, the datagram is stashed and a
-  deferred `_drain_stash` behavior retries it.
+  `send_to` returns `SendToWouldBlock` or `SendToError`, the datagram is
+  stashed and a deferred `_drain_stash` behavior retries it. Persistent
+  errors on a single datagram are bounded: the datagram is dropped and a
+  diagnostic is printed after a retry cap.
   """
   let _spawner: Spawner
   let _config: _Config
@@ -413,6 +428,7 @@ actor FloodServer is (UDPSocketActor & UDPLifecycleEventReceiver)
   embed _stash: Array[(Array[U8] val, NetAddress val)]
     = Array[(Array[U8] val, NetAddress val)]
   var _drain_scheduled: Bool = false
+  var _error_retries: USize = 0
 
   new create(spawner: Spawner, config: _Config, udp_auth: UDPAuth) =>
     _spawner = spawner
@@ -443,10 +459,9 @@ actor FloodServer is (UDPSocketActor & UDPLifecycleEventReceiver)
     else
       match \exhaustive\ _udp.send_to(d, from)
       | SendToOk => None
-      | SendToWouldBlock =>
+      | SendToWouldBlock | SendToError =>
         _stash.push((d, from))
         _schedule_drain()
-      | SendToError => None
       | SendToNotOpen => None
       end
     end
@@ -465,12 +480,24 @@ actor FloodServer is (UDPSocketActor & UDPLifecycleEventReceiver)
         (let d, let f) = _stash(0)?
         match \exhaustive\ _udp.send_to(d, f)
         | SendToOk =>
+          _error_retries = 0
           try _stash.shift()? else _Unreachable() end
         | SendToWouldBlock =>
           _schedule_drain()
           return
         | SendToError =>
-          try _stash.shift()? else _Unreachable() end
+          _error_retries = _error_retries + 1
+          if _error_retries >= 100 then
+            @fprintf(
+              @pony_os_stderr(),
+              "server: dropping echo after 100 SendToError retries\n"
+                .cstring())
+            _error_retries = 0
+            try _stash.shift()? else _Unreachable() end
+          else
+            _schedule_drain()
+            return
+          end
         | SendToNotOpen =>
           try _stash.shift()? else _Unreachable() end
         end
@@ -486,16 +513,21 @@ actor FloodClient is (UDPSocketActor & UDPLifecycleEventReceiver)
   """
   Sends datagrams in batches to the server and verifies echoed data against
   a per-client keystream. Reports verified/mismatch status to the `Spawner`
-  when all datagrams have been echoed or when the socket closes.
+  when all datagrams have been echoed or when the socket closes. A periodic
+  stall timer closes the client and reports failure when no echoes arrive
+  for an extended period, preventing an indefinite hang.
   """
   let _spawner: Spawner
   let _config: _Config
   var _udp: UDPSocket = UDPSocket.none()
   let _seed: U64
   let _server_addr: NetAddress val
+  let _timers: Timers = Timers
   var _send_cursor: USize = 0
   var _batch_sent: USize = 0
   var _recv_cursor: USize = 0
+  var _last_recv_cursor: USize = 0
+  var _stall_count: USize = 0
   var _mismatch: Bool = false
   var _reported: Bool = false
 
@@ -520,9 +552,12 @@ actor FloodClient is (UDPSocketActor & UDPLifecycleEventReceiver)
   fun ref _on_bound() =>
     _udp.set_so_rcvbuf(1048576)
     _udp.set_so_sndbuf(1048576)
+    let interval: U64 = 5_000_000_000
+    _timers(Timer(_StallTimer(this), interval, interval))
     _pump()
 
   fun ref _on_bind_failure() =>
+    _timers.dispose()
     if not _reported then
       _reported = true
       _spawner.client_bind_failed()
@@ -588,7 +623,31 @@ actor FloodClient is (UDPSocketActor & UDPLifecycleEventReceiver)
 
     KeepReading
 
+  be stall_check() =>
+    """
+    Closes the client when no echoes have arrived for several consecutive ticks.
+    """
+    if _reported then return end
+    if _recv_cursor == _last_recv_cursor then
+      _stall_count = _stall_count + 1
+      if _stall_count >= 6 then
+        @fprintf(
+          @pony_os_stderr(),
+          "client %zu: stall at recv=%zu/%zu send=%zu/%zu\n".cstring(),
+          _seed,
+          _recv_cursor,
+          _config.datagrams,
+          _send_cursor,
+          _config.datagrams)
+        _close_and_report()
+      end
+    else
+      _stall_count = 0
+      _last_recv_cursor = _recv_cursor
+    end
+
   fun ref _on_closed() =>
+    _timers.dispose()
     if not _reported then
       _reported = true
       let verified = (not _mismatch) and (_recv_cursor >= _config.datagrams)
