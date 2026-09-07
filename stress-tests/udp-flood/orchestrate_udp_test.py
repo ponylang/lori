@@ -33,7 +33,7 @@ def test_clamp_run():
           (c * d * 8192) <= o.RUN_MAX_BYTES)
     check("clamp: leaves at least MIN_DATAGRAMS datagrams", d >= o.MIN_DATAGRAMS)
     # A small config is left untouched.
-    check("clamp: small config unchanged", o.clamp_run(4, 100, 64) == (4, 100))
+    check("clamp: small config unchanged", o.clamp_run(2, 50, 64) == (2, 50))
     # Pathological input exercises the last-resort client-trimming path.
     c3, d3 = o.clamp_run(30000, 100000, 8192)
     check("clamp: pathological input stays under ceilings",
@@ -232,12 +232,13 @@ def test_build_argv():
 
 
 def test_parse_result():
-    out = ("RESULT clients=4 completed=4 verified=4 "
-           "mismatched=0 bind_failed=0\nPASS")
+    out = ("RESULT clients=4 client_sent=400 server_received=400 "
+           "server_corrupted=0 client_send_errors=0 bind_failed=0\nPASS")
     parsed = o.parse_result(out)
     check("parse_result: reads the tally",
-          parsed == {"clients": 4, "completed": 4, "verified": 4,
-                     "mismatched": 0, "bind_failed": 0})
+          parsed == {"clients": 4, "client_sent": 400, "server_received": 400,
+                     "server_corrupted": 0, "client_send_errors": 0,
+                     "bind_failed": 0})
     check("parse_result: empty on garbage", o.parse_result("nothing here") == {})
 
 
@@ -295,13 +296,13 @@ def test_watchdog_kill_reason():
           == "backstop")
 
 
-def test_parse_done():
-    check("parse_done: reads the count from a heartbeat",
-          o._parse_done(b"HEARTBEAT done=1234 of 44688\n") == 1234)
-    check("parse_done: None on the RESULT line",
-          o._parse_done(b"RESULT clients=4 completed=4\n") is None)
-    check("parse_done: None on a bare done= without the HEARTBEAT prefix",
-          o._parse_done(b"done=5 but not a heartbeat\n") is None)
+def test_parse_reported():
+    check("parse_reported: reads the count from a heartbeat",
+          o._parse_reported(b"HEARTBEAT reported=3 of 4\n") == 3)
+    check("parse_reported: None on the RESULT line",
+          o._parse_reported(b"RESULT clients=4 client_sent=400\n") is None)
+    check("parse_reported: None on a bare reported= without the HEARTBEAT prefix",
+          o._parse_reported(b"reported=5 but not a heartbeat\n") is None)
 
 
 def test_is_progress():
@@ -368,8 +369,9 @@ def test_watch_for_progress():
     killed = []
     o._kill_process_tree = lambda p: killed.append(p)
     try:
-        proc = _FakeProc([b"HEARTBEAT done=1 of 4\n", b"RESULT clients=4\n"],
-                         [b"debug output\n"], alive_polls=0, returncode=0)
+        proc = _FakeProc(
+            [b"HEARTBEAT reported=1 of 4\n", b"RESULT clients=4\n"],
+            [b"debug output\n"], alive_polls=0, returncode=0)
         reason, rc, out, err = o._watch_for_progress(
             proc, 3000, 300, poll=lambda: 0.0, sleep=lambda _s: None)
         check("watch: a clean run has no kill reason", reason is None)
@@ -383,11 +385,11 @@ def test_watch_for_progress():
         def advance(_s):
             clock[0] += 1000.0
 
-        frozen = [b"HEARTBEAT done=2 of 4\n"] * 4
+        frozen = [b"HEARTBEAT reported=2 of 4\n"] * 4
         proc2 = _FakeProc(frozen, [], alive_polls=1000, returncode=0)
         reason2, rc2, _o, _e = o._watch_for_progress(
             proc2, 3000, 300, poll=lambda: clock[0], sleep=advance)
-        check("watch: heartbeats with a frozen done count is a hang",
+        check("watch: heartbeats with a frozen reported count is a hang",
               reason2 == "no_progress")
         check("watch: a hung run is killed", len(killed) == 1)
         check("watch: a hung run has no returncode", rc2 is None)
@@ -397,7 +399,7 @@ def test_watch_for_progress():
         def small_advance(_s):
             clock3[0] += 100.0
 
-        proc3 = _FakeProc([b"HEARTBEAT done=1 of 4\n"], [], alive_polls=2,
+        proc3 = _FakeProc([b"HEARTBEAT reported=1 of 4\n"], [], alive_polls=2,
                           returncode=0)
         reason3, rc3, _o3, _e3 = o._watch_for_progress(
             proc3, 3000, 300, poll=lambda: clock3[0], sleep=small_advance)
@@ -498,7 +500,7 @@ def main():
                test_resolve_seeds, test_validate_args,
                test_build_argv, test_parse_result, test_lldb_argv,
                test_lldb_exit_code, test_watchdog_kill_reason,
-               test_parse_done, test_is_progress, test_classify_outcome,
+               test_parse_reported, test_is_progress, test_classify_outcome,
                test_is_failure, test_watch_for_progress, test_run_once,
                test_run_under_lldb, test_rlimit_as_supported):
         fn()

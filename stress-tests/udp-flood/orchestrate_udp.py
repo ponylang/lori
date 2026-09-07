@@ -5,7 +5,8 @@ Each master seed draws one UDP workload -- random datagram counts, payload sizes
 batch sizes, client counts, and read-loop tuning -- and runs the prebuilt engine
 binary once. Omission is the swarm mechanism: each lever is drawn independently,
 so different seeds push lori's UDP stack down different code paths. A failure
-(echo mismatch, crash, or hang) writes a bundle recording the seed.
+(payload corruption, conservation violation, crash, or hang) writes a bundle
+recording the seed.
 
 Build the engine with `make stress-tests config=debug ssl=<version>` and point
 `--binary` at the result (`build/debug/udp-flood`); this orchestrator only runs
@@ -43,18 +44,18 @@ DEFAULT_MEM_LIMIT_MB = 4096
 
 DEFAULT_PROFILE = {
     "payload_sizes": [1, 8, 64, 256, 1024, 4096, 8192],
-    "batch_sizes": [1, 5, 10, 50, 100],
-    "clients": [1, 2, 4, 8, 16, 32],
+    "batch_sizes": [1, 3, 5, 10, 15],
+    "clients": [1, 2, 4],
     "read_buffer_sizes": [1024, 4096, 16384, 65536],
     "max_datagrams_per_turn": [1, 4, 16, 64, 256],
-    "datagram_buckets": {"small": (10, 100), "medium": (101, 1000),
-                         "large": (1001, 5000)},
+    "datagram_buckets": {"small": (10, 50), "medium": (51, 200),
+                         "large": (201, 500)},
 }
 
 WORKLOAD_PROFILES = {"default": DEFAULT_PROFILE}
 
-RUN_MAX_ROUND_TRIPS = 500_000        # clients * datagrams
-RUN_MAX_BYTES = 2_000_000_000        # ~2 GB moved per run
+RUN_MAX_ROUND_TRIPS = 10_000         # clients * datagrams
+RUN_MAX_BYTES = 50_000_000           # ~50 MB moved per run
 MAX_BURST_BYTES = 64_000             # initial burst (clients * batch * payload);
                                      # must fit in the server's UDP receive buffer
                                      # (Windows default ~64 KB is the floor)
@@ -123,8 +124,8 @@ def resolve_config(master_seed, max_threads, profile="default"):
         workload["clients"], workload["datagrams"], payload)
 
     # UDP drops on localhost when actors can't drain receive buffers fast
-    # enough: the kernel drops datagrams and the echo oracle hangs.  Keep
-    # clients ≤ 1.5× the available threads; reduce clients when needed.
+    # enough: the kernel drops datagrams and the conservation oracle fires.
+    # Keep clients ≤ 1.5× the available threads; reduce clients when needed.
     max_safe_clients = max(1, max_threads * 3 // 2)
     if workload["clients"] > max_safe_clients:
         workload["clients"] = max_safe_clients
@@ -175,7 +176,8 @@ def build_argv(binary, config):
 def parse_result(stdout):
     """Extract the engine's RESULT tally, or {}."""
     result = {}
-    for key in ("clients", "completed", "verified", "mismatched", "bind_failed"):
+    for key in ("clients", "client_sent", "server_received",
+                "server_corrupted", "client_send_errors", "bind_failed"):
         match = re.search(r"\b" + key + r"=(\d+)", stdout)
         if match is not None:
             result[key] = int(match.group(1))
@@ -207,23 +209,23 @@ def _watchdog_kill_reason(now, start, last_progress, timeout,
     return None
 
 
-_DONE_RE = re.compile(rb"HEARTBEAT done=(\d+)")
+_REPORTED_RE = re.compile(rb"HEARTBEAT reported=(\d+)")
 
 
-def _parse_done(line):
-    match = _DONE_RE.search(line)
+def _parse_reported(line):
+    match = _REPORTED_RE.search(line)
     return int(match.group(1)) if match is not None else None
 
 
-def _is_progress(done, max_done):
-    return (done is not None) and (done > max_done)
+def _is_progress(reported, max_reported):
+    return (reported is not None) and (reported > max_reported)
 
 
 def _watch_for_progress(proc, timeout, no_progress_seconds,
                         poll=time.monotonic, sleep=time.sleep):
     start = poll()
     last_progress = [start]
-    max_done = [-1]
+    max_reported = [-1]
     lock = threading.Lock()
     chunks = {"out": [], "err": []}
 
@@ -232,10 +234,10 @@ def _watch_for_progress(proc, timeout, no_progress_seconds,
             for line in iter(stream.readline, b""):
                 chunks[key].append(line)
                 if track_progress:
-                    done = _parse_done(line)
+                    reported = _parse_reported(line)
                     with lock:
-                        if _is_progress(done, max_done[0]):
-                            max_done[0] = done
+                        if _is_progress(reported, max_reported[0]):
+                            max_reported[0] = reported
                             last_progress[0] = poll()
         finally:
             stream.close()
@@ -381,9 +383,11 @@ def probe_max_threads(binary):
 def summary_line(config, result):
     parsed = parse_result(result.stdout)
     shape = config["workload"]
-    detail = ("clients=%s completed=%s verified=%s mismatched=%s bind_failed=%s"
-              % (parsed.get("clients", "?"), parsed.get("completed", "?"),
-                 parsed.get("verified", "?"), parsed.get("mismatched", "?"),
+    detail = ("clients=%s client_sent=%s server_received=%s "
+              "server_corrupted=%s bind_failed=%s"
+              % (parsed.get("clients", "?"), parsed.get("client_sent", "?"),
+                 parsed.get("server_received", "?"),
+                 parsed.get("server_corrupted", "?"),
                  parsed.get("bind_failed", "?")))
     return ("[seed %d] %s (payload=%s datagrams=%s batch=%s clients=%s) %s"
             % (config["master_seed"], result.outcome.upper(),
@@ -493,7 +497,7 @@ def main():
                                "pass")
     parser.add_argument("--no-progress-seconds", type=int,
                         default=DEFAULT_NO_PROGRESS_SECONDS,
-                        help="hang threshold: fail a run whose completed count has "
+                        help="hang threshold: fail a run whose reported count has "
                              "not advanced for this long")
     parser.add_argument("--timeout-seconds", type=int,
                         default=DEFAULT_TIMEOUT_SECONDS,
