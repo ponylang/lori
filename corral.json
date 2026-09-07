@@ -2,12 +2,7 @@
   "packages": [
     "lori"
   ],
-  "deps": [
-    {
-      "locator": "github.com/ponylang/ssl.git",
-      "version": "5.0.0"
-    }
-  ],
+  "deps": [],
   "info": {
     "description": "Pony TCP classes reimagined.",
     "homepage": "https://github.com/seantallen-org/lori",

@@ -1,5 +1,4 @@
 use lori = ".."
-use "ssl/net"
 
 actor ClientTCPConnection is
   (lori.TCPConnectionActor & lori.ClientLifecycleEventReceiver)
@@ -56,7 +55,7 @@ actor ClientTCPConnection is
 
   new ssl(auth: lori.TCPConnectAuth,
     notify: ClientTCPConnectionNotify iso,
-    ctx: SSLContext val,
+    ctx: lori.SSLContext val,
     host: String,
     service: String,
     from: String = "",
@@ -142,7 +141,7 @@ actor ClientTCPConnection is
     """
     _tcp_connection.hard_close()
 
-  fun ref start_tls(ssl_ctx: SSLContext val, host: String = ""):
+  fun ref start_tls(ssl_ctx: lori.SSLContext val, host: String = ""):
     (None | lori.StartTLSError)
   =>
     """

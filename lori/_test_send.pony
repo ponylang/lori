@@ -1,7 +1,6 @@
 use "constrained_types"
 use "files"
 use "pony_test"
-use "ssl/net"
 
 class \nodoc\ iso _TestSendToken is UnitTest
   """

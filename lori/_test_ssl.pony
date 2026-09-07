@@ -1,7 +1,6 @@
 use "constrained_types"
 use "files"
 use "pony_test"
-use "ssl/net"
 use "time"
 
 class \nodoc\ iso _TestSSLPingPong is UnitTest

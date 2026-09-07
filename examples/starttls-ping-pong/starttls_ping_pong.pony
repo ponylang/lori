@@ -22,7 +22,6 @@ to read fixed-size chunks. The framing code is omitted here to keep the
 STARTTLS flow easy to follow.
 """
 use "files"
-use "ssl/net"
 use "../../lori"
 
 actor Main
