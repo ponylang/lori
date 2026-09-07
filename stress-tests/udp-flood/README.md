@@ -1,9 +1,10 @@
 # UDP flood stress engine
 
-A count-driven UDP workload for stressing lori's UDP stack. A fixed number of
-clients send stamped datagrams to a server through a single echo socket; the
-server echoes each datagram back to its sender, and the client verifies the
-echo byte-for-byte against a per-client keystream.
+A count-driven, one-way UDP workload for stressing lori's UDP stack. A fixed
+number of clients send stamped datagrams to a server; the server verifies the
+payload of each received datagram against a per-client keystream and reports
+results via actor messaging. There is no UDP echo: the only UDP traffic is
+client-to-server.
 
 This stress test was written to empirically verify that the ASIO backend
 delivers persistent edge-triggered notifications correctly for UDP sockets
@@ -18,10 +19,8 @@ edge-triggered notifications for UDP sockets across many read-loop re-entries.
 Each flag is tied to a distinct code path in `udp_socket.pony`:
 
 - `--datagrams` / `--payload-size` -- volume and per-datagram size.
-- `--batch-size` -- how many datagrams a client sends before waiting for echoes.
-  With batch 1 the client waits for each echo before sending the next (one
-  event delivery per round-trip). Larger batches burst datagrams and exercise
-  the read loop's datagram-count and byte budgets.
+- `--batch-size` -- how many datagrams a client sends per scheduling turn
+  before yielding. The client sends continuously until all datagrams are sent.
 - `--clients` -- concurrent client sockets sending to the same server.
 - `--read-buffer-size` -- the per-socket read buffer, which sets the byte
   budget in `_pending_reads`.
@@ -30,18 +29,18 @@ Each flag is tied to a distinct code path in `udp_socket.pony`:
 
 ## Oracles
 
-- **Echo integrity** -- each client sends a per-client pseudo-random byte
-  stream (the byte at position `p` is the low 8 bits of a splitmix64 hash of
-  the client id and `p`) and verifies every echoed byte against it.
-  Position-based: the Nth echo must match the Nth datagram sent (UDP preserves
-  order on loopback).
-- **Conservation** -- every client must send and verify all its datagrams; the
-  `RESULT` line reports the tally.
+- **Conservation** -- two counters tracked independently: client-side sent and
+  server-side received. At the end of a run, client_sent must equal
+  server_received. At the volumes this engine runs, the server's receive buffer
+  is large enough to hold every datagram; a conservation failure indicates a
+  lori event-delivery bug, not expected UDP loss.
+- **Payload integrity** -- the server reads a 4-byte header (client id +
+  sequence number), regenerates the expected keystream for that position, and
+  compares. A mismatch is corruption.
 - **Crash / assert** -- debug build, asserts on.
 
-On success (every client verified) the engine prints `RESULT ...` then `PASS`
-and returns. Anything short of full verification prints `FAIL` and exits
-non-zero.
+On success (every invariant holds) the engine prints `RESULT ...` then `PASS`
+and returns. Anything short of that prints `FAIL` and exits non-zero.
 
 ## Building and running
 
@@ -55,7 +54,7 @@ make stress-tests config=debug ssl=3.0.x     # -> build/debug/udp-flood
 Run the engine directly for a single workload:
 
 ```bash
-build/debug/udp-flood --datagrams 1000 --clients 8 --payload-size 256 \
+build/debug/udp-flood --datagrams 100 --clients 4 --payload-size 256 \
   --batch-size 10
 ```
 

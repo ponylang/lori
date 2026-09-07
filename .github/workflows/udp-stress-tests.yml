@@ -2,7 +2,7 @@ name: UDP stress tests
 
 on:
   schedule:
-    - cron: "30 10 * * *"
+    - cron: "0 0,8,16 * * *"
   workflow_dispatch:
 
 permissions:
