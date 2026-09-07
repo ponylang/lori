@@ -132,6 +132,29 @@ actor \nodoc\ Main is TestList
     test(_TestUDPSocketState)
     test(_TestUDPEcho)
 
+    // DNS / NetAddress tests (no sockets)
+    test(_TestDNSBroadcastIP4)
+    test(_TestDNSBroadcastIP6)
+    test(_TestNetAddressNameRoundTripIP4)
+    test(_TestNetAddressNameRoundTripIP6)
+    test(_TestNetAddressIP6Scope)
+    test(_TestDNSUnresolvableEmpty)
+
+    // UDP read-buffer edge cases (real sockets)
+    test(_TestUDPOversizedDatagramTruncated)
+    test(_TestUDPUndersizedDatagramDelivered)
+    test(_TestUDPEmptyDatagramDelivered)
+    test(_TestUDPSmallReadBufferTruncates)
+
+    // Broadcast tests (real sockets)
+    ifdef not osx then test(_TestBroadcast) end
+    ifdef linux then test(_TestBroadcastReceive) end
+
+    // Multicast tests (real sockets)
+    ifdef (not osx) and (not bsd) then test(_TestMulticastSockopt) end
+    test(_TestMulticastIP4)
+    test(_TestMulticastIP6)
+
     // Fake-backend tests (no real sockets for I/O)
     test(_TestFakeSendOk)
     test(_TestFakeSendMultipleTokenOrder)
