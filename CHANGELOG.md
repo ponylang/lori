@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file. This projec
 ### Changed
 
 - Replace ponylang/ssl dependency with lori's own SSL types
+- Replace ponylang/ssl dependency with lori's own SSL types ([PR #401](https://github.com/ponylang/lori/pull/401))
 
 ## [0.21.0] - 2026-09-05
 
