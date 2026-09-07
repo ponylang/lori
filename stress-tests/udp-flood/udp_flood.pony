@@ -4,7 +4,7 @@ UDP flood stress engine for lori.
 A count-driven UDP workload for stressing lori's UDP stack. A fixed number of
 clients send stamped datagrams to a server through a single echo socket; the
 server echoes each datagram back to its sender, and the client verifies the
-echo byte-for-byte against a per-client keystream.
+echo against a checksum of the original payload.
 
 Unlike the TCP swarm, there is no connection lifecycle to stress: UDP sockets
 bind, send, receive, and close. The point is to exercise the readiness event
@@ -16,10 +16,9 @@ across many read-loop re-entries.
 Each swarm dimension exercises a distinct code path in `udp_socket.pony`:
 
 * `--datagrams` / `--payload-size` -- volume and per-datagram size.
-* `--batch-size` -- how many datagrams a client sends before waiting for echoes.
-  With batch 1 the client waits for each echo before sending the next (one
-  event delivery per round-trip). Larger batches burst datagrams and exercise
-  the read loop's datagram-count and byte budgets.
+* `--batch-size` -- how many datagrams a client sends per scheduling turn
+  before yielding. The client sends continuously until all datagrams are sent;
+  echoes arrive asynchronously.
 * `--clients` -- concurrent client sockets sending to the same server.
 * `--read-buffer-size` -- the per-socket read buffer, which sets the byte
   budget in `_pending_reads`.
@@ -28,16 +27,19 @@ Each swarm dimension exercises a distinct code path in `udp_socket.pony`:
 
 Oracles:
 
-* Echo integrity -- each client sends a per-client pseudo-random byte stream
-  (byte at position p is the low 8 bits of a splitmix64 hash of (client-id,
-  p)), and verifies every echoed byte against it. Position-based: the Nth echo
-  must match the Nth datagram sent (UDP preserves order on loopback).
-* Conservation -- every client must send and verify all its datagrams.
+* Conservation -- four counters tracked independently: client-side sent and
+  received, server-side received and sent. At the end of a run, client_sent
+  must equal server_received (nothing lost on the way to the server) and
+  server_sent must equal client_received (nothing lost on the way back).
+* Echo integrity -- each client keeps an ordered list of checksums of the
+  datagrams it sent. On receiving an echo, the client hashes the echo and
+  scans forward in its checksum list. A match advances the cursor; everything
+  before the match is detected loss. No match means corruption.
 * Crash / assert -- debug build, asserts on.
 
-On success (every client verified) the engine prints its RESULT line and PASS,
-then returns. Anything short of full verification prints FAIL and exits
-non-zero.
+On success (every invariant holds) the engine prints its RESULT line and PASS,
+then returns. Anything short of that prints FAIL with the specific violation
+and exits non-zero.
 """
 use "../../lori"
 use "cli"
@@ -227,15 +229,9 @@ primitive _MakeConfig
 
 primitive _Keystream
   """
-  The echo oracle checks a per-client pseudo-random byte stream: the byte at
-  stream position `p` is the low 8 bits of a splitmix64 hash of (seed, p).
-  `seed` identifies the client. The values are 8-bit, so byte values recur,
-  but the per-position pattern does not: systematic corruption -- a wrong
-  datagram, a byte from another client -- is caught near-certainly, while a
-  lone single-byte error aliases ~1/256. It is generated per position (no
-  template to bulk-copy), the price of a stream unique per client; the
-  per-run byte volume is bounded by the orchestrator so generating it is not
-  the bottleneck.
+  Pseudo-random byte stream keyed by (seed, position). The byte at stream
+  position `p` is the low 8 bits of a splitmix64 hash of (seed, p). Used to
+  generate datagram payloads and to verify echoes.
   """
   fun byte(seed: U64, p: USize): U8 =>
     var z: U64 = seed + (p.u64() * 0x9E3779B97F4A7C15)
@@ -254,12 +250,39 @@ primitive _Keystream
       a
     end
 
+primitive _Checksum
+  """
+  FNV-1a 64-bit hash. Used by the client to build its sent-checksum list and
+  to hash received echoes for the scan-forward integrity check.
+  """
+  fun from_data(data: Array[U8] box): U64 =>
+    var h: U64 = 14695981039346656037
+    try
+      var i: USize = 0
+      while i < data.size() do
+        h = (h xor data(i)?.u64()) * 1099511628211
+        i = i + 1
+      end
+    else
+      _Unreachable()
+    end
+    h
+
+  fun from_keystream(seed: U64, start: USize, len: USize): U64 =>
+    var h: U64 = 14695981039346656037
+    var i: USize = 0
+    while i < len do
+      h = (h xor _Keystream.byte(seed, start + i).u64()) * 1099511628211
+      i = i + 1
+    end
+    h
+
 primitive _KeystreamSelfCheck
   """
   Guards the oracle's core before the run. The client both generates its
-  payload and verifies the echo with `_Keystream.byte`, so a degenerate
-  keystream (constant output, or one that ignores the seed) would make every
-  client verify against matching-but-wrong data -- the flood would pass while
+  payload and verifies the echo with `_Checksum`, so a degenerate keystream
+  (constant output, or one that ignores the seed) would make every client
+  verify against matching-but-wrong data -- the flood would pass while
   catching nothing. A sanity guard, not a proof: it checks a representative
   seed pair for the two properties the oracle relies on, and aborts loudly if
   either fails.
@@ -292,21 +315,41 @@ primitive _KeystreamSelfCheck
           .cstring())
       @exit(1)
     end
+    let h0 = _Checksum.from_keystream(0, 0, 64)
+    let h1 = _Checksum.from_keystream(1, 0, 64)
+    let h2 = _Checksum.from_keystream(0, 64, 64)
+    if (h0 == h1) or (h0 == h2) then
+      @printf("FAIL: checksum self-check\n".cstring())
+      @fprintf(
+        @pony_os_stderr(),
+        "FATAL: _Checksum self-check failed -- the hash is degenerate\n"
+          .cstring())
+      @exit(1)
+    end
 
 actor Spawner
   """
-  Coordinates server and client lifecycle. Spawns clients once the server
-  is bound, collects completion tallies, and prints the RESULT/PASS/FAIL line.
+  Coordinates server and client lifecycle. Tracks the four-counter conservation
+  invariant: client_sent == server_received (nothing lost to the server),
+  server_sent == client_received (nothing lost from the server). Prints the
+  RESULT/PASS/FAIL line when all actors have reported.
   """
   let _config: _Config
   let _udp_auth: UDPAuth
   var _server: (FloodServer | None) = None
+  let _clients: Array[FloodClient] = Array[FloodClient]
   var _started: Bool = false
-  var _spawned: USize = 0
-  var _completed: USize = 0
-  var _verified: USize = 0
-  var _mismatched: USize = 0
-  var _bind_failed: USize = 0
+  var _clients_done_sending: USize = 0
+  var _total_client_sent: USize = 0
+  var _server_received: USize = 0
+  var _server_sent: USize = 0
+  var _server_errors: USize = 0
+  var _server_reported: Bool = false
+  var _clients_reported: USize = 0
+  var _total_client_received: USize = 0
+  var _total_client_corrupted: USize = 0
+  var _total_client_send_errors: USize = 0
+  var _total_client_bind_failed: USize = 0
   var _finished: Bool = false
   let _timers: Timers = Timers
 
@@ -322,8 +365,8 @@ actor Spawner
       _timers(Timer(_HeartbeatTimer(this), interval, interval))
       var i: USize = 0
       while i < _config.clients do
-        FloodClient(this, _config, i, _udp_auth, addr)
-        _spawned = _spawned + 1
+        let c = FloodClient(this, _config, i, _udp_auth, addr)
+        _clients.push(c)
         i = i + 1
       end
     end
@@ -332,18 +375,61 @@ actor Spawner
     @printf("FAIL: server could not bind\n".cstring())
     @exit(1)
 
-  be client_done(verified: Bool, mismatch: Bool) =>
+  be client_done_sending(sent: USize) =>
     """
-    Record one client's completion and check whether all clients are done.
+    A client finished sending. Accumulates the sent count and, when all
+    clients are done, tells the server to begin its idle-timer shutdown.
     """
-    _completed = _completed + 1
-    if verified then _verified = _verified + 1 end
-    if mismatch then _mismatched = _mismatched + 1 end
-    _try_finish()
+    _total_client_sent = _total_client_sent + sent
+    _clients_done_sending = _clients_done_sending + 1
+    if _clients_done_sending >= _config.clients then
+      match _server
+      | let s: FloodServer => s.all_clients_done()
+      end
+    end
 
   be client_bind_failed() =>
-    _bind_failed = _bind_failed + 1
-    _completed = _completed + 1
+    """
+    A client could not bind its socket. Counts as both done-sending and
+    reported so the termination flow is not blocked.
+    """
+    _total_client_bind_failed = _total_client_bind_failed + 1
+    _clients_done_sending = _clients_done_sending + 1
+    _clients_reported = _clients_reported + 1
+    if _clients_done_sending >= _config.clients then
+      match _server
+      | let s: FloodServer => s.all_clients_done()
+      end
+    end
+    _try_finish()
+
+  be server_done(received: USize, sent: USize, errors: USize) =>
+    """
+    Server reports its final counts. Tell all clients the run is over.
+    """
+    _server_received = received
+    _server_sent = sent
+    _server_errors = errors
+    _server_reported = true
+    for c in _clients.values() do
+      c.finish()
+    end
+    _try_finish()
+
+  be client_report(
+    received: USize,
+    corrupted: Bool,
+    send_error: Bool)
+  =>
+    """
+    A client reports its final counts after its idle timer fires.
+    """
+    _clients_reported = _clients_reported + 1
+    _total_client_received = _total_client_received + received
+    if corrupted then _total_client_corrupted = _total_client_corrupted + 1 end
+    if send_error then
+      _total_client_send_errors = _total_client_send_errors + 1
+    end
     _try_finish()
 
   be heartbeat_tick() =>
@@ -351,13 +437,15 @@ actor Spawner
 
   fun _emit_heartbeat() =>
     @printf(
-      "HEARTBEAT done=%zu of %zu\n".cstring(),
-      _completed,
+      "HEARTBEAT reported=%zu of %zu\n".cstring(),
+      _clients_reported,
       _config.clients)
     @fflush(@pony_os_stdout())
 
   fun ref _try_finish() =>
-    if (not _finished) and (_completed >= _config.clients) then
+    if (not _finished) and
+      (_clients_reported >= _config.clients) and _server_reported
+    then
       _finished = true
       _emit_heartbeat()
       _timers.dispose()
@@ -370,20 +458,62 @@ actor Spawner
 
   fun _report() =>
     @printf(
-      ("RESULT clients=%zu completed=%zu verified=%zu " +
-        "mismatched=%zu bind_failed=%zu\n").cstring(),
+      ("RESULT clients=%zu client_sent=%zu client_received=%zu " +
+        "server_received=%zu server_sent=%zu server_errors=%zu " +
+        "corrupted=%zu client_send_errors=%zu bind_failed=%zu\n").cstring(),
       _config.clients,
-      _completed,
-      _verified,
-      _mismatched,
-      _bind_failed)
-    if _verified == _config.clients then
+      _total_client_sent,
+      _total_client_received,
+      _server_received,
+      _server_sent,
+      _server_errors,
+      _total_client_corrupted,
+      _total_client_send_errors,
+      _total_client_bind_failed)
+
+    var pass = true
+    if _total_client_bind_failed > 0 then
+      @printf(
+        "FAIL: %zu client(s) could not bind\n".cstring(),
+        _total_client_bind_failed)
+      pass = false
+    end
+    if _total_client_send_errors > 0 then
+      @printf(
+        "FAIL: %zu client(s) hit SendToError\n".cstring(),
+        _total_client_send_errors)
+      pass = false
+    end
+    if _server_errors > 0 then
+      @printf(
+        "FAIL: server had %zu echo send errors\n".cstring(),
+        _server_errors)
+      pass = false
+    end
+    if _total_client_sent != _server_received then
+      @printf(
+        "FAIL: client_sent(%zu) != server_received(%zu)\n".cstring(),
+        _total_client_sent,
+        _server_received)
+      pass = false
+    end
+    if _server_sent != _total_client_received then
+      @printf(
+        "FAIL: server_sent(%zu) != client_received(%zu)\n".cstring(),
+        _server_sent,
+        _total_client_received)
+      pass = false
+    end
+    if _total_client_corrupted > 0 then
+      @printf(
+        "FAIL: %zu client(s) detected echo corruption\n".cstring(),
+        _total_client_corrupted)
+      pass = false
+    end
+
+    if pass then
       @printf("PASS\n".cstring())
     else
-      @printf(
-        "FAIL: %zu of %zu clients did not verify\n".cstring(),
-        _config.clients - _verified,
-        _config.clients)
       @exit(1)
     end
 
@@ -401,11 +531,37 @@ class _HeartbeatTimer is TimerNotify
     _spawner.heartbeat_tick()
     true
 
+class _ServerIdleNotify is TimerNotify
+  let _server: FloodServer
+  let _gen: USize
+
+  new iso create(server: FloodServer, gen: USize) =>
+    _server = server
+    _gen = gen
+
+  fun ref apply(timer: Timer, count: U64): Bool =>
+    _server.idle_expired(_gen)
+    false
+
+class _ClientIdleNotify is TimerNotify
+  let _client: FloodClient
+  let _gen: USize
+
+  new iso create(client: FloodClient, gen: USize) =>
+    _client = client
+    _gen = gen
+
+  fun ref apply(timer: Timer, count: U64): Bool =>
+    _client.idle_expired(_gen)
+    false
+
 actor FloodServer is (UDPSocketActor & UDPLifecycleEventReceiver)
   """
-  Echo server. Echoes each received datagram back to its sender. When
-  `send_to` returns `SendToWouldBlock`, the datagram is stashed and a
-  deferred `_drain_stash` behavior retries it.
+  Echo server. Echoes each received datagram back to its sender and tracks
+  received and sent counts for the conservation invariant. `SendToWouldBlock`
+  stashes the datagram for deferred retry (legitimate backpressure).
+  `SendToError` and `SendToNotOpen` are unexpected on loopback -- counted as
+  errors, the datagram is dropped, and the conservation check catches it.
   """
   let _spawner: Spawner
   let _config: _Config
@@ -413,6 +569,14 @@ actor FloodServer is (UDPSocketActor & UDPLifecycleEventReceiver)
   embed _stash: Array[(Array[U8] val, NetAddress val)]
     = Array[(Array[U8] val, NetAddress val)]
   var _drain_scheduled: Bool = false
+  var _server_received: USize = 0
+  var _server_sent: USize = 0
+  var _server_errors: USize = 0
+  var _all_done: Bool = false
+  var _idle_gen: USize = 0
+  var _idle_fired: Bool = false
+  var _reported: Bool = false
+  let _timers: Timers = Timers
 
   new create(spawner: Spawner, config: _Config, udp_auth: UDPAuth) =>
     _spawner = spawner
@@ -436,20 +600,26 @@ actor FloodServer is (UDPSocketActor & UDPLifecycleEventReceiver)
   fun ref _on_received(data: Array[U8] iso, from: NetAddress val)
     : ReadAction
   =>
+    if _reported then return KeepReading end
+    _server_received = _server_received + 1
     let d: Array[U8] val = consume data
     if _stash.size() > 0 then
       _stash.push((d, from))
       _schedule_drain()
     else
       match \exhaustive\ _udp.send_to(d, from)
-      | SendToOk => None
+      | SendToOk =>
+        _server_sent = _server_sent + 1
       | SendToWouldBlock =>
         _stash.push((d, from))
         _schedule_drain()
-      | SendToError => None
-      | SendToNotOpen => None
+      | SendToError =>
+        _server_errors = _server_errors + 1
+      | SendToNotOpen =>
+        _server_errors = _server_errors + 1
       end
     end
+    if _all_done then _arm_idle() end
     KeepReading
 
   fun ref _schedule_drain() =>
@@ -466,27 +636,59 @@ actor FloodServer is (UDPSocketActor & UDPLifecycleEventReceiver)
         match \exhaustive\ _udp.send_to(d, f)
         | SendToOk =>
           try _stash.shift()? else _Unreachable() end
+          _server_sent = _server_sent + 1
         | SendToWouldBlock =>
           _schedule_drain()
           return
         | SendToError =>
           try _stash.shift()? else _Unreachable() end
+          _server_errors = _server_errors + 1
         | SendToNotOpen =>
           try _stash.shift()? else _Unreachable() end
+          _server_errors = _server_errors + 1
         end
       else
         _Unreachable()
       end
     end
+    if _all_done then _try_report() end
+
+  fun ref _arm_idle() =>
+    _idle_fired = false
+    _idle_gen = _idle_gen + 1
+    _timers(Timer(_ServerIdleNotify(this, _idle_gen), 50_000_000))
+
+  be idle_expired(gen: USize) =>
+    """
+    Idle-timer callback. Stale generations (from re-armed timers) are no-ops.
+    """
+    if (not _reported) and (gen == _idle_gen) then
+      _idle_fired = true
+      _try_report()
+    end
+
+  fun ref _try_report() =>
+    if _idle_fired and (_stash.size() == 0) and (not _reported) then
+      _reported = true
+      _timers.dispose()
+      _spawner.server_done(_server_received, _server_sent, _server_errors)
+    end
+
+  be all_clients_done() =>
+    """
+    All clients finished sending. Arms the idle timer to detect quiescence.
+    """
+    _all_done = true
+    _arm_idle()
 
   fun ref _on_closed() =>
     None
 
 actor FloodClient is (UDPSocketActor & UDPLifecycleEventReceiver)
   """
-  Sends datagrams in batches to the server and verifies echoed data against
-  a per-client keystream. Reports verified/mismatch status to the `Spawner`
-  when all datagrams have been echoed or when the socket closes.
+  Sends datagrams continuously to the server and verifies echoed data using a
+  scan-forward checksum oracle. Reports sent/received counts and corruption
+  status to the Spawner.
   """
   let _spawner: Spawner
   let _config: _Config
@@ -494,10 +696,16 @@ actor FloodClient is (UDPSocketActor & UDPLifecycleEventReceiver)
   let _seed: U64
   let _server_addr: NetAddress val
   var _send_cursor: USize = 0
-  var _batch_sent: USize = 0
-  var _recv_cursor: USize = 0
-  var _mismatch: Bool = false
+  var _client_received: USize = 0
+  var _corruption: Bool = false
+  var _send_error: Bool = false
   var _reported: Bool = false
+  var _done_sending: Bool = false
+  var _finishing: Bool = false
+  var _idle_gen: USize = 0
+  embed _sent_checksums: Array[U64] = Array[U64]
+  var _verify_cursor: USize = 0
+  let _timers: Timers = Timers
 
   new create(
     spawner: Spawner,
@@ -529,23 +737,24 @@ actor FloodClient is (UDPSocketActor & UDPLifecycleEventReceiver)
     end
 
   fun ref _pump() =>
-    while (_batch_sent < _config.batch_size) and
+    var sent_this_turn: USize = 0
+    while (sent_this_turn < _config.batch_size) and
       (_send_cursor < _config.datagrams)
     do
       let start = _send_cursor * _config.payload_size
-      let payload = _Keystream.make(_seed, start, _config.payload_size)
-      match \exhaustive\ _udp.send_to(consume payload, _server_addr)
+      let payload: Array[U8] val =
+        _Keystream.make(_seed, start, _config.payload_size)
+      let h = _Checksum.from_data(payload)
+      match \exhaustive\ _udp.send_to(payload, _server_addr)
       | SendToOk =>
+        _sent_checksums.push(h)
         _send_cursor = _send_cursor + 1
-        _batch_sent = _batch_sent + 1
+        sent_this_turn = sent_this_turn + 1
       | SendToWouldBlock =>
         _retry_send()
         return
       | SendToError =>
-        @fprintf(
-          @pony_os_stderr(),
-          "client %zu: send_to returned SendToError\n".cstring(),
-          _seed)
+        _send_error = true
         _close_and_report()
         return
       | SendToNotOpen =>
@@ -554,7 +763,21 @@ actor FloodClient is (UDPSocketActor & UDPLifecycleEventReceiver)
       end
     end
 
+    if _send_cursor >= _config.datagrams then
+      if not _done_sending then
+        _done_sending = true
+        _spawner.client_done_sending(_send_cursor)
+      end
+    else
+      _continue_sending()
+    end
+
   be _retry_send() =>
+    if not _reported then
+      _pump()
+    end
+
+  be _continue_sending() =>
     if not _reported then
       _pump()
     end
@@ -562,41 +785,67 @@ actor FloodClient is (UDPSocketActor & UDPLifecycleEventReceiver)
   fun ref _on_received(data: Array[U8] iso, from: NetAddress val)
     : ReadAction
   =>
-    let n = data.size()
+    if _reported then return KeepReading end
+    let d: Array[U8] val = consume data
+    let echo_hash = _Checksum.from_data(d)
+    var found = false
+    var pos = _verify_cursor
     try
-      var i: USize = 0
-      let start = _recv_cursor * _config.payload_size
-      while i < n do
-        if data(i)? != _Keystream.byte(_seed, start + i) then
-          _mismatch = true
+      while pos < _sent_checksums.size() do
+        if _sent_checksums(pos)? == echo_hash then
+          _verify_cursor = pos + 1
+          _client_received = _client_received + 1
+          found = true
+          break
         end
-        i = i + 1
+        pos = pos + 1
       end
     else
       _Unreachable()
     end
-    _recv_cursor = _recv_cursor + 1
-
-    if _recv_cursor >= _send_cursor then
-      if _send_cursor >= _config.datagrams then
-        _close_and_report()
-      else
-        _batch_sent = 0
-        _pump()
-      end
+    if not found then
+      _corruption = true
+      _client_received = _client_received + 1
     end
-
+    if _finishing then _arm_idle() end
     KeepReading
 
-  fun ref _on_closed() =>
+  be finish() =>
+    """
+    The server has reported. Arms the idle timer to detect echo quiescence.
+    """
+    _finishing = true
+    _arm_idle()
+
+  fun ref _arm_idle() =>
+    _idle_gen = _idle_gen + 1
+    _timers(Timer(_ClientIdleNotify(this, _idle_gen), 50_000_000))
+
+  be idle_expired(gen: USize) =>
+    """
+    Idle-timer callback. Stale generations (from re-armed timers) are no-ops.
+    """
+    if (not _reported) and (gen == _idle_gen) then
+      _report()
+    end
+
+  fun ref _report() =>
     if not _reported then
       _reported = true
-      let verified = (not _mismatch) and (_recv_cursor >= _config.datagrams)
-      _spawner.client_done(verified, _mismatch)
+      _timers.dispose()
+      if not _done_sending then
+        _done_sending = true
+        _spawner.client_done_sending(_send_cursor)
+      end
+      _spawner.client_report(_client_received, _corruption, _send_error)
+      _udp.close()
     end
 
   fun ref _close_and_report() =>
-    _udp.close()
+    _report()
+
+  fun ref _on_closed() =>
+    None
 
 actor Main
   """
