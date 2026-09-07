@@ -1,4 +1,3 @@
-use "ssl/net"
 
 trait _ConnectionState[TCP: TCPBackend ref]
   """

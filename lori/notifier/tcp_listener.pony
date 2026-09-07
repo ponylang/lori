@@ -1,5 +1,4 @@
 use lori = ".."
-use "ssl/net"
 
 actor TCPListener is lori.TCPListenerActor
   """
@@ -13,7 +12,7 @@ actor TCPListener is lori.TCPListenerActor
   var _tcp_listener: lori.TCPListener = lori.TCPListener.none()
   var _notify: TCPListenNotify ref
   let _server_auth: lori.TCPServerAuth
-  let _ssl_ctx: (SSLContext val | None)
+  let _ssl_ctx: (lori.SSLContext val | None)
 
   new create(auth: lori.TCPListenAuth,
     notify: TCPListenNotify iso,
@@ -34,7 +33,7 @@ actor TCPListener is lori.TCPListenerActor
 
   new ssl(auth: lori.TCPListenAuth,
     notify: TCPListenNotify iso,
-    ctx: SSLContext val,
+    ctx: lori.SSLContext val,
     host: String,
     service: String,
     limit: (lori.MaxSpawn | None) = lori.DefaultMaxSpawn(),
@@ -58,7 +57,7 @@ actor TCPListener is lori.TCPListenerActor
   fun ref _on_accept(fd: U32): ServerTCPConnection ? =>
     let notify = _notify.on_connected(this)?
     match _ssl_ctx
-    | let ctx: SSLContext val =>
+    | let ctx: lori.SSLContext val =>
       ServerTCPConnection._ssl_create(_server_auth, ctx, fd, consume notify)
     else
       ServerTCPConnection._create(_server_auth, fd, consume notify)

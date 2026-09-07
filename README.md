@@ -25,7 +25,60 @@ Please note that if this library encounters a state that the programmers thought
 
 Requires ponyc 0.70.0 or later.
 
-Note: The ssl transitive dependency requires a C SSL library to be installed. Please see the ssl installation instructions for more information.
+Note: Lori requires a C SSL library to be installed.
+
+### Installing on APT based Linux distributions
+
+```bash
+sudo apt-get install -y libssl-dev
+```
+
+### Installing on Alpine Linux
+
+```bash
+apk add --update libressl-dev
+```
+
+### Installing on Arch Linux
+
+```bash
+pacman -S openssl
+```
+
+### Installing on macOS with Homebrew
+
+```bash
+brew update
+brew install libressl
+```
+
+### Installing on macOS with MacPorts
+
+```bash
+sudo port install libressl
+```
+
+### Installing on RPM based Linux distributions with dnf
+
+```bash
+sudo dnf install openssl-devel
+```
+
+### Installing on RPM based Linux distributions with yum
+
+```bash
+sudo yum install openssl-devel
+```
+
+### Installing on RPM based Linux distributions with zypper
+
+```bash
+sudo zypper install libopenssl-devel
+```
+
+### Installing on Windows
+
+Install one of the supported SSL libraries.
 
 ## Usage
 

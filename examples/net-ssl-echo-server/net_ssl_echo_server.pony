@@ -10,7 +10,6 @@ correctly. Connect with an SSL client (e.g. `openssl s_client -connect
 localhost:7669`) to test.
 """
 use "files"
-use "ssl/net"
 use "../../lori"
 
 actor Main

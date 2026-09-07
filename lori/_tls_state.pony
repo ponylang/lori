@@ -1,4 +1,3 @@
-use "ssl/net"
 
 primitive _NoTLS
   """

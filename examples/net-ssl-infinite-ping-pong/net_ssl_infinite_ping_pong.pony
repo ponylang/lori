@@ -9,7 +9,6 @@ relative certificate paths resolve correctly.
 """
 use "constrained_types"
 use "files"
-use "ssl/net"
 use "../../lori"
 
 actor Main

@@ -1,5 +1,4 @@
 use lori = ".."
-use "ssl/net"
 
 trait ServerTCPConnectionNotify
   """

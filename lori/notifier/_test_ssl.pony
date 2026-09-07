@@ -2,7 +2,6 @@ use lori = ".."
 use "constrained_types"
 use "files"
 use "pony_test"
-use "ssl/net"
 
 class \nodoc\ iso _TestNotifierSSLPingPong is UnitTest
   fun name(): String => "notifier/SSLPingPong"
@@ -11,9 +10,9 @@ class \nodoc\ iso _TestNotifierSSLPingPong is UnitTest
     let port = "9802"
     let pings_to_send: I32 = 100
     let file_auth = FileAuth(h.env.root)
-    let sslctx: SSLContext val =
+    let sslctx: lori.SSLContext val =
       recover
-        SSLContext
+        lori.SSLContext
           .> set_authority(
             FilePath(file_auth, "assets/cert.pem"))?
           .> set_cert(
@@ -103,13 +102,13 @@ class \nodoc\ _TestNSSLServerNotify is ServerTCPConnectionNotify
 
 class \nodoc\ _TestNSSLListenNotify is TCPListenNotify
   let _port: String
-  let _sslctx: SSLContext val
+  let _sslctx: lori.SSLContext val
   let _pings_to_receive: I32
   let _h: TestHelper
 
   new create(
     port: String,
-    sslctx: SSLContext val,
+    sslctx: lori.SSLContext val,
     pings_to_receive: I32,
     h: TestHelper)
   =>

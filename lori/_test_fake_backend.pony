@@ -1,9 +1,5 @@
 use "pony_test"
 
-// FFI: memcpy for writing into Pointer[U8] tag buffers in fake receive
-use @memcpy[Pointer[None]](dst: Pointer[None] tag, src: Pointer[None] tag,
-  n: USize)
-
 // FFI: raw socket — declaration lives in _test_stale_foreign_event.pony
 
 // ---------------------------------------------------------------------------

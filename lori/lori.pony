@@ -200,7 +200,6 @@ Adding SSL to a connection requires only a constructor change. Use
 
 ```pony
 use "lori"
-use "ssl/net"
 
 actor SSLEchoer is (TCPConnectionActor & ServerLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()
@@ -237,7 +236,6 @@ initiate a TLS handshake:
 
 ```pony
 use "lori"
-use "ssl/net"
 
 actor MyStartTLSClient is (TCPConnectionActor & ClientLifecycleEventReceiver)
   var _tcp_connection: TCPConnection = TCPConnection.none()

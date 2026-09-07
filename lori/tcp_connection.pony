@@ -1,5 +1,4 @@
 use "collections"
-use "ssl/net"
 
 class TCPConnection[TCP: TCPBackend ref = RuntimeBackend]
   """

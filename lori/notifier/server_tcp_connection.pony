@@ -1,5 +1,4 @@
 use lori = ".."
-use "ssl/net"
 
 actor ServerTCPConnection is
   (lori.TCPConnectionActor & lori.ServerLifecycleEventReceiver)
@@ -43,7 +42,7 @@ actor ServerTCPConnection is
         auth, fd, this, this, read_buffer_size)
 
   new _ssl_create(auth: lori.TCPServerAuth,
-    ctx: SSLContext val,
+    ctx: lori.SSLContext val,
     fd: U32,
     notify: ServerTCPConnectionNotify iso,
     read_buffer_size: lori.ReadBufferSize = lori.DefaultReadBufferSize())
@@ -116,7 +115,7 @@ actor ServerTCPConnection is
     """
     _tcp_connection.hard_close()
 
-  fun ref start_tls(ssl_ctx: SSLContext val, host: String = ""):
+  fun ref start_tls(ssl_ctx: lori.SSLContext val, host: String = ""):
     (None | lori.StartTLSError)
   =>
     """
