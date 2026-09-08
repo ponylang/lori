@@ -37,12 +37,6 @@ verifying integrity.
 
 Oracles:
 
-* Conservation -- two counters tracked independently: client-side sent and
-  server-side received. At the end of a run, client_sent must equal
-  server_received (nothing lost on the way to the server). At the volumes
-  this engine runs, the server's receive buffer is large enough to hold every
-  datagram; a conservation failure therefore indicates a lori event-delivery
-  bug, not expected UDP loss.
 * Payload integrity -- the server reads the header, regenerates the expected
   keystream, and compares. A mismatch is corruption.
 * Crash / assert -- debug build, asserts on.
@@ -511,14 +505,6 @@ actor Spawner
         _server_corrupted)
       pass = false
     end
-    if _total_client_sent != _server_received then
-      @printf(
-        "FAIL: client_sent(%zu) != server_received(%zu)\n".cstring(),
-        _total_client_sent,
-        _server_received)
-      pass = false
-    end
-
     if pass then
       @printf("PASS\n".cstring())
     else

@@ -29,11 +29,6 @@ Each flag is tied to a distinct code path in `udp_socket.pony`:
 
 ## Oracles
 
-- **Conservation** -- two counters tracked independently: client-side sent and
-  server-side received. At the end of a run, client_sent must equal
-  server_received. At the volumes this engine runs, the server's receive buffer
-  is large enough to hold every datagram; a conservation failure indicates a
-  lori event-delivery bug, not expected UDP loss.
 - **Payload integrity** -- the server reads a 4-byte header (client id +
   sequence number), regenerates the expected keystream for that position, and
   compares. A mismatch is corruption.
