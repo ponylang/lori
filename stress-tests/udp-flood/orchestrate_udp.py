@@ -5,7 +5,7 @@ Each master seed draws one UDP workload -- random datagram counts, payload sizes
 batch sizes, client counts, and read-loop tuning -- and runs the prebuilt engine
 binary once. Omission is the swarm mechanism: each lever is drawn independently,
 so different seeds push lori's UDP stack down different code paths. A failure
-(payload corruption, conservation violation, crash, or hang) writes a bundle
+(payload corruption, crash, or hang) writes a bundle
 recording the seed.
 
 Build the engine with `make stress-tests config=debug ssl=<version>` and point
@@ -124,8 +124,8 @@ def resolve_config(master_seed, max_threads, profile="default"):
         workload["clients"], workload["datagrams"], payload)
 
     # UDP drops on localhost when actors can't drain receive buffers fast
-    # enough: the kernel drops datagrams and the conservation oracle fires.
-    # Keep clients ≤ 1.5× the available threads; reduce clients when needed.
+    # enough. Keep clients ≤ 1.5× the available threads; reduce clients when
+    # needed.
     max_safe_clients = max(1, max_threads * 3 // 2)
     if workload["clients"] > max_safe_clients:
         workload["clients"] = max_safe_clients
